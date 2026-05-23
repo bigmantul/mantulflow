@@ -32,7 +32,7 @@ export class RiskManager {
    * @param {number} maxConsecutiveLosses - halt after 3 losses in a row
    */
   constructor({
-    riskPct              = 10,
+    riskPct              = 1000,
     maxDailyLossPct      = 30,
     maxOpenTrades        = 3,
     maxConsecutiveLosses = 3,
