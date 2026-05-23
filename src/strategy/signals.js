@@ -440,8 +440,8 @@ function getSmcSignal(df5, df15, df4h) {
   votes.sellVotes = sellScore;
 
   // All 7 confluences must align — no partial signals
- if (buyScore  >= 4 && buyScore  > sellScore) return [1,  votes];
-if (sellScore >= 4 && sellScore > buyScore)  return [-1, votes];
+if (buyScore  === 7) return [1,  votes];
+if (sellScore === 7) return [-1, votes];
   return [0, votes];
 }
 
