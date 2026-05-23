@@ -1,0 +1,9 @@
+﻿# Never commit credentials
+.env
+
+# Node modules
+node_modules/
+
+# Logs
+logs/
+*.log
