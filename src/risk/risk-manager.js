@@ -19,8 +19,8 @@
 export class RiskManager {
 
   // ── DERIV HARD LIMITS ─────────────────────────────────
-  static MIN_STAKE     = 10;     // Deriv minimum is $0.35 but we floor at $1.00
-  static MAX_STAKE_CAP = Infinity;     // Hard cap — never risk more than $1 per trade
+  static MIN_STAKE     = 1000;     // Deriv minimum is $0.35 but we floor at $1.00
+  static MAX_STAKE_CAP = 1000;     // Hard cap — never risk more than $1 per trade
 
   /**
    * @param {number} riskPct              - 10% of balance per trade
