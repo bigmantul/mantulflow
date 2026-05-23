@@ -19,8 +19,8 @@
 export class RiskManager {
 
   // ── DERIV HARD LIMITS ─────────────────────────────────
-  static MIN_STAKE     = 1.00;     // Deriv minimum is $0.35 but we floor at $1.00
-  static MAX_STAKE_CAP = 1.00;     // Hard cap — never risk more than $1 per trade
+  static MIN_STAKE     = 10;     // Deriv minimum is $0.35 but we floor at $1.00
+  static MAX_STAKE_CAP = 10;     // Hard cap — never risk more than $1 per trade
 
   /**
    * @param {number} riskPct              - 10% of balance per trade
@@ -32,8 +32,8 @@ export class RiskManager {
    * @param {number} maxConsecutiveLosses - halt after 3 losses in a row
    */
   constructor({
-    riskPct              = 0.10,
-    maxDailyLossPct      = 0.30,
+    riskPct              = 10,
+    maxDailyLossPct      = 30,
     maxOpenTrades        = 3,
     maxConsecutiveLosses = 3,
   } = {}) {
