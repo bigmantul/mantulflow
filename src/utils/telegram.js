@@ -27,20 +27,70 @@ async function sendMessage(text) {
   }
 }
 
+
+// ═══════════════════════════════════════════════════════
+//  CYCLE LOG — sent every poll cycle so you see live
+//  activity in Telegram just like the console
+// ═══════════════════════════════════════════════════════
+
+/**
+ * Sends a full scan cycle summary to Telegram.
+ * Called once per 15s cycle after all symbols are scanned.
+ *
+ * @param {object} opts
+ * @param {number}   opts.balance
+ * @param {number}   opts.openTrades
+ * @param {number}   opts.maxTrades
+ * @param {string}   opts.session
+ * @param {Array}    opts.results   - array of { symbol, status, strength, trend }
+ */
+export function notifyCycleScan({ balance, openTrades, maxTrades, session, results }) {
+  const lines = [
+    `📊 <b>Scan Cycle</b>`,
+    `Session  : ${session}`,
+    `Balance  : $${balance.toFixed(2)}`,
+    `Open     : ${openTrades}/${maxTrades}`,
+    ``,
+  ];
+
+  for (const r of results) {
+    if (r.status === "LOCKED") {
+      lines.push(`🔒 ${r.symbol} | LOCKED`);
+    } else if (r.status === "CLOSED") {
+      lines.push(`🕐 ${r.symbol} | MARKET CLOSED`);
+    } else if (r.status === "FILTERED") {
+      lines.push(`⛔ ${r.symbol} | FILTERED`);
+    } else if (r.status === "HOLD") {
+      lines.push(`⏸ ${r.symbol} | HOLD | HTF: ${r.trend} | ${r.strength.toFixed(0)}%`);
+    } else if (r.status === "BUY" || r.status === "SELL") {
+      const icon = r.status === "BUY" ? "🟢" : "🔴";
+      lines.push(`${icon} ${r.symbol} | ${r.status} | ${r.strength.toFixed(0)}% — placing trade...`);
+    }
+  }
+
+  return sendMessage(lines.join("\n"));
+}
+
+
+// ═══════════════════════════════════════════════════════
+//  ALL OTHER NOTIFICATIONS
+// ═══════════════════════════════════════════════════════
+
 export function notifyStartup(balance, mode) {
   return sendMessage(
     `🤖 <b>Deriv Bot Started</b>\n` +
     `Mode     : ${mode.toUpperCase()}\n` +
     `Balance  : $${balance.toFixed(2)}\n` +
-    `Strategy : SMC (5m/15m/4H)\n` +
-    `Status   : Scanning markets...`
+    `Strategy : SMC — ALL 7 confluences required\n` +
+    `Symbols  : R_75, R_100, XAU, XAG, BTC, ETH\n` +
+    `Status   : Scanning every 15s...`
   );
 }
 
 export function notifyTradeOpened({ symbol, direction, stake, multiplier, limitOrder, strength, contractId }) {
   const label = direction === "MULTUP" ? "🟢 BUY" : "🔴 SELL";
   return sendMessage(
-    `${label} <b>${symbol}</b>\n` +
+    `${label} <b>TRADE OPENED — ${symbol}</b>\n` +
     `Contract : ${contractId}\n` +
     `Stake    : $${stake.toFixed(2)} x${multiplier}\n` +
     `Strength : ${strength.toFixed(0)}%\n` +

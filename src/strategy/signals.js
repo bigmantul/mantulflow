@@ -439,9 +439,9 @@ function getSmcSignal(df5, df15, df4h) {
   votes.buyVotes  = buyScore;
   votes.sellVotes = sellScore;
 
-  // All 7 confluences must align — no partial signals
-if (buyScore  === 7) return [1,  votes];
-if (sellScore === 7) return [-1, votes];
+  // All 6/7 confluences must align — no partial signals
+if (buyScore  === 6) return [1,  votes];
+if (sellScore === 6) return [-1, votes];
   return [0, votes];
 }
 
@@ -480,7 +480,7 @@ export function getTradeReason(df5, df15, df4h = null) {
   lines.push(`  RSI Bias     : ${v.rsi} ${v.rsi !== "neutral" ? "✅" : "❌"}`);
   lines.push(`  Buy  votes   : ${v.buyVotes}/7`);
   lines.push(`  Sell votes   : ${v.sellVotes}/7`);
-  lines.push(`  Threshold    : ALL 7 required — ${Math.max(v.buyVotes, v.sellVotes) === 7 ? "✅ MET" : "❌ NOT MET"}`);
+  lines.push(`  Threshold    :  6/7 required — ${Math.max(v.buyVotes, v.sellVotes) === 6 ? "✅ MET" : "❌ NOT MET"}`);
   return lines.join("\n");
 }
 

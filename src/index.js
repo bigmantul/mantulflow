@@ -34,6 +34,7 @@ import {
   notifyReconnecting,
   notifyMaxTrades,
   notifyDailySummary,
+  notifyCycleScan,
 } from "./utils/telegram.js";
 
 
@@ -51,8 +52,8 @@ const SYMBOLS = [
 
 const POLL_SECS        = 15;
 const MAX_IDLE_SECS    = 45;
-const TRADING_MODE     = "demo";   // "demo" or "real"
-const DAILY_SUMMARY_HR = 23;       // UTC hour to send daily summary (23 = 11pm)
+const TRADING_MODE     = "demo";
+const DAILY_SUMMARY_HR = 23;
 
 
 // ═══════════════════════════════════════════════════════
@@ -84,9 +85,9 @@ async function main() {
   const rm   = new RiskManager();
   const sltp = new StopLossTakeProfit();
 
-  let lastSummaryDate = "";   // tracks when we last sent daily summary
+  let lastSummaryDate = "";
 
-  // ── OUTER LOOP — reconnects on any failure ───────────
+  // ── OUTER LOOP ───────────────────────────────────────
   while (true) {
 
     let lastApiCall = Date.now();
@@ -105,13 +106,12 @@ async function main() {
       rm.openTrades   = openCount;
       console.log(`Open trades: ${openCount}/${rm.maxOpen} | Slots: ${Math.max(0, rm.maxOpen - openCount)}`);
 
-      // STEP 3: Get balance
+      // STEP 3: Balance
       let balance = await getBalance(ws);
       lastApiCall = Date.now();
       if (rm.startingBalance === null) rm.setStartingBalance(balance);
       console.log(`💰 Balance: $${balance.toFixed(2)}\n`);
 
-      // Send startup notification
       await notifyStartup(balance, TRADING_MODE);
 
       // ── INNER LOOP ────────────────────────────────────
@@ -119,14 +119,12 @@ async function main() {
 
         await sleep(POLL_SECS);
 
-        // Proactive reconnect if idle
         if ((Date.now() - lastApiCall) / 1000 > MAX_IDLE_SECS) {
           console.log("⏱️  Connection idle — reconnecting proactively...");
           ws.close();
           break;
         }
 
-        // Refresh balance + portfolio
         balance     = await getBalance(ws);
         lastApiCall = Date.now();
 
@@ -139,9 +137,9 @@ async function main() {
           `Open: ${currentOpen}/${rm.maxOpen}`
         );
 
-        // ── DAILY SUMMARY ─────────────────────────────
-        const todayStr  = new Date().toISOString().slice(0, 10);
-        const utcHour   = new Date().getUTCHours();
+        // Daily summary
+        const todayStr = new Date().toISOString().slice(0, 10);
+        const utcHour  = new Date().getUTCHours();
         if (utcHour === DAILY_SUMMARY_HR && lastSummaryDate !== todayStr) {
           lastSummaryDate = todayStr;
           await notifyDailySummary({
@@ -152,14 +150,14 @@ async function main() {
           });
         }
 
-        // ── MAX OPEN TRADES CHECK ─────────────────────
+        // Max open trades check
         if (currentOpen >= rm.maxOpen) {
           console.log(`🔒 Max open trades (${currentOpen}/${rm.maxOpen}) — waiting`);
           await notifyMaxTrades(currentOpen, rm.maxOpen);
           continue;
         }
 
-        // ── OTHER RISK CHECKS ─────────────────────────
+        // Risk check
         if (!rm.canTrade(balance)) {
           const status = rm.status();
           const reason =
@@ -175,7 +173,9 @@ async function main() {
         console.log(`✅ ${slotsLeft} slot(s) available — scanning...`);
 
         // ── SYMBOL LOOP ───────────────────────────────
-        let tradesPlacedThisCycle = 0;
+        // Collect results for Telegram cycle summary
+        const cycleResults        = [];
+        let   tradesPlacedThisCycle = 0;
 
         for (const symbol of SYMBOLS) {
 
@@ -191,13 +191,17 @@ async function main() {
 
           const activeSymbols = getActiveSymbols();
 
+          // Locked
           if (activeSymbols.has(symbol)) {
             console.log(`${symbol} | LOCKED (trade open) — skipping`);
+            cycleResults.push({ symbol, status: "LOCKED" });
             continue;
           }
 
+          // Market closed
           if (!isMarketOpen(symbol)) {
             console.log(`${symbol} | MARKET CLOSED — skipping`);
+            cycleResults.push({ symbol, status: "CLOSED" });
             continue;
           }
 
@@ -211,8 +215,10 @@ async function main() {
 
           if (!df5 || df5.length < 2) continue;
 
+          // Market quality filter
           if (!marketIsTradeable(df5)) {
             console.log(`${symbol} | FILTERED (poor market conditions)`);
+            cycleResults.push({ symbol, status: "FILTERED" });
             continue;
           }
 
@@ -223,6 +229,7 @@ async function main() {
             const trend    = get15mTrend(df15);
             const strength = getSignalStrength(df5, df15, df4h);
             console.log(`${symbol} | HOLD | HTF: ${trend} | Strength: ${strength.toFixed(0)}%`);
+            cycleResults.push({ symbol, status: "HOLD", trend, strength });
             continue;
           }
 
@@ -235,9 +242,7 @@ async function main() {
           const stake      = parseFloat(Math.max(baseStake * volScalar, rm.minStake).toFixed(2));
           const strength   = getSignalStrength(df5, df15, df4h);
           const limitOrder = sltp.getMultiplierLimitOrder(stake);
-
-          // Get multiplier from fallback/cache for notification
-          const multiplier = 100; // will be auto-corrected by placeTradeWithRetry if wrong
+          const multiplier = 100;
 
           console.log(
             `\n${symbol} | ${label} | Strength: ${strength.toFixed(0)}% | ` +
@@ -245,6 +250,8 @@ async function main() {
             `Limit: SL=$${limitOrder.stop_loss} TP=$${limitOrder.take_profit}`
           );
           console.log(getTradeReason(df5, df15, df4h));
+
+          cycleResults.push({ symbol, status: label, strength });
 
           // Place trade
           const result = await placeTradeWithRetry(ws, symbol, direction, stake, limitOrder);
@@ -255,7 +262,6 @@ async function main() {
             rm.tradeOpened();
             tradesPlacedThisCycle++;
 
-            // Send Telegram notification
             await notifyTradeOpened({
               symbol,
               direction,
@@ -274,6 +280,17 @@ async function main() {
           }
 
         } // end symbol loop
+
+        // Send full cycle summary to Telegram
+        if (cycleResults.length > 0) {
+          await notifyCycleScan({
+            balance,
+            openTrades:  currentOpen,
+            maxTrades:   rm.maxOpen,
+            session:     sessionName(),
+            results:     cycleResults,
+          });
+        }
 
       } // end inner loop
 
