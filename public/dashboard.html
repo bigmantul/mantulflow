@@ -1,0 +1,346 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8"/>
+<meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+<title>Dashboard — Deriv SMC Bot</title>
+<style>
+  *{margin:0;padding:0;box-sizing:border-box}
+  body{font-family:'Segoe UI',sans-serif;background:#0a0e1a;color:#e2e8f0;min-height:100vh}
+  .header{background:#111827;border-bottom:1px solid #1e293b;padding:16px 24px;display:flex;align-items:center;justify-content:space-between}
+  .header h1{font-size:18px;font-weight:700;color:#38bdf8}
+  .header-right{display:flex;align-items:center;gap:16px}
+  .user-name{font-size:14px;color:#94a3b8}
+  .btn-logout{padding:6px 14px;background:transparent;border:1px solid #334155;border-radius:6px;color:#94a3b8;cursor:pointer;font-size:13px}
+  .main{max-width:1100px;margin:0 auto;padding:24px}
+  .grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(200px,1fr));gap:16px;margin-bottom:24px}
+  .stat-card{background:#111827;border:1px solid #1e293b;border-radius:12px;padding:20px}
+  .stat-label{font-size:12px;color:#64748b;text-transform:uppercase;letter-spacing:.6px}
+  .stat-value{font-size:28px;font-weight:700;margin-top:4px}
+  .stat-value.green{color:#34d399}
+  .stat-value.red{color:#f87171}
+  .stat-value.blue{color:#38bdf8}
+  .stat-value.yellow{color:#fbbf24}
+  .row{display:grid;grid-template-columns:1fr 1fr;gap:16px;margin-bottom:24px}
+  @media(max-width:700px){.row{grid-template-columns:1fr}}
+  .card{background:#111827;border:1px solid #1e293b;border-radius:12px;padding:24px}
+  .card-title{font-size:14px;font-weight:600;color:#94a3b8;text-transform:uppercase;letter-spacing:.6px;margin-bottom:20px}
+  .bot-toggle{display:flex;align-items:center;justify-content:space-between;padding:16px;background:#0f172a;border-radius:10px;margin-bottom:16px}
+  .bot-status{display:flex;align-items:center;gap:10px}
+  .dot{width:10px;height:10px;border-radius:50%;background:#334155}
+  .dot.active{background:#34d399;box-shadow:0 0 8px #34d399}
+  .bot-label{font-weight:600}
+  .bot-sub{font-size:12px;color:#64748b;margin-top:2px}
+  .toggle-btn{padding:8px 20px;border-radius:8px;border:none;font-size:14px;font-weight:600;cursor:pointer;transition:.2s}
+  .toggle-btn.start{background:#166534;color:#86efac}
+  .toggle-btn.start:hover{background:#15803d}
+  .toggle-btn.stop{background:#7f1d1d;color:#fca5a5}
+  .toggle-btn.stop:hover{background:#991b1b}
+  .risk-form .form-row{display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:12px}
+  .form-group{margin-bottom:0}
+  label{display:block;font-size:12px;color:#64748b;margin-bottom:5px}
+  input,select{width:100%;padding:8px 12px;background:#0f172a;border:1px solid #1e293b;border-radius:7px;color:#e2e8f0;font-size:13px;outline:none}
+  input:focus,select:focus{border-color:#38bdf8}
+  .save-btn{padding:9px 20px;background:#1e40af;color:#fff;border:none;border-radius:8px;font-size:13px;font-weight:600;cursor:pointer;margin-top:12px}
+  .save-btn:hover{background:#1d4ed8}
+  .success-msg{color:#34d399;font-size:13px;margin-top:8px;display:none}
+  table{width:100%;border-collapse:collapse;font-size:13px}
+  th{text-align:left;padding:10px 12px;color:#64748b;border-bottom:1px solid #1e293b;font-weight:500}
+  td{padding:10px 12px;border-bottom:1px solid #0f172a}
+  .badge{padding:3px 8px;border-radius:20px;font-size:11px;font-weight:600}
+  .badge.open{background:#1e3a5f;color:#38bdf8}
+  .badge.won{background:#14532d;color:#86efac}
+  .badge.lost{background:#450a0a;color:#fca5a5}
+  .badge.buy{background:#14532d;color:#86efac}
+  .badge.sell{background:#450a0a;color:#fca5a5}
+  .empty{text-align:center;padding:40px;color:#475569}
+  .tabs{display:flex;gap:8px;margin-bottom:16px}
+  .filter-tab{padding:6px 14px;border-radius:6px;border:1px solid #1e293b;background:transparent;color:#64748b;font-size:13px;cursor:pointer}
+  .filter-tab.active{background:#1e293b;color:#e2e8f0}
+</style>
+</head>
+<body>
+
+<div class="header">
+  <h1>⚡ Deriv SMC Bot</h1>
+  <div class="header-right">
+    <span class="user-name" id="headerName"></span>
+    <button class="btn-logout" onclick="logout()">Logout</button>
+  </div>
+</div>
+
+<div class="main">
+
+  <!-- STATS ROW -->
+  <div class="grid" id="statsGrid">
+    <div class="stat-card">
+      <div class="stat-label">Win Rate</div>
+      <div class="stat-value blue" id="statWinRate">--%</div>
+    </div>
+    <div class="stat-card">
+      <div class="stat-label">Total PnL</div>
+      <div class="stat-value" id="statTotalPnl">$--</div>
+    </div>
+    <div class="stat-card">
+      <div class="stat-label">Today PnL</div>
+      <div class="stat-value" id="statTodayPnl">$--</div>
+    </div>
+    <div class="stat-card">
+      <div class="stat-label">Total Trades</div>
+      <div class="stat-value yellow" id="statTotal">--</div>
+    </div>
+    <div class="stat-card">
+      <div class="stat-label">Open Now</div>
+      <div class="stat-value blue" id="statOpen">--</div>
+    </div>
+  </div>
+
+  <div class="row">
+
+    <!-- BOT CONTROL + RISK -->
+    <div>
+      <div class="card" style="margin-bottom:16px">
+        <div class="card-title">Bot Control</div>
+        <div class="bot-toggle">
+          <div class="bot-status">
+            <div class="dot" id="botDot"></div>
+            <div>
+              <div class="bot-label" id="botLabel">Stopped</div>
+              <div class="bot-sub" id="botSub">Click Start to begin trading</div>
+            </div>
+          </div>
+          <button class="toggle-btn start" id="toggleBtn" onclick="toggleBot()">Start</button>
+        </div>
+      </div>
+
+      <div class="card">
+        <div class="card-title">Risk Settings</div>
+        <div class="risk-form">
+          <div class="form-row">
+            <div class="form-group">
+              <label>Stake % of Balance</label>
+              <input type="number" id="riskPct" step="1" min="1" max="50" placeholder="10"/>
+            </div>
+            <div class="form-group">
+              <label>Max Open Trades</label>
+              <input type="number" id="maxOpen" min="1" max="10" placeholder="3"/>
+            </div>
+          </div>
+          <div class="form-row">
+            <div class="form-group">
+              <label>Daily Loss Limit %</label>
+              <input type="number" id="dailyLoss" step="1" min="5" max="100" placeholder="30"/>
+            </div>
+            <div class="form-group">
+              <label>Max Loss Streak</label>
+              <input type="number" id="lossStreak" min="1" max="10" placeholder="3"/>
+            </div>
+          </div>
+          <div class="form-row">
+            <div class="form-group">
+              <label>Stop Loss %</label>
+              <input type="number" id="stopLoss" step="5" min="10" max="200" placeholder="80"/>
+            </div>
+            <div class="form-group">
+              <label>Take Profit %</label>
+              <input type="number" id="takeProfit" step="10" min="10" max="1000" placeholder="200"/>
+            </div>
+          </div>
+          <button class="save-btn" onclick="saveRisk()">Save Settings</button>
+          <div class="success-msg" id="riskSuccess">✅ Settings saved!</div>
+        </div>
+      </div>
+    </div>
+
+    <!-- SETTINGS -->
+    <div class="card">
+      <div class="card-title">Account Settings</div>
+      <div class="form-group" style="margin-bottom:12px">
+        <label>Deriv PAT Token</label>
+        <input type="password" id="settingsPAT" placeholder="pat_xxxxxxxxxxxxxxxx"/>
+      </div>
+      <div class="form-group" style="margin-bottom:12px">
+        <label>Deriv App ID</label>
+        <input type="text" id="settingsAppId" placeholder="33kDvVzcElBmdV0wfzTy1"/>
+      </div>
+      <div class="form-group" style="margin-bottom:12px">
+        <label>Trading Mode</label>
+        <select id="settingsMode">
+          <option value="demo">Demo</option>
+          <option value="real">Real</option>
+        </select>
+      </div>
+      <div class="form-group" style="margin-bottom:12px">
+        <label>Telegram Chat ID</label>
+        <input type="text" id="settingsChatId" placeholder="Get from @userinfobot"/>
+      </div>
+      <button class="save-btn" onclick="saveSettings()">Update Settings</button>
+      <div class="success-msg" id="settingsSuccess">✅ Settings updated!</div>
+    </div>
+
+  </div>
+
+  <!-- TRADE HISTORY -->
+  <div class="card">
+    <div class="card-title">Trade History</div>
+    <div class="tabs">
+      <button class="filter-tab active" onclick="loadTrades('all', this)">All</button>
+      <button class="filter-tab" onclick="loadTrades('open', this)">Open</button>
+      <button class="filter-tab" onclick="loadTrades('won', this)">Won</button>
+      <button class="filter-tab" onclick="loadTrades('lost', this)">Lost</button>
+    </div>
+    <div id="tradesTable">
+      <div class="empty">Loading trades...</div>
+    </div>
+  </div>
+
+</div>
+
+<script>
+const token = localStorage.getItem("token");
+if (!token) window.location.href = "/";
+
+const API = async (path, method = "GET", body = null) => {
+  const opts = { method, headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" } };
+  if (body) opts.body = JSON.stringify(body);
+  const res  = await fetch("/api" + path, opts);
+  const data = await res.json();
+  if (res.status === 401) { localStorage.clear(); window.location.href = "/"; }
+  return data;
+};
+
+let botActive = false;
+
+async function init() {
+  const user = await API("/user/me");
+  document.getElementById("headerName").textContent = user.name;
+  botActive = user.botActive;
+  updateBotUI(botActive);
+
+  // Fill risk form
+  const r = user.risk;
+  document.getElementById("riskPct").value   = Math.round(r.riskPct * 100);
+  document.getElementById("maxOpen").value   = r.maxOpenTrades;
+  document.getElementById("dailyLoss").value = Math.round(r.maxDailyLossPct * 100);
+  document.getElementById("lossStreak").value = r.maxConsecutiveLosses;
+  document.getElementById("stopLoss").value   = Math.round(r.stopLossPct * 100);
+  document.getElementById("takeProfit").value = Math.round(r.takeProfitPct * 100);
+
+  await loadStats();
+  await loadTrades("all");
+}
+
+async function loadStats() {
+  const s = await API("/trades/stats");
+  const pnlEl   = document.getElementById("statTotalPnl");
+  const todayEl = document.getElementById("statTodayPnl");
+  document.getElementById("statWinRate").textContent = s.winRate + "%";
+  pnlEl.textContent   = (s.totalPnl >= 0 ? "+" : "") + "$" + s.totalPnl;
+  pnlEl.className     = "stat-value " + (s.totalPnl >= 0 ? "green" : "red");
+  todayEl.textContent = (s.todayPnl >= 0 ? "+" : "") + "$" + s.todayPnl;
+  todayEl.className   = "stat-value " + (s.todayPnl >= 0 ? "green" : "red");
+  document.getElementById("statTotal").textContent = s.total;
+  document.getElementById("statOpen").textContent  = s.open;
+}
+
+async function loadTrades(status, btnEl) {
+  if (btnEl) {
+    document.querySelectorAll(".filter-tab").forEach(b => b.classList.remove("active"));
+    btnEl.classList.add("active");
+  }
+  const url   = status === "all" ? "/trades?limit=30" : `/trades?status=${status}&limit=30`;
+  const data  = await API(url);
+  const table = document.getElementById("tradesTable");
+
+  if (!data.trades || data.trades.length === 0) {
+    table.innerHTML = '<div class="empty">No trades yet</div>'; return;
+  }
+
+  const rows = data.trades.map(t => {
+    const dir     = t.direction === "MULTUP" ? "BUY" : "SELL";
+    const dirClass = dir === "BUY" ? "buy" : "sell";
+    const pnl     = t.pnl !== 0 ? (t.pnl > 0 ? `<span style="color:#34d399">+$${t.pnl.toFixed(2)}</span>` : `<span style="color:#f87171">-$${Math.abs(t.pnl).toFixed(2)}</span>`) : "—";
+    const date    = new Date(t.openedAt).toLocaleString();
+    return `<tr>
+      <td>${t.symbol}</td>
+      <td><span class="badge ${dirClass}">${dir}</span></td>
+      <td>$${t.stake.toFixed(2)}</td>
+      <td>x${t.multiplier}</td>
+      <td>${t.strength ? t.strength.toFixed(0) + "%" : "—"}</td>
+      <td>${pnl}</td>
+      <td><span class="badge ${t.status}">${t.status}</span></td>
+      <td style="color:#475569">${date}</td>
+    </tr>`;
+  }).join("");
+
+  table.innerHTML = `<table>
+    <thead><tr><th>Symbol</th><th>Dir</th><th>Stake</th><th>Mult</th><th>Strength</th><th>PnL</th><th>Status</th><th>Opened</th></tr></thead>
+    <tbody>${rows}</tbody>
+  </table>`;
+}
+
+function updateBotUI(active) {
+  const dot = document.getElementById("botDot");
+  const lbl = document.getElementById("botLabel");
+  const sub = document.getElementById("botSub");
+  const btn = document.getElementById("toggleBtn");
+  dot.className  = "dot" + (active ? " active" : "");
+  lbl.textContent = active ? "Running" : "Stopped";
+  sub.textContent = active ? "Bot is scanning markets every 15s" : "Click Start to begin trading";
+  btn.className  = "toggle-btn " + (active ? "stop" : "start");
+  btn.textContent = active ? "Stop" : "Start";
+}
+
+async function toggleBot() {
+  const newState = !botActive;
+  const btn = document.getElementById("toggleBtn");
+  btn.disabled = true;
+  btn.textContent = "Please wait...";
+  const res = await API("/user/bot", "PUT", { active: newState });
+  botActive = res.botActive;
+  updateBotUI(botActive);
+  btn.disabled = false;
+  await loadStats();
+}
+
+async function saveRisk() {
+  const data = {
+    riskPct:              parseFloat(document.getElementById("riskPct").value) / 100,
+    maxOpenTrades:        parseInt(document.getElementById("maxOpen").value),
+    maxDailyLossPct:      parseFloat(document.getElementById("dailyLoss").value) / 100,
+    maxConsecutiveLosses: parseInt(document.getElementById("lossStreak").value),
+    stopLossPct:          parseFloat(document.getElementById("stopLoss").value) / 100,
+    takeProfitPct:        parseFloat(document.getElementById("takeProfit").value) / 100,
+  };
+  await API("/user/risk", "PUT", data);
+  const msg = document.getElementById("riskSuccess");
+  msg.style.display = "block";
+  setTimeout(() => msg.style.display = "none", 3000);
+}
+
+async function saveSettings() {
+  const data = {
+    derivPAT:       document.getElementById("settingsPAT").value.trim(),
+    derivAppId:     document.getElementById("settingsAppId").value.trim(),
+    derivMode:      document.getElementById("settingsMode").value,
+    telegramChatId: document.getElementById("settingsChatId").value.trim(),
+  };
+  await API("/user/settings", "PUT", data);
+  const msg = document.getElementById("settingsSuccess");
+  msg.style.display = "block";
+  setTimeout(() => msg.style.display = "none", 3000);
+}
+
+function logout() {
+  localStorage.clear();
+  window.location.href = "/";
+}
+
+// Auto-refresh stats every 30s
+setInterval(loadStats, 30000);
+setInterval(() => loadTrades("all"), 30000);
+
+init();
+</script>
+</body>
+</html>
