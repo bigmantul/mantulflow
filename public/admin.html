@@ -213,6 +213,7 @@ async function loadUsers() {
           : `<button class="action-btn btn-start" onclick="toggleBot('${u._id}', true, this)">Start</button>`
         }
         <button class="action-btn btn-view" onclick="viewUser('${u._id}', '${u.name}')">View</button>
+        <button class="action-btn btn-view" style="background:#1a2e1a;color:#86efac" onclick="adminSyncTrades('${u._id}', '${u.name}', this)">Sync</button>
         <button class="action-btn btn-del" onclick="deleteUser('${u._id}', '${u.name}')">Del</button>
       </td>
     </tr>
@@ -227,6 +228,18 @@ async function loadUsers() {
       </tr></thead>
       <tbody>${rows}</tbody>
     </table>`;
+}
+
+async function adminSyncTrades(userId, name, btn) {
+  btn.disabled    = true;
+  btn.textContent = "...";
+  const data = await API(`/users/${userId}/sync-trades`, "POST");
+  if (data) {
+    alert(`${name}: ${data.message}`);
+    await loadAll();
+  }
+  btn.disabled    = false;
+  btn.textContent = "Sync";
 }
 
 async function toggleBot(userId, active, btn) {

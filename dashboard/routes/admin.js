@@ -135,6 +135,60 @@ router.put("/users/:id/bot", adminAuth, async (req, res) => {
   }
 });
 
+// ── SYNC TRADES FOR A USER (admin) ───────────────────
+router.post("/users/:id/sync-trades", adminAuth, async (req, res) => {
+  try {
+    const { Trade, User } = await import("../db.js");
+    const user       = await User.findById(req.params.id);
+    if (!user) return res.status(404).json({ error: "User not found" });
+
+    const openTrades = await Trade.find({ userId: user._id, status: "open" });
+    if (!openTrades.length) {
+      return res.json({ message: "No open trades to sync", synced: 0 });
+    }
+
+    const { connectForMode }             = await import("../src/auth/deriv-auth.js");
+    const { connectWebSocket, sendMessage } = await import("../src/utils/ws-client.js");
+
+    const wsUrl = await connectForMode(user.derivMode, user.derivPAT, user.derivAppId);
+    const ws    = await connectWebSocket(wsUrl);
+
+    const resp      = await sendMessage(ws, { portfolio: 1 }, "portfolio");
+    const contracts = resp?.portfolio?.contracts ?? [];
+    const activeIds = new Set();
+    for (const c of contracts) {
+      const status = String(c.status ?? "").toLowerCase();
+      if (!["sold","closed","expired"].includes(status)) {
+        activeIds.add(String(c.contract_id));
+      }
+    }
+
+    let synced = 0;
+    for (const trade of openTrades) {
+      if (activeIds.has(String(trade.contractId))) continue;
+      try {
+        const detail   = await sendMessage(ws, {
+          proposal_open_contract: 1,
+          contract_id: parseInt(trade.contractId),
+        }, "proposal_open_contract");
+        const contract = detail?.proposal_open_contract;
+        const pnl      = contract ? parseFloat(contract.profit ?? 0) : 0;
+        const status   = pnl > 0 ? "won" : "lost";
+        await Trade.findByIdAndUpdate(trade._id, { status, pnl, closedAt: new Date() });
+        synced++;
+      } catch {
+        await Trade.findByIdAndUpdate(trade._id, { status: "closed", closedAt: new Date() });
+        synced++;
+      }
+    }
+
+    ws.close();
+    res.json({ message: `Synced ${synced} trade(s) for ${user.name}`, synced });
+  } catch (e) {
+    res.status(500).json({ error: e.message });
+  }
+});
+
 // ── DELETE USER ───────────────────────────────────────
 router.delete("/users/:id", adminAuth, async (req, res) => {
   try {

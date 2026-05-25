@@ -41,7 +41,8 @@
   label{display:block;font-size:12px;color:#64748b;margin-bottom:5px}
   input,select{width:100%;padding:8px 12px;background:#0f172a;border:1px solid #1e293b;border-radius:7px;color:#e2e8f0;font-size:13px;outline:none}
   input:focus,select:focus{border-color:#38bdf8}
-  .save-btn{padding:9px 20px;background:#1e40af;color:#fff;border:none;border-radius:8px;font-size:13px;font-weight:600;cursor:pointer;margin-top:12px}
+  .sync-btn{padding:8px 16px;background:#1e293b;color:#94a3b8;border:none;border-radius:8px;font-size:13px;font-weight:600;cursor:pointer;width:100%;margin-top:8px;transition:.2s}
+  .sync-btn:hover{background:#334155;color:#e2e8f0}
   .save-btn:hover{background:#1d4ed8}
   .success-msg{color:#34d399;font-size:13px;margin-top:8px;display:none}
   table{width:100%;border-collapse:collapse;font-size:13px}
@@ -111,6 +112,8 @@
           </div>
           <button class="toggle-btn start" id="toggleBtn" onclick="toggleBot()">Start</button>
         </div>
+        <button class="sync-btn" id="syncBtn" onclick="syncTrades()">🔄 Sync Trades with Deriv</button>
+        <div class="success-msg" id="syncMsg"></div>
       </div>
 
       <div class="card">
@@ -289,6 +292,36 @@ function updateBotUI(active) {
   sub.textContent = active ? "Bot is scanning markets every 15s" : "Click Start to begin trading";
   btn.className  = "toggle-btn " + (active ? "stop" : "start");
   btn.textContent = active ? "Stop" : "Start";
+}
+
+async function syncTrades() {
+  const btn = document.getElementById("syncBtn");
+  const msg = document.getElementById("syncMsg");
+  btn.disabled    = true;
+  btn.textContent = "⏳ Syncing...";
+  msg.style.display = "none";
+
+  try {
+    const data = await API("/user/sync-trades", "POST");
+    if (data.error) {
+      msg.style.color   = "#f87171";
+      msg.textContent   = "❌ " + data.error;
+    } else {
+      msg.style.color   = "#34d399";
+      msg.textContent   = `✅ ${data.message}`;
+      await loadStats();
+      await loadTrades("all");
+    }
+    msg.style.display = "block";
+    setTimeout(() => msg.style.display = "none", 4000);
+  } catch (e) {
+    msg.style.color   = "#f87171";
+    msg.textContent   = "❌ Network error";
+    msg.style.display = "block";
+  }
+
+  btn.disabled    = false;
+  btn.textContent = "🔄 Sync Trades with Deriv";
 }
 
 async function toggleBot() {
