@@ -1,5 +1,5 @@
 // ═══════════════════════════════════════════════════════
-//  dashboard/server.js — Express API + static frontend
+//  dashboard/server.js
 // ═══════════════════════════════════════════════════════
 
 import "dotenv/config";
@@ -13,6 +13,7 @@ import { resumeActiveBots } from "./bot-manager.js";
 import authRoutes           from "./routes/auth.js";
 import userRoutes           from "./routes/user.js";
 import tradeRoutes          from "./routes/trades.js";
+import adminRoutes          from "./routes/admin.js";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const app       = express();
@@ -25,6 +26,7 @@ app.use(express.json());
 app.use("/api/auth",   authRoutes);
 app.use("/api/user",   userRoutes);
 app.use("/api/trades", tradeRoutes);
+app.use("/api/admin",  adminRoutes);
 
 // ── HEALTH CHECK ──────────────────────────────────────
 app.get("/health", (req, res) => res.send("OK"));
@@ -40,8 +42,8 @@ async function start() {
   await connectDB();
   await resumeActiveBots();
   app.listen(PORT, () => {
-    console.log(`\n🌐 Dashboard running at http://localhost:${PORT}`);
-    console.log(`📊 API ready at http://localhost:${PORT}/api`);
+    console.log(`\n🌐 Dashboard: http://localhost:${PORT}`);
+    console.log(`🔐 Admin:     http://localhost:${PORT}/admin.html`);
   });
 }
 

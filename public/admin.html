@@ -1,0 +1,307 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8"/>
+<meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+<title>Admin — MANTUL'S UNIFIED BOT</title>
+<style>
+  *{margin:0;padding:0;box-sizing:border-box}
+  body{font-family:'Segoe UI',sans-serif;background:#0a0e1a;color:#e2e8f0;min-height:100vh}
+  .header{background:#111827;border-bottom:1px solid #1e293b;padding:16px 24px;display:flex;align-items:center;justify-content:space-between}
+  .header h1{font-size:18px;font-weight:700;color:#f59e0b}
+  .btn-logout{padding:6px 14px;background:transparent;border:1px solid #334155;border-radius:6px;color:#94a3b8;cursor:pointer;font-size:13px}
+  .main{max-width:1200px;margin:0 auto;padding:24px}
+
+  /* LOGIN */
+  .login-wrap{display:flex;align-items:center;justify-content:center;min-height:80vh}
+  .login-card{background:#111827;border:1px solid #1e293b;border-radius:16px;padding:40px;width:360px;text-align:center}
+  .login-card h2{font-size:20px;font-weight:700;color:#f59e0b;margin-bottom:8px}
+  .login-card p{color:#64748b;font-size:13px;margin-bottom:24px}
+  input{width:100%;padding:10px 14px;background:#0f172a;border:1px solid #1e293b;border-radius:8px;color:#e2e8f0;font-size:14px;outline:none;margin-bottom:12px}
+  input:focus{border-color:#f59e0b}
+  .btn{width:100%;padding:11px;border-radius:8px;border:none;font-size:14px;font-weight:600;cursor:pointer;transition:.2s}
+  .btn-gold{background:#92400e;color:#fcd34d}
+  .btn-gold:hover{background:#b45309}
+  .error{color:#f87171;font-size:13px;margin-top:8px;display:none}
+
+  /* STATS GRID */
+  .stats-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(160px,1fr));gap:16px;margin-bottom:28px}
+  .stat{background:#111827;border:1px solid #1e293b;border-radius:12px;padding:18px}
+  .stat-label{font-size:11px;color:#64748b;text-transform:uppercase;letter-spacing:.6px}
+  .stat-value{font-size:26px;font-weight:700;margin-top:4px}
+  .gold{color:#f59e0b} .green{color:#34d399} .blue{color:#38bdf8} .red{color:#f87171}
+
+  /* USERS TABLE */
+  .card{background:#111827;border:1px solid #1e293b;border-radius:12px;padding:24px;margin-bottom:20px}
+  .card-title{font-size:13px;font-weight:600;color:#94a3b8;text-transform:uppercase;letter-spacing:.6px;margin-bottom:16px;display:flex;justify-content:space-between;align-items:center}
+  table{width:100%;border-collapse:collapse;font-size:13px}
+  th{text-align:left;padding:10px 12px;color:#64748b;border-bottom:1px solid #1e293b;font-weight:500;white-space:nowrap}
+  td{padding:10px 12px;border-bottom:1px solid #0f172a;vertical-align:middle}
+  tr:hover td{background:#0f172a}
+  .badge{padding:3px 8px;border-radius:20px;font-size:11px;font-weight:600;white-space:nowrap}
+  .badge.running{background:#14532d;color:#86efac}
+  .badge.stopped{background:#1e293b;color:#64748b}
+  .badge.demo{background:#1e3a5f;color:#38bdf8}
+  .badge.real{background:#451a03;color:#fcd34d}
+  .dot{width:8px;height:8px;border-radius:50%;display:inline-block;margin-right:6px}
+  .dot.on{background:#34d399;box-shadow:0 0 6px #34d399}
+  .dot.off{background:#334155}
+  .action-btn{padding:5px 12px;border-radius:6px;border:none;font-size:12px;font-weight:600;cursor:pointer;transition:.2s;margin-right:4px}
+  .btn-start{background:#14532d;color:#86efac}
+  .btn-start:hover{background:#166534}
+  .btn-stop{background:#7f1d1d;color:#fca5a5}
+  .btn-stop:hover{background:#991b1b}
+  .btn-view{background:#1e3a5f;color:#7dd3fc}
+  .btn-view:hover{background:#1e40af}
+  .btn-del{background:#1e293b;color:#f87171}
+  .btn-del:hover{background:#450a0a}
+
+  /* USER DETAIL MODAL */
+  .modal{display:none;position:fixed;inset:0;background:rgba(0,0,0,.7);z-index:100;align-items:center;justify-content:center}
+  .modal.open{display:flex}
+  .modal-box{background:#111827;border:1px solid #1e293b;border-radius:16px;padding:28px;width:90%;max-width:800px;max-height:85vh;overflow-y:auto}
+  .modal-header{display:flex;justify-content:space-between;align-items:center;margin-bottom:20px}
+  .modal-title{font-size:16px;font-weight:700;color:#f59e0b}
+  .close-btn{background:none;border:none;color:#64748b;font-size:22px;cursor:pointer;line-height:1}
+  .info-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(140px,1fr));gap:12px;margin-bottom:20px}
+  .info-item{background:#0f172a;border-radius:8px;padding:12px}
+  .info-label{font-size:11px;color:#64748b;margin-bottom:4px}
+  .info-value{font-size:16px;font-weight:600}
+  .empty{text-align:center;padding:32px;color:#475569}
+  .refresh-btn{padding:6px 14px;background:#1e293b;color:#94a3b8;border:none;border-radius:6px;font-size:12px;cursor:pointer}
+  .refresh-btn:hover{background:#334155}
+</style>
+</head>
+<body>
+
+<!-- LOGIN SCREEN -->
+<div id="loginScreen">
+  <div class="login-wrap">
+    <div class="login-card">
+      <h2>🔐 Admin Panel</h2>
+      <p>MANTUL'S UNIFIED TRADING BOT</p>
+      <input type="password" id="adminPassword" placeholder="Enter admin password" onkeydown="if(event.key==='Enter')adminLogin()"/>
+      <button class="btn btn-gold" onclick="adminLogin()">Login</button>
+      <div class="error" id="loginError"></div>
+    </div>
+  </div>
+</div>
+
+<!-- ADMIN DASHBOARD -->
+<div id="adminPanel" style="display:none">
+  <div class="header">
+    <h1>🛡️ MANTUL'S ADMIN PANEL</h1>
+    <div style="display:flex;align-items:center;gap:12px">
+      <span style="font-size:13px;color:#64748b" id="botCount"></span>
+      <button class="btn-logout" onclick="adminLogout()">Logout</button>
+    </div>
+  </div>
+
+  <div class="main">
+
+    <!-- PLATFORM STATS -->
+    <div class="stats-grid" id="platformStats"></div>
+
+    <!-- USERS TABLE -->
+    <div class="card">
+      <div class="card-title">
+        All Users
+        <button class="refresh-btn" onclick="loadAll()">↻ Refresh</button>
+      </div>
+      <div id="usersTable"><div class="empty">Loading...</div></div>
+    </div>
+
+  </div>
+</div>
+
+<!-- USER DETAIL MODAL -->
+<div class="modal" id="userModal">
+  <div class="modal-box">
+    <div class="modal-header">
+      <span class="modal-title" id="modalTitle">User Detail</span>
+      <button class="close-btn" onclick="closeModal()">✕</button>
+    </div>
+    <div id="modalContent"></div>
+  </div>
+</div>
+
+<script>
+let adminToken = sessionStorage.getItem("adminToken");
+if (adminToken) showPanel();
+
+async function adminLogin() {
+  const password = document.getElementById("adminPassword").value;
+  const errEl    = document.getElementById("loginError");
+  errEl.style.display = "none";
+  try {
+    const res  = await fetch("/api/admin/login", {
+      method: "POST", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ password }),
+    });
+    const data = await res.json();
+    if (!res.ok) { errEl.textContent = data.error; errEl.style.display = "block"; return; }
+    adminToken = data.token;
+    sessionStorage.setItem("adminToken", adminToken);
+    showPanel();
+  } catch (e) {
+    errEl.textContent = "Network error"; errEl.style.display = "block";
+  }
+}
+
+function adminLogout() {
+  sessionStorage.removeItem("adminToken");
+  adminToken = null;
+  document.getElementById("loginScreen").style.display = "block";
+  document.getElementById("adminPanel").style.display  = "none";
+}
+
+function showPanel() {
+  document.getElementById("loginScreen").style.display = "none";
+  document.getElementById("adminPanel").style.display  = "block";
+  loadAll();
+}
+
+const API = async (path, method = "GET", body = null) => {
+  const opts = { method, headers: { Authorization: `Bearer ${adminToken}`, "Content-Type": "application/json" } };
+  if (body) opts.body = JSON.stringify(body);
+  const res  = await fetch("/api/admin" + path, opts);
+  if (res.status === 401) { adminLogout(); return null; }
+  return res.json();
+};
+
+async function loadAll() {
+  await loadStats();
+  await loadUsers();
+}
+
+async function loadStats() {
+  const s = await API("/stats");
+  if (!s) return;
+  document.getElementById("botCount").textContent = `${s.runningBots} bots running`;
+  document.getElementById("platformStats").innerHTML = `
+    <div class="stat"><div class="stat-label">Total Users</div><div class="stat-value blue">${s.totalUsers}</div></div>
+    <div class="stat"><div class="stat-label">Active Bots</div><div class="stat-value green">${s.activeUsers}</div></div>
+    <div class="stat"><div class="stat-label">Running Now</div><div class="stat-value gold">${s.runningBots}</div></div>
+    <div class="stat"><div class="stat-label">Total Trades</div><div class="stat-value blue">${s.totalTrades}</div></div>
+    <div class="stat"><div class="stat-label">Open Trades</div><div class="stat-value gold">${s.openTrades}</div></div>
+    <div class="stat"><div class="stat-label">Win Rate</div><div class="stat-value green">${s.winRate}%</div></div>
+    <div class="stat"><div class="stat-label">Total PnL</div><div class="stat-value ${s.totalPnl >= 0 ? 'green' : 'red'}">${s.totalPnl >= 0 ? '+' : ''}$${s.totalPnl}</div></div>
+  `;
+}
+
+async function loadUsers() {
+  const users = await API("/users");
+  if (!users) return;
+  if (!users.length) {
+    document.getElementById("usersTable").innerHTML = '<div class="empty">No users yet</div>';
+    return;
+  }
+  const rows = users.map(u => `
+    <tr>
+      <td><span class="dot ${u.isRunning ? 'on' : 'off'}"></span>${u.name}</td>
+      <td style="color:#64748b">${u.email}</td>
+      <td><span class="badge ${u.derivMode}">${u.derivMode}</span></td>
+      <td><span class="badge ${u.isRunning ? 'running' : 'stopped'}">${u.isRunning ? 'Running' : 'Stopped'}</span></td>
+      <td>${u.tradeCount}</td>
+      <td style="color:#38bdf8">${u.openTrades}</td>
+      <td style="color:${u.winRate >= 50 ? '#34d399' : '#f87171'}">${u.winRate}%</td>
+      <td style="color:${u.totalPnl >= 0 ? '#34d399' : '#f87171'}">${u.totalPnl >= 0 ? '+' : ''}$${u.totalPnl}</td>
+      <td style="color:#475569;font-size:12px">${new Date(u.createdAt).toLocaleDateString()}</td>
+      <td>
+        ${u.isRunning
+          ? `<button class="action-btn btn-stop" onclick="toggleBot('${u._id}', false, this)">Stop</button>`
+          : `<button class="action-btn btn-start" onclick="toggleBot('${u._id}', true, this)">Start</button>`
+        }
+        <button class="action-btn btn-view" onclick="viewUser('${u._id}', '${u.name}')">View</button>
+        <button class="action-btn btn-del" onclick="deleteUser('${u._id}', '${u.name}')">Del</button>
+      </td>
+    </tr>
+  `).join("");
+
+  document.getElementById("usersTable").innerHTML = `
+    <table>
+      <thead><tr>
+        <th>Name</th><th>Email</th><th>Mode</th><th>Status</th>
+        <th>Trades</th><th>Open</th><th>Win%</th><th>PnL</th>
+        <th>Joined</th><th>Actions</th>
+      </tr></thead>
+      <tbody>${rows}</tbody>
+    </table>`;
+}
+
+async function toggleBot(userId, active, btn) {
+  btn.disabled = true;
+  btn.textContent = "...";
+  await API(`/users/${userId}/bot`, "PUT", { active });
+  await loadAll();
+}
+
+async function deleteUser(userId, name) {
+  if (!confirm(`Delete ${name} and all their trades? This cannot be undone.`)) return;
+  await API(`/users/${userId}`, "DELETE");
+  await loadAll();
+}
+
+async function viewUser(userId, name) {
+  document.getElementById("modalTitle").textContent = `👤 ${name}`;
+  document.getElementById("modalContent").innerHTML = '<div class="empty">Loading...</div>';
+  document.getElementById("userModal").classList.add("open");
+
+  const data = await API(`/users/${userId}`);
+  if (!data) return;
+
+  const s = data.stats;
+  const trades = data.trades;
+
+  const tradeRows = trades.length ? trades.map(t => {
+    const dir = t.direction === "MULTUP" ? "BUY" : "SELL";
+    const pnl = t.pnl !== 0
+      ? (t.pnl > 0 ? `<span style="color:#34d399">+$${t.pnl.toFixed(2)}</span>`
+                   : `<span style="color:#f87171">$${t.pnl.toFixed(2)}</span>`)
+      : "—";
+    return `<tr>
+      <td>${t.symbol}</td>
+      <td style="color:${dir==='BUY'?'#34d399':'#f87171'}">${dir}</td>
+      <td>$${t.stake.toFixed(2)}</td>
+      <td>x${t.multiplier}</td>
+      <td>${t.strength ? t.strength.toFixed(0)+'%' : '—'}</td>
+      <td>${pnl}</td>
+      <td><span class="badge ${t.status}">${t.status}</span></td>
+      <td style="color:#475569;font-size:11px">${new Date(t.openedAt).toLocaleString()}</td>
+    </tr>`;
+  }).join("") : `<tr><td colspan="8"><div class="empty">No trades yet</div></td></tr>`;
+
+  document.getElementById("modalContent").innerHTML = `
+    <div class="info-grid">
+      <div class="info-item"><div class="info-label">Total Trades</div><div class="info-value blue">${s.total}</div></div>
+      <div class="info-item"><div class="info-label">Open</div><div class="info-value gold">${s.open}</div></div>
+      <div class="info-item"><div class="info-label">Won</div><div class="info-value green">${s.won}</div></div>
+      <div class="info-item"><div class="info-label">Lost</div><div class="info-value red">${s.lost}</div></div>
+      <div class="info-item"><div class="info-label">Win Rate</div><div class="info-value ${s.winRate>=50?'green':'red'}">${s.winRate}%</div></div>
+      <div class="info-item"><div class="info-label">Total PnL</div><div class="info-value ${s.totalPnl>=0?'green':'red'}">${s.totalPnl>=0?'+':''}$${s.totalPnl}</div></div>
+      <div class="info-item"><div class="info-label">Mode</div><div class="info-value">${data.user.derivMode.toUpperCase()}</div></div>
+      <div class="info-item"><div class="info-label">Bot Status</div><div class="info-value ${data.user.isRunning?'green':'red'}">${data.user.isRunning?'Running':'Stopped'}</div></div>
+    </div>
+
+    <div style="font-size:13px;font-weight:600;color:#64748b;text-transform:uppercase;letter-spacing:.6px;margin-bottom:12px">Trade History</div>
+    <table>
+      <thead><tr><th>Symbol</th><th>Dir</th><th>Stake</th><th>Mult</th><th>Strength</th><th>PnL</th><th>Status</th><th>Opened</th></tr></thead>
+      <tbody>${tradeRows}</tbody>
+    </table>
+  `;
+}
+
+function closeModal() {
+  document.getElementById("userModal").classList.remove("open");
+}
+
+// Close modal on backdrop click
+document.getElementById("userModal").addEventListener("click", function(e) {
+  if (e.target === this) closeModal();
+});
+
+// Auto refresh every 30s
+setInterval(loadAll, 30000);
+</script>
+</body>
+</html>
