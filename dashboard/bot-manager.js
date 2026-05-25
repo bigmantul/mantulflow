@@ -147,7 +147,7 @@ async function runUserBot(user, stopSignal) {
         rm.maxDailyLossPct      = freshUser.risk.maxDailyLossPct;
         rm.riskPct              = freshUser.risk.riskPct;
 
-        console.log(`[${label}] Session: ${sessionName()} | $${balance.toFixed(2)} | Open: ${currentOpen}/${rm.maxOpen}`);
+        console.log(`\n[${label}] 📡 Session: ${sessionName()} | Balance: $${balance.toFixed(2)} | Open: ${currentOpen}/${rm.maxOpen}`);
 
         // Daily summary
         const todayStr = new Date().toISOString().slice(0, 10);
@@ -171,6 +171,7 @@ async function runUserBot(user, stopSignal) {
         }
 
         const slotsLeft    = rm.maxOpen - currentOpen;
+        console.log(`[${label}] ✅ ${slotsLeft} slot(s) available — scanning...`);
         const cycleResults = [];
         let   placed       = 0;
 
@@ -179,10 +180,14 @@ async function runUserBot(user, stopSignal) {
           if (placed >= slotsLeft || portfolio.getOpenCount() >= rm.maxOpen) break;
 
           if (portfolio.getActiveSymbols().has(symbol)) {
-            cycleResults.push({ symbol, status: "LOCKED" }); continue;
+            cycleResults.push({ symbol, status: "LOCKED" });
+            console.log(`[${label}] ${symbol} | LOCKED (trade open) — skipping`);
+            continue;
           }
           if (!isMarketOpen(symbol)) {
-            cycleResults.push({ symbol, status: "CLOSED" }); continue;
+            cycleResults.push({ symbol, status: "CLOSED" });
+            console.log(`[${label}] ${symbol} | MARKET CLOSED — skipping`);
+            continue;
           }
 
           const tf = await getMultiTf(ws, symbol);
@@ -191,13 +196,16 @@ async function runUserBot(user, stopSignal) {
 
           if (!df5 || df5.length < 2) continue;
           if (!marketIsTradeable(df5)) {
-            cycleResults.push({ symbol, status: "FILTERED" }); continue;
+            cycleResults.push({ symbol, status: "FILTERED" });
+            console.log(`[${label}] ${symbol} | FILTERED (poor market conditions)`);
+            continue;
           }
 
           const signal = getLatestSignalMtf(df5, df15, df4h);
           if (signal === 0) {
             const trend    = get15mTrend(df15);
             const strength = getSignalStrength(df5, df15, df4h);
+            console.log(`[${label}] ${symbol} | HOLD | HTF: ${trend} | Strength: ${strength.toFixed(0)}%`);
             cycleResults.push({ symbol, status: "HOLD", trend, strength });
             continue;
           }
@@ -215,7 +223,12 @@ async function runUserBot(user, stopSignal) {
           const multiplier = 100;
 
           cycleResults.push({ symbol, status: label2, strength });
-          console.log(`[${label}] ${symbol} | ${label2} | ${strength.toFixed(0)}%`);
+          console.log(
+            `\n[${label}] ${symbol} | ${label2} | Strength: ${strength.toFixed(0)}% | ` +
+            `Stake: $${stake.toFixed(2)} | ` +
+            `Limit: SL=$${limitOrder.stop_loss} TP=$${limitOrder.take_profit}`
+          );
+          console.log(getTradeReason(df5, df15, df4h));
 
           const result = await placeTradeWithRetry(ws, symbol, direction, stake, limitOrder);
 
@@ -246,7 +259,11 @@ async function runUserBot(user, stopSignal) {
               contractId, label, botToken, chatId,
             });
 
-            console.log(`[${label}] Trade saved to DB. Open: ${rm.openTrades}/${rm.maxOpen}`);
+            console.log(
+              `[${label}] ✅ Trade recorded. Open: ${rm.openTrades}/${rm.maxOpen} | ` +
+              `Slots left: ${rm.maxOpen - rm.openTrades} | ` +
+              `Locked: ${[...portfolio.getActiveSymbols()].sort().join(", ")}`
+            );
           }
         }
 
