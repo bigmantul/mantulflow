@@ -328,33 +328,43 @@ function toggleLogs() {
 async function loadLogs() {
   const level     = document.getElementById("logLevel").value;
   const container = document.getElementById("logsContainer");
-  const url       = "/logs" + (level ? `?level=${level}` : "") + "&limit=300";
+  const url       = "/api/logs" + (level ? `?level=${level}&limit=300` : "?limit=300");
+
+  container.innerHTML = '<span style="color:#475569">Loading...</span>';
 
   try {
-    const logs = await API(url);
-    if (!logs || !logs.length) {
+    const res = await fetch(url, {
+      headers: { Authorization: `Bearer ${token}` }
+    });
+
+    const contentType = res.headers.get("content-type") || "";
+    if (!contentType.includes("application/json")) {
+      const text = await res.text();
+      container.innerHTML = `<span style="color:#f87171">Server error: ${text.slice(0, 300)}</span>`;
+      return;
+    }
+
+    if (res.status === 401) { localStorage.clear(); window.location.href = "/"; return; }
+
+    const logs = await res.json();
+
+    if (!logs || !Array.isArray(logs) || !logs.length) {
       container.innerHTML = '<span style="color:#475569">No logs yet. Start your bot to see activity here.</span>';
       return;
     }
 
-    const levelColors = {
-      trade: "#34d399",
-      error: "#f87171",
-      warn:  "#fbbf24",
-      info:  "#94a3b8",
-    };
+    const levelColors = { trade: "#34d399", error: "#f87171", warn: "#fbbf24", info: "#94a3b8" };
 
     container.innerHTML = logs.map(l => {
       const time  = new Date(l.createdAt).toLocaleTimeString();
       const date  = new Date(l.createdAt).toLocaleDateString();
       const color = levelColors[l.level] || "#94a3b8";
-      return `<div style="color:${color};margin-bottom:2px"><span style="color:#475569">[${date} ${time}]</span> ${escapeHtml(l.message)}</div>`;
+      return `<div style="color:${color};margin-bottom:2px"><span style="color:#334155">[${date} ${time}]</span> ${escapeHtml(l.message)}</div>`;
     }).join("");
 
-    // Scroll to bottom (latest)
     container.scrollTop = container.scrollHeight;
   } catch (e) {
-    container.innerHTML = `<span style="color:#f87171">Error loading logs: ${e.message}</span>`;
+    container.innerHTML = `<span style="color:#f87171">Error: ${e.message}</span>`;
   }
 }
 
