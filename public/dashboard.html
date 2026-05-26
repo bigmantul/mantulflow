@@ -47,6 +47,7 @@
   .success-msg{color:#34d399;font-size:13px;margin-top:8px;display:none}
   .refresh-btn{padding:5px 12px;background:#1e293b;color:#94a3b8;border:none;border-radius:6px;font-size:12px;cursor:pointer}
   .refresh-btn:hover{background:#334155}
+  @keyframes pulse{0%,100%{opacity:1}50%{opacity:.4}}
   table{width:100%;border-collapse:collapse;font-size:13px}
   th{text-align:left;padding:10px 12px;color:#64748b;border-bottom:1px solid #1e293b;font-weight:500}
   td{padding:10px 12px;border-bottom:1px solid #0f172a}
@@ -270,6 +271,7 @@ async function loadStats() {
 }
 
 async function loadTrades(status, btnEl) {
+  currentTradeFilter = status || "all";
   if (btnEl) {
     document.querySelectorAll(".filter-tab").forEach(b => b.classList.remove("active"));
     btnEl.classList.add("active");
@@ -318,6 +320,7 @@ function updateBotUI(active) {
 }
 
 let logsVisible = false;
+let currentTradeFilter = "all";
 
 function toggleLogs() {
   logsVisible = !logsVisible;
@@ -451,8 +454,12 @@ function logout() {
 }
 
 // Auto-refresh stats every 30s
-setInterval(loadStats, 30000);
-setInterval(() => loadTrades("all"), 30000);
+// Auto-refresh everything every 15 seconds
+setInterval(async () => {
+  await loadStats();
+  await loadTrades(currentTradeFilter);
+  if (logsVisible) await loadLogs();
+}, 15000);
 
 init();
 </script>

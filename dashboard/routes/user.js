@@ -98,11 +98,27 @@ router.put("/settings", protect, async (req, res) => {
 // Deriv and closes any that are no longer active
 router.post("/sync-trades", protect, async (req, res) => {
   try {
-    const userId     = req.user._id;
-    const openTrades = await Trade.find({ userId, status: "open" });
+    const userId = req.user._id;
+
+    // Find ALL trades that could be open — status "open" or pnl=0 with no closedAt
+    const openTrades = await Trade.find({
+      userId,
+      $or: [
+        { status: "open" },
+        { status: "closed", closedAt: null },
+      ]
+    });
 
     if (!openTrades.length) {
-      return res.json({ message: "No open trades to sync", synced: 0 });
+      // Double check — count all trades for this user
+      const allTrades = await Trade.countDocuments({ userId });
+      return res.json({
+        message: allTrades > 0
+          ? `No open trades found (${allTrades} total trades in DB — all already synced)`
+          : "No trades in database yet",
+        synced: 0,
+        totalInDB: allTrades,
+      });
     }
 
     // Get the user's bot instance WebSocket
