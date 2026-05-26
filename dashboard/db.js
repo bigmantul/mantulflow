@@ -73,7 +73,9 @@ const botLogSchema = new mongoose.Schema({
   userId:    { type: mongoose.Schema.Types.ObjectId, ref: "User", required: true },
   message:   { type: String, required: true },
   level:     { type: String, default: "info" }, // info | trade | error | warn
-  createdAt: { type: Date, default: Date.now, expires: 259200 }, // auto-delete after 72 hours
+  createdAt: { type: Date, default: Date.now },
 });
+
+botLogSchema.index({ createdAt: 1 }, { expireAfterSeconds: 259200 });
 
 export const BotLog = mongoose.model("BotLog", botLogSchema);
