@@ -45,6 +45,8 @@
   .sync-btn:hover{background:#334155;color:#e2e8f0}
   .save-btn:hover{background:#1d4ed8}
   .success-msg{color:#34d399;font-size:13px;margin-top:8px;display:none}
+  .refresh-btn{padding:5px 12px;background:#1e293b;color:#94a3b8;border:none;border-radius:6px;font-size:12px;cursor:pointer}
+  .refresh-btn:hover{background:#334155}
   table{width:100%;border-collapse:collapse;font-size:13px}
   th{text-align:left;padding:10px 12px;color:#64748b;border-bottom:1px solid #1e293b;font-weight:500}
   td{padding:10px 12px;border-bottom:1px solid #0f172a}
@@ -113,6 +115,7 @@
           <button class="toggle-btn start" id="toggleBtn" onclick="toggleBot()">Start</button>
         </div>
         <button class="sync-btn" id="syncBtn" onclick="syncTrades()">🔄 Sync Trades with Deriv</button>
+        <button class="sync-btn" style="margin-top:6px;color:#38bdf8" onclick="toggleLogs()">📋 View Bot Logs (72hrs)</button>
         <div class="success-msg" id="syncMsg"></div>
       </div>
 
@@ -181,6 +184,26 @@
       <div class="success-msg" id="settingsSuccess">✅ Settings updated!</div>
     </div>
 
+  </div>
+
+  <!-- BOT LOGS -->
+  <div class="card" id="logsCard" style="display:none">
+    <div class="card-title" style="display:flex;justify-content:space-between;align-items:center">
+      Bot Logs (last 72 hours)
+      <div style="display:flex;gap:8px">
+        <select id="logLevel" onchange="loadLogs()" style="padding:5px 10px;background:#0f172a;border:1px solid #1e293b;border-radius:6px;color:#e2e8f0;font-size:12px">
+          <option value="">All</option>
+          <option value="trade">Trades only</option>
+          <option value="error">Errors only</option>
+          <option value="warn">Warnings only</option>
+        </select>
+        <button class="refresh-btn" onclick="loadLogs()">↻ Refresh</button>
+        <button class="refresh-btn" onclick="toggleLogs()">✕ Close</button>
+      </div>
+    </div>
+    <div id="logsContainer" style="background:#0a0e1a;border-radius:8px;padding:16px;font-family:monospace;font-size:12px;max-height:400px;overflow-y:auto;line-height:1.8">
+      <div style="color:#475569">Loading logs...</div>
+    </div>
   </div>
 
   <!-- TRADE HISTORY -->
@@ -292,6 +315,54 @@ function updateBotUI(active) {
   sub.textContent = active ? "Bot is scanning markets every 15s" : "Click Start to begin trading";
   btn.className  = "toggle-btn " + (active ? "stop" : "start");
   btn.textContent = active ? "Stop" : "Start";
+}
+
+let logsVisible = false;
+
+function toggleLogs() {
+  logsVisible = !logsVisible;
+  document.getElementById("logsCard").style.display = logsVisible ? "block" : "none";
+  if (logsVisible) loadLogs();
+}
+
+async function loadLogs() {
+  const level     = document.getElementById("logLevel").value;
+  const container = document.getElementById("logsContainer");
+  const url       = "/logs" + (level ? `?level=${level}` : "") + "&limit=300";
+
+  try {
+    const logs = await API(url);
+    if (!logs || !logs.length) {
+      container.innerHTML = '<span style="color:#475569">No logs yet. Start your bot to see activity here.</span>';
+      return;
+    }
+
+    const levelColors = {
+      trade: "#34d399",
+      error: "#f87171",
+      warn:  "#fbbf24",
+      info:  "#94a3b8",
+    };
+
+    container.innerHTML = logs.map(l => {
+      const time  = new Date(l.createdAt).toLocaleTimeString();
+      const date  = new Date(l.createdAt).toLocaleDateString();
+      const color = levelColors[l.level] || "#94a3b8";
+      return `<div style="color:${color};margin-bottom:2px"><span style="color:#475569">[${date} ${time}]</span> ${escapeHtml(l.message)}</div>`;
+    }).join("");
+
+    // Scroll to bottom (latest)
+    container.scrollTop = container.scrollHeight;
+  } catch (e) {
+    container.innerHTML = `<span style="color:#f87171">Error loading logs: ${e.message}</span>`;
+  }
+}
+
+function escapeHtml(text) {
+  return text
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;");
 }
 
 async function syncTrades() {

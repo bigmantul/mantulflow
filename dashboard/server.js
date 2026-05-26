@@ -14,6 +14,7 @@ import authRoutes           from "./routes/auth.js";
 import userRoutes           from "./routes/user.js";
 import tradeRoutes          from "./routes/trades.js";
 import adminRoutes          from "./routes/admin.js";
+import logRoutes            from "./routes/logs.js";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const app       = express();
@@ -27,6 +28,7 @@ app.use("/api/auth",   authRoutes);
 app.use("/api/user",   userRoutes);
 app.use("/api/trades", tradeRoutes);
 app.use("/api/admin",  adminRoutes);
+app.use("/api/logs",   logRoutes);
 
 // ── HEALTH CHECK ──────────────────────────────────────
 app.get("/health", (req, res) => res.send("OK"));

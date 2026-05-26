@@ -1,5 +1,11 @@
 // ═══════════════════════════════════════════════════════
 //  dashboard/bot-manager.js
+//  Fixes:
+//  1. Symbol locking — locks symbol in DB so duplicate
+//     trades are prevented even after reconnect
+//  2. Trade sync — correctly detects open vs closed
+//  3. PnL update — fetches real PnL when trade closes
+//  4. Bot logging — saves logs to MongoDB (72hr TTL)
 // ═══════════════════════════════════════════════════════
 
 import { connectForMode }                from "../src/auth/deriv-auth.js";
@@ -12,7 +18,7 @@ import {
 } from "../src/strategy/signals.js";
 import { placeTradeWithRetry }             from "../src/trading/trader.js";
 import { RiskManager, StopLossTakeProfit } from "../src/risk/risk-manager.js";
-import { Trade, User }                     from "./db.js";
+import { Trade, User, BotLog }             from "./db.js";
 import {
   notifyStartup, notifyTradeOpened, notifyRiskBlock,
   notifyReconnecting, notifyMaxTrades, notifyDailySummary,
@@ -35,11 +41,22 @@ async function getBalance(ws) {
   return parseFloat(resp.balance.balance);
 }
 
-// ── TRADE STATUS SYNC ─────────────────────────────────
-// Called every cycle — checks if any open DB trades were
-// closed manually on Deriv (SL hit, TP hit, manual close)
-// and updates MongoDB accordingly so dashboard stays accurate
-async function syncTradeStatuses(ws, userId) {
+// ── BOT LOGGER ────────────────────────────────────────
+// Saves log messages to MongoDB with 72hr TTL
+// Also prints to console
+async function log(userId, message, level = "info") {
+  console.log(message);
+  try {
+    await BotLog.create({ userId, message, level });
+  } catch (e) {
+    // Don't crash the bot if logging fails
+  }
+}
+
+// ── SYNC TRADE STATUSES ───────────────────────────────
+// Checks all "open" trades in DB against live Deriv portfolio
+// Updates status + PnL for any that have closed
+async function syncTradeStatuses(ws, userId, label) {
   try {
     const openTrades = await Trade.find({ userId, status: "open" });
     if (!openTrades.length) return;
@@ -48,62 +65,87 @@ async function syncTradeStatuses(ws, userId) {
     const resp      = await sendMessage(ws, { portfolio: 1 }, "portfolio");
     const contracts = resp?.portfolio?.contracts ?? [];
 
-    // Build set of still-active contract IDs on Deriv
-    const activeIds = new Set();
+    // Map of contractId → contract details for active contracts
+    const activeContracts = new Map();
     for (const c of contracts) {
       const status = String(c.status ?? "").toLowerCase();
       if (!["sold", "closed", "expired"].includes(status)) {
-        activeIds.add(String(c.contract_id));
+        activeContracts.set(String(c.contract_id), c);
       }
     }
 
-    // For each open DB trade — check if Deriv still has it open
     for (const trade of openTrades) {
-      if (activeIds.has(String(trade.contractId))) continue;
+      const contractIdStr = String(trade.contractId);
 
-      // Trade no longer active on Deriv — get final PnL
+      if (activeContracts.has(contractIdStr)) {
+        // Still open on Deriv — update PnL in real time
+        const liveContract = activeContracts.get(contractIdStr);
+        const livePnl      = parseFloat(liveContract.profit ?? liveContract.bid_price ?? 0);
+        await Trade.findByIdAndUpdate(trade._id, { pnl: livePnl });
+        continue;
+      }
+
+      // Not in active portfolio — trade has closed
+      // Try to get final details
+      let finalPnl    = 0;
+      let finalStatus = "closed";
+
       try {
-        const detail   = await sendMessage(ws, {
+        const detail = await sendMessage(ws, {
           proposal_open_contract: 1,
           contract_id: parseInt(trade.contractId),
         }, "proposal_open_contract");
 
         const contract = detail?.proposal_open_contract;
-        const pnl      = contract ? parseFloat(contract.profit ?? 0) : 0;
-        const status   = pnl > 0 ? "won" : "lost";
-
-        await Trade.findByIdAndUpdate(trade._id, {
-          status, pnl, closedAt: new Date(),
-        });
-
-        console.log(`[sync] Trade ${trade.contractId} → ${status} | PnL: $${pnl.toFixed(2)}`);
+        if (contract) {
+          finalPnl    = parseFloat(contract.profit ?? 0);
+          finalStatus = finalPnl > 0 ? "won" : "lost";
+        }
       } catch {
-        // Can't get details — just mark closed
-        await Trade.findByIdAndUpdate(trade._id, {
-          status: "closed", closedAt: new Date(),
-        });
-        console.log(`[sync] Trade ${trade.contractId} → closed`);
+        // Contract too old to fetch — mark as closed
+        finalStatus = "closed";
       }
+
+      await Trade.findByIdAndUpdate(trade._id, {
+        status:   finalStatus,
+        pnl:      finalPnl,
+        closedAt: new Date(),
+      });
+
+      await log(userId,
+        `[${label}] [sync] Trade ${trade.contractId} → ${finalStatus} | PnL: $${finalPnl.toFixed(2)}`,
+        "trade"
+      );
     }
   } catch (e) {
-    console.error("[sync] Error:", e.message);
+    await log(userId, `[${label}] [sync] Error: ${e.message}`, "error");
   }
 }
 
+
 // ── PORTFOLIO TRACKER ─────────────────────────────────
-function createPortfolio() {
+// Now uses DB as source of truth for locked symbols
+// so locks persist across reconnects
+function createPortfolio(userId) {
   let activeSymbols = new Set();
   let openCount     = 0;
+
   return {
     getActiveSymbols: () => activeSymbols,
     getOpenCount:     () => openCount,
-    lockSymbol(sym) { activeSymbols.add(sym); openCount = activeSymbols.size; },
+
+    lockSymbol(sym) {
+      activeSymbols.add(sym);
+      openCount = activeSymbols.size;
+    },
+
     async sync(ws) {
       try {
         const resp      = await sendMessage(ws, { portfolio: 1 }, "portfolio");
         const contracts = resp?.portfolio?.contracts ?? [];
         const activeNow = new Set();
         let total = 0;
+
         for (const c of contracts) {
           const status = String(c.status ?? "").toLowerCase();
           if (["sold","closed","expired"].includes(status)) continue;
@@ -115,6 +157,14 @@ function createPortfolio() {
             }
           }
         }
+
+        // Also check DB for open trades — this prevents
+        // duplicate trades even after reconnection
+        const dbOpenTrades = await Trade.find({ userId, status: "open" });
+        for (const t of dbOpenTrades) {
+          activeNow.add(t.symbol);
+        }
+
         activeSymbols = activeNow;
         openCount     = total;
         return total;
@@ -126,6 +176,7 @@ function createPortfolio() {
   };
 }
 
+
 // ── RUN ONE USER'S BOT ────────────────────────────────
 async function runUserBot(user, stopSignal) {
   const userId   = user._id.toString();
@@ -133,7 +184,7 @@ async function runUserBot(user, stopSignal) {
   const botToken = TELEGRAM_BOT_TOKEN;
   const chatId   = user.telegramChatId;
 
-  console.log(`[${label}] Bot starting...`);
+  await log(userId, `[${label}] Bot starting...`, "info");
 
   const rm = new RiskManager({
     riskPct:              user.risk.riskPct,
@@ -142,7 +193,7 @@ async function runUserBot(user, stopSignal) {
     maxConsecutiveLosses: user.risk.maxConsecutiveLosses,
   });
 
-  const portfolio     = createPortfolio();
+  const portfolio     = createPortfolio(user._id);
   let lastSummaryDate = "";
 
   while (!stopSignal.stopped) {
@@ -160,19 +211,20 @@ async function runUserBot(user, stopSignal) {
       lastApiCall = Date.now();
       if (rm.startingBalance === null) rm.setStartingBalance(balance);
 
-      console.log(`[${label}] Connected | Balance: $${balance.toFixed(2)}`);
+      await log(userId, `[${label}] ✅ Connected | Balance: $${balance.toFixed(2)} | Open: ${openCount}/${rm.maxOpen}`, "info");
       await notifyStartup(balance, user.derivMode, label, botToken, chatId);
 
       while (!stopSignal.stopped) {
         await sleep(POLL_SECS);
 
         if ((Date.now() - lastApiCall) / 1000 > MAX_IDLE_SECS) {
+          await log(userId, `[${label}] ⏱️ Idle — reconnecting...`, "warn");
           ws.close(); break;
         }
 
         const freshUser = await User.findById(userId);
         if (!freshUser || !freshUser.botActive) {
-          console.log(`[${label}] Bot stopped from dashboard`);
+          await log(userId, `[${label}] Bot stopped from dashboard`, "info");
           ws.close();
           stopSignal.stopped = true;
           break;
@@ -181,21 +233,21 @@ async function runUserBot(user, stopSignal) {
         balance     = await getBalance(ws);
         lastApiCall = Date.now();
 
-        // ── SYNC TRADE STATUSES ──────────────────────
-        // Updates any manually closed trades in MongoDB
-        await syncTradeStatuses(ws, user._id);
+        // Sync trade statuses — updates closed trades + live PnL
+        await syncTradeStatuses(ws, user._id, label);
 
         const currentOpen = await portfolio.sync(ws);
         lastApiCall       = Date.now();
         rm.openTrades     = currentOpen;
 
-        // Live risk setting updates
+        // Apply latest risk settings from DB
         rm.maxOpen              = freshUser.risk.maxOpenTrades;
         rm.maxConsecutiveLosses = freshUser.risk.maxConsecutiveLosses;
         rm.maxDailyLossPct      = freshUser.risk.maxDailyLossPct;
         rm.riskPct              = freshUser.risk.riskPct;
 
-        console.log(`\n[${label}] 📡 Session: ${sessionName()} | Balance: $${balance.toFixed(2)} | Open: ${currentOpen}/${rm.maxOpen}`);
+        const cycleHeader = `[${label}] 📡 Session: ${sessionName()} | Balance: $${balance.toFixed(2)} | Open: ${currentOpen}/${rm.maxOpen}`;
+        await log(userId, cycleHeader, "info");
 
         // Daily summary
         const todayStr = new Date().toISOString().slice(0, 10);
@@ -205,7 +257,7 @@ async function runUserBot(user, stopSignal) {
         }
 
         if (currentOpen >= rm.maxOpen) {
-          console.log(`[${label}] 🔒 Max open trades (${currentOpen}/${rm.maxOpen}) — waiting`);
+          await log(userId, `[${label}] 🔒 Max open trades (${currentOpen}/${rm.maxOpen}) — waiting`, "warn");
           await notifyMaxTrades(currentOpen, rm.maxOpen, label, botToken, chatId);
           continue;
         }
@@ -215,13 +267,14 @@ async function runUserBot(user, stopSignal) {
           const reason = s.consecutiveLosses >= rm.maxConsecutiveLosses
             ? `${s.consecutiveLosses} consecutive losses`
             : `Daily loss limit ($${Math.abs(s.dailyPnl).toFixed(2)})`;
-          console.log(`[${label}] 🚫 Risk block`);
+          await log(userId, `[${label}] 🚫 Risk block: ${reason}`, "warn");
           await notifyRiskBlock(reason, label, botToken, chatId);
           continue;
         }
 
         const slotsLeft    = rm.maxOpen - currentOpen;
-        console.log(`[${label}] ✅ ${slotsLeft} slot(s) available — scanning...`);
+        await log(userId, `[${label}] ✅ ${slotsLeft} slot(s) available — scanning...`, "info");
+
         const cycleResults = [];
         let   placed       = 0;
 
@@ -229,14 +282,31 @@ async function runUserBot(user, stopSignal) {
           if (stopSignal.stopped) break;
           if (placed >= slotsLeft || portfolio.getOpenCount() >= rm.maxOpen) break;
 
-          if (portfolio.getActiveSymbols().has(symbol)) {
+          const activeSymbols = portfolio.getActiveSymbols();
+
+          // Lock check — uses DB-backed symbol set
+          if (activeSymbols.has(symbol)) {
+            await log(userId, `[${label}] ${symbol} | LOCKED (trade open) — skipping`, "info");
             cycleResults.push({ symbol, status: "LOCKED" });
-            console.log(`[${label}] ${symbol} | LOCKED (trade open) — skipping`);
             continue;
           }
+
           if (!isMarketOpen(symbol)) {
+            await log(userId, `[${label}] ${symbol} | MARKET CLOSED — skipping`, "info");
             cycleResults.push({ symbol, status: "CLOSED" });
-            console.log(`[${label}] ${symbol} | MARKET CLOSED — skipping`);
+            continue;
+          }
+
+          // Extra DB check — prevent duplicate even if in-memory missed it
+          const existingOpenTrade = await Trade.findOne({
+            userId: user._id,
+            symbol,
+            status: "open",
+          });
+          if (existingOpenTrade) {
+            await log(userId, `[${label}] ${symbol} | LOCKED (DB check) — skipping`, "info");
+            portfolio.lockSymbol(symbol);
+            cycleResults.push({ symbol, status: "LOCKED" });
             continue;
           }
 
@@ -247,8 +317,8 @@ async function runUserBot(user, stopSignal) {
           if (!df5 || df5.length < 2) continue;
 
           if (!marketIsTradeable(df5)) {
+            await log(userId, `[${label}] ${symbol} | FILTERED (poor market conditions)`, "info");
             cycleResults.push({ symbol, status: "FILTERED" });
-            console.log(`[${label}] ${symbol} | FILTERED (poor market conditions)`);
             continue;
           }
 
@@ -256,7 +326,7 @@ async function runUserBot(user, stopSignal) {
           if (signal === 0) {
             const trend    = get15mTrend(df15);
             const strength = getSignalStrength(df5, df15, df4h);
-            console.log(`[${label}] ${symbol} | HOLD | HTF: ${trend} | Strength: ${strength.toFixed(0)}%`);
+            await log(userId, `[${label}] ${symbol} | HOLD | HTF: ${trend} | Strength: ${strength.toFixed(0)}%`, "info");
             cycleResults.push({ symbol, status: "HOLD", trend, strength });
             continue;
           }
@@ -274,47 +344,59 @@ async function runUserBot(user, stopSignal) {
           const multiplier = 100;
 
           cycleResults.push({ symbol, status: label2, strength });
-          console.log(
-            `\n[${label}] ${symbol} | ${label2} | Strength: ${strength.toFixed(0)}% | ` +
-            `Stake: $${stake.toFixed(2)} | Limit: SL=$${limitOrder.stop_loss} TP=$${limitOrder.take_profit}`
-          );
-          console.log(getTradeReason(df5, df15, df4h));
+
+          const tradeMsg = `[${label}] ${symbol} | ${label2} | Strength: ${strength.toFixed(0)}% | Stake: $${stake.toFixed(2)} | SL=$${limitOrder.stop_loss} TP=$${limitOrder.take_profit}`;
+          await log(userId, tradeMsg, "trade");
+          await log(userId, getTradeReason(df5, df15, df4h), "trade");
 
           const result = await placeTradeWithRetry(ws, symbol, direction, stake, limitOrder);
 
           if (result) {
             lastApiCall = Date.now();
+
+            // Lock symbol immediately in memory AND via DB trade record
             portfolio.lockSymbol(symbol);
             rm.tradeOpened();
             placed++;
 
             const contractId = typeof result === "object" ? result.contractId : String(result);
-            await Trade.create({
-              userId:     user._id,
-              symbol,
-              direction,
-              stake,
-              multiplier,
-              contractId,
-              buyPrice:   typeof result === "object" ? result.buyPrice : 0,
-              stopLoss:   limitOrder.stop_loss,
-              takeProfit: limitOrder.take_profit,
-              strength,
-              status:     "open",
-            });
+            const buyPrice   = typeof result === "object" ? result.buyPrice : 0;
+
+            // Save to DB — contractId is unique so no duplicates possible
+            try {
+              await Trade.create({
+                userId:     user._id,
+                symbol,
+                direction,
+                stake,
+                multiplier,
+                contractId,
+                buyPrice,
+                stopLoss:   limitOrder.stop_loss,
+                takeProfit: limitOrder.take_profit,
+                strength,
+                status:     "open",
+                pnl:        0,
+              });
+            } catch (dbErr) {
+              // If duplicate contractId — trade already saved, skip
+              if (!dbErr.message.includes("duplicate key")) {
+                await log(userId, `[${label}] DB save error: ${dbErr.message}`, "error");
+              }
+            }
 
             await notifyTradeOpened({
               symbol, direction, stake, multiplier, limitOrder, strength,
               contractId, label, botToken, chatId,
             });
 
-            console.log(
-              `[${label}] ✅ Trade recorded. Open: ${rm.openTrades}/${rm.maxOpen} | ` +
-              `Slots left: ${rm.maxOpen - rm.openTrades} | ` +
-              `Locked: ${[...portfolio.getActiveSymbols()].sort().join(", ")}`
+            await log(userId,
+              `[${label}] ✅ Trade recorded | ${symbol} | ${label2} | $${stake} | ID: ${contractId}`,
+              "trade"
             );
           }
-        }
+
+        } // end symbol loop
 
         if (cycleResults.length > 0) {
           await notifyCycleScan({ balance, openTrades: currentOpen, maxTrades: rm.maxOpen, session: sessionName(), results: cycleResults, label, botToken, chatId });
@@ -324,13 +406,13 @@ async function runUserBot(user, stopSignal) {
 
     } catch (e) {
       if (stopSignal.stopped) break;
-      console.error(`[${label}] Error:`, e.message);
+      await log(userId, `[${label}] ❌ Error: ${e.message}`, "error");
       await notifyReconnecting(e.message, label, botToken, chatId);
       await sleep(10);
     }
   } // outer loop
 
-  console.log(`[${label}] Bot fully stopped.`);
+  await log(userId, `[${label}] Bot fully stopped.`, "info");
   runningBots.delete(userId);
 }
 
@@ -353,7 +435,6 @@ export const botManager = {
     if (signal) {
       signal.stopped = true;
       runningBots.delete(userId);
-      console.log(`[${userId}] Bot stop signal sent`);
     }
   },
 
@@ -369,7 +450,6 @@ export const botManager = {
 };
 
 
-// ── AUTO-START BOTS ON SERVER BOOT ────────────────────
 export async function resumeActiveBots() {
   const activeUsers = await User.find({ botActive: true });
   console.log(`Resuming ${activeUsers.length} active bot(s)...`);
