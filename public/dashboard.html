@@ -117,7 +117,9 @@
         </div>
         <button class="sync-btn" id="syncBtn" onclick="syncTrades()">🔄 Sync Trades with Deriv</button>
         <button class="sync-btn" style="margin-top:6px;color:#38bdf8" onclick="toggleLogs()">📋 View Bot Logs (72hrs)</button>
+        <button class="sync-btn" id="importBtn" style="margin-top:6px;color:#fbbf24" onclick="importTrades()">📥 Import All Trades from Deriv</button>
         <div class="success-msg" id="syncMsg"></div>
+        <div class="success-msg" id="importMsg"></div>
       </div>
 
       <div class="card">
@@ -376,6 +378,86 @@ function escapeHtml(text) {
     .replace(/&/g, "&amp;")
     .replace(/</g, "&lt;")
     .replace(/>/g, "&gt;");
+}
+
+async function importTrades() {
+  const btn = document.getElementById("importBtn");
+  const msg = document.getElementById("importMsg");
+  btn.disabled    = true;
+  btn.textContent = "⏳ Importing from Deriv...";
+  msg.style.display = "none";
+
+  try {
+    const res  = await fetch("/api/import/trades", {
+      method: "POST",
+      headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
+    });
+    const data = await res.json();
+
+    if (data.error) {
+      msg.style.color   = "#f87171";
+      msg.textContent   = "❌ " + data.error;
+    } else {
+      msg.style.color   = "#34d399";
+      msg.textContent   = `✅ Imported ${data.imported} trade(s) | Updated ${data.updated} | Skipped ${data.skipped}`;
+      await loadStats();
+      await loadTrades("all");
+    }
+    msg.style.display = "block";
+    setTimeout(() => msg.style.display = "none", 6000);
+  } catch (e) {
+    msg.style.color   = "#f87171";
+    msg.textContent   = "❌ " + e.message;
+    msg.style.display = "block";
+  }
+
+  btn.disabled    = false;
+  btn.textContent = "📥 Import All Trades from Deriv";
+}
+
+async function importTrades() {
+  const btn = document.getElementById("importBtn");
+  const msg = document.getElementById("importMsg");
+  btn.disabled    = true;
+  btn.textContent = "⏳ Importing from Deriv...";
+  msg.style.display = "none";
+
+  try {
+    const res  = await fetch("/api/user/import-trades", {
+      method:  "POST",
+      headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
+    });
+
+    const contentType = res.headers.get("content-type") || "";
+    if (!contentType.includes("application/json")) {
+      const text = await res.text();
+      msg.style.color   = "#f87171";
+      msg.textContent   = "❌ Server error: " + text.slice(0, 200);
+      msg.style.display = "block";
+      return;
+    }
+
+    const data = await res.json();
+
+    if (data.error) {
+      msg.style.color   = "#f87171";
+      msg.textContent   = "❌ " + data.error;
+    } else {
+      msg.style.color   = "#34d399";
+      msg.textContent   = "✅ " + data.message;
+      await loadStats();
+      await loadTrades("all");
+    }
+    msg.style.display = "block";
+    setTimeout(() => msg.style.display = "none", 6000);
+  } catch (e) {
+    msg.style.color   = "#f87171";
+    msg.textContent   = "❌ " + e.message;
+    msg.style.display = "block";
+  }
+
+  btn.disabled    = false;
+  btn.textContent = "📥 Import All Trades from Deriv";
 }
 
 async function syncTrades() {

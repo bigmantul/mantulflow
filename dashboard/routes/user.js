@@ -184,4 +184,170 @@ router.post("/sync-trades", protect, async (req, res) => {
   }
 });
 
+// ── IMPORT ALL TRADES FROM DERIV ─────────────────────
+// Pulls ALL open contracts from Deriv portfolio and saves
+// them to MongoDB — works for trades opened before dashboard
+// was deployed or opened manually on the Deriv app
+router.post("/import-trades", protect, async (req, res) => {
+  try {
+    const userId = req.user._id;
+    const user   = await User.findById(userId);
+
+    const { connectForMode }                 = await import("../src/auth/deriv-auth.js");
+    const { connectWebSocket, sendMessage }  = await import("../src/utils/ws-client.js");
+
+    // Connect to Deriv
+    const wsUrl = await connectForMode(user.derivMode, user.derivPAT, user.derivAppId);
+    const ws    = await connectWebSocket(wsUrl);
+
+    // Get full portfolio from Deriv
+    const resp      = await sendMessage(ws, { portfolio: 1 }, "portfolio");
+    const contracts = resp?.portfolio?.contracts ?? [];
+
+    let imported  = 0;
+    let skipped   = 0;
+    let updated   = 0;
+    const results = [];
+
+    for (const c of contracts) {
+      const status = String(c.status ?? "").toLowerCase();
+
+      // Skip already closed contracts
+      if (["sold", "closed", "expired"].includes(status)) continue;
+
+      const contractId = String(c.contract_id);
+
+      // Detect symbol from shortcode/underlying
+      let symbol = c.underlying || c.symbol || "";
+      if (!symbol && c.shortcode) {
+        // Parse from shortcode e.g. "MULTUP_R_100_1.82_..."
+        const symbols = ["R_75","R_100","frxXAUUSD","frxXAGUSD","cryBTCUSD","cryETHUSD"];
+        for (const s of symbols) {
+          if (c.shortcode.includes(s)) { symbol = s; break; }
+        }
+      }
+
+      // Detect direction
+      let direction = "MULTUP";
+      if (c.shortcode && c.shortcode.includes("MULTDOWN")) direction = "MULTDOWN";
+      else if (c.contract_type) direction = c.contract_type;
+
+      const stake      = parseFloat(c.buy_price ?? c.ask_price ?? 0);
+      const buyPrice   = parseFloat(c.buy_price ?? 0);
+      const multiplier = parseInt(c.multiplier ?? 100);
+      const pnl        = parseFloat(c.profit ?? 0);
+
+      // Check if already in DB
+      const existing = await Trade.findOne({ userId, contractId });
+
+      if (existing) {
+        // Update PnL if already imported
+        await Trade.findByIdAndUpdate(existing._id, { pnl, status: "open" });
+        updated++;
+        results.push({ contractId, symbol, action: "updated", pnl });
+        continue;
+      }
+
+      // Save new trade to DB
+      try {
+        await Trade.create({
+          userId,
+          symbol:     symbol || "unknown",
+          direction,
+          stake:      stake || 1,
+          multiplier: multiplier || 100,
+          contractId,
+          buyPrice,
+          stopLoss:   null,
+          takeProfit: null,
+          strength:   null,
+          status:     "open",
+          pnl,
+          openedAt:   c.date_start ? new Date(c.date_start * 1000) : new Date(),
+        });
+        imported++;
+        results.push({ contractId, symbol, direction, stake, action: "imported" });
+      } catch (dbErr) {
+        if (dbErr.message.includes("duplicate key")) {
+          skipped++;
+        } else {
+          results.push({ contractId, action: "error", error: dbErr.message });
+        }
+      }
+    }
+
+    // Also get closed contract history (last 100)
+    try {
+      const histResp = await sendMessage(ws, {
+        profit_table: 1,
+        description:  1,
+        limit:        100,
+        offset:       0,
+        sort:         "DESC",
+      }, "profit_table");
+
+      const history = histResp?.profit_table?.transactions ?? [];
+
+      for (const c of history) {
+        const contractId = String(c.contract_id);
+        const existing   = await Trade.findOne({ userId, contractId });
+        if (existing) continue;
+
+        let symbol = c.underlying_symbol || c.symbol || "";
+        if (!symbol && c.shortcode) {
+          const symbols = ["R_75","R_100","frxXAUUSD","frxXAGUSD","cryBTCUSD","cryETHUSD"];
+          for (const s of symbols) {
+            if (c.shortcode.includes(s)) { symbol = s; break; }
+          }
+        }
+
+        let direction = "MULTUP";
+        if (c.shortcode && c.shortcode.includes("MULTDOWN")) direction = "MULTDOWN";
+        else if (c.transaction_type) direction = c.transaction_type;
+
+        const pnl        = parseFloat(c.profit_loss ?? c.sell_price - c.buy_price ?? 0);
+        const finalStatus = pnl > 0 ? "won" : "lost";
+
+        try {
+          await Trade.create({
+            userId,
+            symbol:     symbol || "unknown",
+            direction,
+            stake:      parseFloat(c.buy_price ?? 1),
+            multiplier: parseInt(c.multiplier ?? 100),
+            contractId,
+            buyPrice:   parseFloat(c.buy_price ?? 0),
+            stopLoss:   null,
+            takeProfit: null,
+            strength:   null,
+            status:     finalStatus,
+            pnl,
+            openedAt:   c.purchase_time ? new Date(c.purchase_time * 1000) : new Date(),
+            closedAt:   c.sell_time     ? new Date(c.sell_time * 1000)     : new Date(),
+          });
+          imported++;
+          results.push({ contractId, symbol, action: `imported (${finalStatus})` });
+        } catch {
+          skipped++;
+        }
+      }
+    } catch (histErr) {
+      // History fetch failed — not critical, continue
+      console.log("History fetch failed:", histErr.message);
+    }
+
+    ws.close();
+
+    res.json({
+      message:  `Import complete — ${imported} imported, ${updated} updated, ${skipped} skipped`,
+      imported,
+      updated,
+      skipped,
+      results,
+    });
+  } catch (e) {
+    res.status(500).json({ error: e.message });
+  }
+});
+
 export default router;
