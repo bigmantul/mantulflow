@@ -147,8 +147,8 @@ router.post("/users/:id/sync-trades", adminAuth, async (req, res) => {
       return res.json({ message: "No open trades to sync", synced: 0 });
     }
 
-    const { connectForMode }             = await import("../src/auth/deriv-auth.js");
-    const { connectWebSocket, sendMessage } = await import("../src/utils/ws-client.js");
+    const { connectForMode }             = await import("../../src/auth/deriv-auth.js");
+    const { connectWebSocket, sendMessage } = await import("../../src/utils/ws-client.js");
 
     const wsUrl = await connectForMode(user.derivMode, user.derivPAT, user.derivAppId);
     const ws    = await connectWebSocket(wsUrl);
@@ -184,6 +184,84 @@ router.post("/users/:id/sync-trades", adminAuth, async (req, res) => {
 
     ws.close();
     res.json({ message: `Synced ${synced} trade(s) for ${user.name}`, synced });
+  } catch (e) {
+    res.status(500).json({ error: e.message });
+  }
+});
+
+// ── IMPORT TRADES FOR A USER (admin) ─────────────────
+router.post("/users/:id/import-trades", adminAuth, async (req, res) => {
+  try {
+    const user = await User.findById(req.params.id);
+    if (!user) return res.status(404).json({ error: "User not found" });
+
+    const { connectForMode }             = await import("../../src/auth/deriv-auth.js");
+    const { connectWebSocket, sendMessage } = await import("../../src/utils/ws-client.js");
+
+    const wsUrl = await connectForMode(user.derivMode, user.derivPAT, user.derivAppId);
+    const ws    = await connectWebSocket(wsUrl);
+
+    let imported = 0, updated = 0, skipped = 0;
+    const SYMBOLS = ["R_75","R_100","frxXAUUSD","frxXAGUSD","cryBTCUSD","cryETHUSD"];
+
+    // Open trades
+    const portfolioResp = await sendMessage(ws, { portfolio: 1 }, "portfolio");
+    const openContracts = portfolioResp?.portfolio?.contracts ?? [];
+
+    for (const c of openContracts) {
+      const status = String(c.status ?? "").toLowerCase();
+      if (["sold","closed","expired"].includes(status)) continue;
+      const contractId = String(c.contract_id);
+      const existing   = await Trade.findOne({ contractId });
+      if (existing) { await Trade.findOneAndUpdate({ contractId }, { pnl: parseFloat(c.profit ?? 0) }); updated++; continue; }
+      let symbol = null;
+      const shortcode = String(c.shortcode ?? "");
+      for (const sym of SYMBOLS) { if (shortcode.includes(sym)) { symbol = sym; break; } }
+      try {
+        await Trade.create({
+          userId: user._id, symbol: symbol || "Unknown",
+          direction: shortcode.includes("MULTUP") ? "MULTUP" : "MULTDOWN",
+          stake: parseFloat(c.buy_price ?? 0), multiplier: parseInt(c.multiplier ?? 100),
+          contractId, buyPrice: parseFloat(c.buy_price ?? 0),
+          stopLoss: parseFloat(c.limit_order?.stop_loss?.order_amount ?? 0),
+          takeProfit: parseFloat(c.limit_order?.take_profit?.order_amount ?? 0),
+          status: "open", pnl: parseFloat(c.profit ?? 0),
+          openedAt: new Date((c.date_start ?? Date.now() / 1000) * 1000),
+        });
+        imported++;
+      } catch (e) { if (e.message.includes("duplicate key")) skipped++; }
+    }
+
+    // Closed trades from statement
+    try {
+      const stmtResp = await sendMessage(ws, { statement: 1, description: 1, limit: 100, action_type: "sell" }, "statement");
+      const txs = stmtResp?.statement?.transactions ?? [];
+      for (const tx of txs) {
+        const contractId = String(tx.contract_id ?? tx.transaction_id ?? "");
+        if (!contractId) continue;
+        const existing = await Trade.findOne({ contractId });
+        if (existing) { skipped++; continue; }
+        let symbol = null;
+        const desc = String(tx.shortcode ?? tx.longcode ?? "");
+        for (const sym of SYMBOLS) { if (desc.includes(sym)) { symbol = sym; break; } }
+        const pnl = parseFloat(tx.profit ?? tx.amount ?? 0);
+        try {
+          await Trade.create({
+            userId: user._id, symbol: symbol || "Unknown",
+            direction: desc.includes("MULTUP") ? "MULTUP" : "MULTDOWN",
+            stake: Math.abs(parseFloat(tx.buy_price ?? 0)), multiplier: 100,
+            contractId, buyPrice: Math.abs(parseFloat(tx.buy_price ?? 0)),
+            status: pnl > 0 ? "won" : "lost", pnl,
+            openedAt: new Date((tx.purchase_time ?? Date.now() / 1000) * 1000),
+            closedAt: new Date((tx.sell_time ?? Date.now() / 1000) * 1000),
+          });
+          imported++;
+        } catch (e) { if (e.message.includes("duplicate key")) skipped++; }
+      }
+    } catch {}
+
+    ws.close();
+    res.json({ message: `Import complete for ${user.name}`, imported, updated, skipped });
   } catch (e) {
     res.status(500).json({ error: e.message });
   }

@@ -124,8 +124,8 @@ router.post("/sync-trades", protect, async (req, res) => {
     // Get the user's bot instance WebSocket
     // If bot is running, use its connection — otherwise connect fresh
     const user = await User.findById(userId);
-    const { connectForMode }    = await import("../src/auth/deriv-auth.js");
-    const { connectWebSocket, sendMessage } = await import("../src/utils/ws-client.js");
+    const { connectForMode }    = await import("../../src/auth/deriv-auth.js");
+    const { connectWebSocket, sendMessage } = await import("../../src/utils/ws-client.js");
 
     const wsUrl = await connectForMode(user.derivMode, user.derivPAT, user.derivAppId);
     const ws    = await connectWebSocket(wsUrl);
@@ -193,8 +193,8 @@ router.post("/import-trades", protect, async (req, res) => {
     const userId = req.user._id;
     const user   = await User.findById(userId);
 
-    const { connectForMode }                 = await import("../src/auth/deriv-auth.js");
-    const { connectWebSocket, sendMessage }  = await import("../src/utils/ws-client.js");
+    const { connectForMode }                 = await import("../../src/auth/deriv-auth.js");
+    const { connectWebSocket, sendMessage }  = await import("../../src/utils/ws-client.js");
 
     // Connect to Deriv
     const wsUrl = await connectForMode(user.derivMode, user.derivPAT, user.derivAppId);
