@@ -351,7 +351,7 @@ async function runUserBot(user, stopSignal) {
 
           const tradeMsg = `[${label}] ${symbol} | ${label2} | Strength: ${strength.toFixed(0)}% | Stake: $${stake.toFixed(2)} | Expires: 2hr`;
           await log(userId, tradeMsg, "trade");
-          await log(userId, getTradeReason(df5, df15, df4h), "trade");
+          await log(userId, getTradeReason(df15, df4h), "trade");
 
           const result = await placeTradeWithRetry(ws, symbol, direction, stake);
 
