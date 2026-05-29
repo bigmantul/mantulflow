@@ -30,7 +30,7 @@ const SYMBOLS = [
   "frxEURUSD", "frxGBPUSD", "frxUSDJPY", "frxUSDCHF",
   "frxAUDUSD", "frxUSDCAD", "frxNZDUSD",
   // Crypto
-  "cryBTCUSD", "cryETHUSD", "cryLTCUSD", "cryBCHUSD",
+  "cryBTCUSD", "cryETHUSD",
 ];
 const POLL_SECS          = 15;
 const MAX_IDLE_SECS      = 30;
