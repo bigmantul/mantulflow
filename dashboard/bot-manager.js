@@ -25,9 +25,15 @@ import {
   notifyCycleScan,
 } from "../src/utils/telegram.js";
 
-const SYMBOLS            = ["R_75","R_100","frxXAUUSD","frxXAGUSD","cryBTCUSD","cryETHUSD"];
+const SYMBOLS = [
+  // Forex
+  "frxEURUSD", "frxGBPUSD", "frxUSDJPY", "frxUSDCHF",
+  "frxAUDUSD", "frxUSDCAD", "frxNZDUSD",
+  // Crypto
+  "cryBTCUSD", "cryETHUSD", "cryLTCUSD", "cryBCHUSD",
+];
 const POLL_SECS          = 15;
-const MAX_IDLE_SECS      = 45;
+const MAX_IDLE_SECS      = 30;
 const TELEGRAM_BOT_TOKEN = process.env.TELEGRAM_BOT_TOKEN;
 
 const runningBots = new Map();
@@ -312,44 +318,42 @@ async function runUserBot(user, stopSignal) {
 
           const tf = await getMultiTf(ws, symbol);
           lastApiCall = Date.now();
-          const { m5: df5, m15: df15, h4: df4h } = tf;
+          const { daily: dfDaily, h1: dfH1, m15: dfM15 } = tf;
 
-          if (!df5 || df5.length < 2) continue;
+          if (!dfM15 || dfM15.length < 2) continue;
 
-          if (!marketIsTradeable(df5)) {
+          if (!marketIsTradeable(dfH1)) {
             await log(userId, `[${label}] ${symbol} | FILTERED (poor market conditions)`, "info");
             cycleResults.push({ symbol, status: "FILTERED" });
             continue;
           }
 
-          const signal = getLatestSignalMtf(df5, df15, df4h);
+          const signal = getLatestSignalMtf(dfM15, dfH1, dfDaily);
           if (signal === 0) {
-            const trend    = get15mTrend(df15);
-            const strength = getSignalStrength(df5, df15, df4h);
+            const trend    = get15mTrend(dfH1);
+            const strength = getSignalStrength(dfM15, dfH1, dfDaily);
             await log(userId, `[${label}] ${symbol} | HOLD | HTF: ${trend} | Strength: ${strength.toFixed(0)}%`, "info");
             cycleResults.push({ symbol, status: "HOLD", trend, strength });
             continue;
           }
 
-          const direction  = signal === 1 ? "MULTUP" : "MULTDOWN";
-          const label2     = signal === 1 ? "BUY" : "SELL";
+          const direction  = signal === 1 ? "CALL" : "PUT";  // Rise/Fall
+          const label2     = signal === 1 ? "BUY (CALL)" : "SELL (PUT)";
           const baseStake  = rm.calculateStake(balance);
           const volScalar  = getVolatilityScalar(df5);
           const stake      = parseFloat(Math.max(baseStake * volScalar, rm.minStake).toFixed(2));
           const strength   = getSignalStrength(df5, df15, df4h);
-          const limitOrder = {
-            stop_loss:   parseFloat((stake * freshUser.risk.stopLossPct).toFixed(2)),
-            take_profit: parseFloat((stake * freshUser.risk.takeProfitPct).toFixed(2)),
-          };
-          const multiplier = 100;
+          // Rise/Fall has no SL/TP or multiplier
+          // 2hr expiry is the natural exit
+          const multiplier = null;
 
           cycleResults.push({ symbol, status: label2, strength });
 
-          const tradeMsg = `[${label}] ${symbol} | ${label2} | Strength: ${strength.toFixed(0)}% | Stake: $${stake.toFixed(2)} | SL=$${limitOrder.stop_loss} TP=$${limitOrder.take_profit}`;
+          const tradeMsg = `[${label}] ${symbol} | ${label2} | Strength: ${strength.toFixed(0)}% | Stake: $${stake.toFixed(2)} | Expires: 2hr`;
           await log(userId, tradeMsg, "trade");
           await log(userId, getTradeReason(df5, df15, df4h), "trade");
 
-          const result = await placeTradeWithRetry(ws, symbol, direction, stake, limitOrder);
+          const result = await placeTradeWithRetry(ws, symbol, direction, stake);
 
           if (result) {
             lastApiCall = Date.now();
@@ -386,7 +390,8 @@ async function runUserBot(user, stopSignal) {
             }
 
             await notifyTradeOpened({
-              symbol, direction, stake, multiplier, limitOrder, strength,
+              symbol, direction, stake, multiplier,
+              limitOrder: null, strength,
               contractId, label, botToken, chatId,
             });
 

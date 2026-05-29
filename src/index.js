@@ -42,16 +42,15 @@ import {
 //  CONFIG
 // ═══════════════════════════════════════════════════════
 const SYMBOLS = [
-  "R_75",
-  "R_100",
-  "frxXAUUSD",
-  "frxXAGUSD",
-  "cryBTCUSD",
-  "cryETHUSD",
+  // Forex
+  "frxEURUSD", "frxGBPUSD", "frxUSDJPY", "frxUSDCHF",
+  "frxAUDUSD", "frxUSDCAD", "frxNZDUSD",
+  // Crypto
+  "cryBTCUSD", "cryETHUSD", "cryLTCUSD", "cryBCHUSD",
 ];
 
 const POLL_SECS        = 15;
-const MAX_IDLE_SECS    = 45;
+const MAX_IDLE_SECS    = 30;
 const TRADING_MODE     = "demo";
 const DAILY_SUMMARY_HR = 23;
 
@@ -213,21 +212,21 @@ async function main() {
           const df15 = tf.m15;
           const df4h = tf.h4;
 
-          if (!df5 || df5.length < 2) continue;
+          if (!dfM15 || dfM15.length < 2) continue;
 
           // Market quality filter
-          if (!marketIsTradeable(df5)) {
+          if (!marketIsTradeable(dfH1)) {
             console.log(`${symbol} | FILTERED (poor market conditions)`);
             cycleResults.push({ symbol, status: "FILTERED" });
             continue;
           }
 
           // SMC signal
-          const signal = getLatestSignalMtf(df5, df15, df4h);
+          const signal = getLatestSignalMtf(dfM15, dfH1, dfDaily);
 
           if (signal === 0) {
-            const trend    = get15mTrend(df15);
-            const strength = getSignalStrength(df5, df15, df4h);
+            const trend    = get15mTrend(dfH1);
+            const strength = getSignalStrength(dfM15, dfH1, dfDaily);
             console.log(`${symbol} | HOLD | HTF: ${trend} | Strength: ${strength.toFixed(0)}%`);
             cycleResults.push({ symbol, status: "HOLD", trend, strength });
             continue;
@@ -235,26 +234,23 @@ async function main() {
 
           // Signal fired
           const label     = signal === 1 ? "BUY"    : "SELL";
-          const direction = signal === 1 ? "MULTUP" : "MULTDOWN";
+          const direction = signal === 1 ? "CALL" : "PUT";  // Rise/Fall
 
           const baseStake  = rm.calculateStake(balance);
           const volScalar  = getVolatilityScalar(df5);
           const stake      = parseFloat(Math.max(baseStake * volScalar, rm.minStake).toFixed(2));
           const strength   = getSignalStrength(df5, df15, df4h);
-          const limitOrder = sltp.getMultiplierLimitOrder(stake);
-          const multiplier = 100;
+          const multiplier = null; // Rise/Fall — no multiplier needed
 
           console.log(
-            `\n${symbol} | ${label} | Strength: ${strength.toFixed(0)}% | ` +
-            `Stake: $${stake.toFixed(2)} (scalar ${volScalar.toFixed(2)}) | ` +
-            `Limit: SL=$${limitOrder.stop_loss} TP=$${limitOrder.take_profit}`
+            `\n${symbol} | ${label} | Strength: ${strength.toFixed(0)}% | Stake: $${stake.toFixed(2)} | Expires: 2hr`
           );
-          console.log(getTradeReason(df5, df15, df4h));
+          console.log(getTradeReason(dfM15, dfH1, dfDaily));
 
           cycleResults.push({ symbol, status: label, strength });
 
           // Place trade
-          const result = await placeTradeWithRetry(ws, symbol, direction, stake, limitOrder);
+          const result = await placeTradeWithRetry(ws, symbol, direction, stake);
 
           if (result) {
             lastApiCall = Date.now();
