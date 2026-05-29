@@ -340,9 +340,9 @@ async function runUserBot(user, stopSignal) {
           const direction  = signal === 1 ? "CALL" : "PUT";  // Rise/Fall
           const label2     = signal === 1 ? "BUY (CALL)" : "SELL (PUT)";
           const baseStake  = rm.calculateStake(balance);
-          const volScalar  = getVolatilityScalar(df5);
+          const volScalar  = getVolatilityScalar(dfM15);
           const stake      = parseFloat(Math.max(baseStake * volScalar, rm.minStake).toFixed(2));
-          const strength   = getSignalStrength(df5, df15, df4h);
+          const strength   = getSignalStrength(dfM15, dfH1, dfDaily);
           // Rise/Fall has no SL/TP or multiplier
           // 2hr expiry is the natural exit
           const multiplier = null;
@@ -351,7 +351,7 @@ async function runUserBot(user, stopSignal) {
 
           const tradeMsg = `[${label}] ${symbol} | ${label2} | Strength: ${strength.toFixed(0)}% | Stake: $${stake.toFixed(2)} | Expires: 2hr`;
           await log(userId, tradeMsg, "trade");
-          await log(userId, getTradeReason(df15, df4h), "trade");
+          await log(userId, getTradeReason(dfM15, dfH1, dfDaily), "trade");
 
           const result = await placeTradeWithRetry(ws, symbol, direction, stake);
 
