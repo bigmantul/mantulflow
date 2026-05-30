@@ -45,6 +45,8 @@ const SYMBOLS = [
   // Forex
   "frxEURUSD", "frxGBPUSD", "frxUSDJPY", "frxUSDCHF",
   "frxAUDUSD", "frxUSDCAD", "frxNZDUSD",
+   // Metals
+  "frxXAUUSD", "frxXAGUSD",
   // Crypto
   "cryBTCUSD", "cryETHUSD", "cryLTCUSD", "cryBCHUSD",
 ];
