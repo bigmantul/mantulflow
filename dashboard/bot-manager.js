@@ -6,6 +6,7 @@
 //  2. Trade sync — correctly detects open vs closed
 //  3. PnL update — fetches real PnL when trade closes
 //  4. Bot logging — saves logs to MongoDB (72hr TTL)
+//  5. Telegram detailed logging — sends same logs as console
 // ═══════════════════════════════════════════════════════
 
 import { connectForMode }                from "../src/auth/deriv-auth.js";
@@ -22,7 +23,7 @@ import { Trade, User, BotLog }             from "./db.js";
 import {
   notifyStartup, notifyTradeOpened, notifyRiskBlock,
   notifyReconnecting, notifyMaxTrades, notifyDailySummary,
-  notifyCycleScan,
+  notifyCycleScan, notifySignalDetail, notifyDetailedScan,
 } from "../src/utils/telegram.js";
 
 const SYMBOLS = [
@@ -203,6 +204,7 @@ async function runUserBot(user, stopSignal) {
 
   const portfolio     = createPortfolio(user._id);
   let lastSummaryDate = "";
+  let cycleCounter = 0;  // ← ADDED for Telegram throttling
 
   while (!stopSignal.stopped) {
     let lastApiCall = Date.now();
@@ -224,6 +226,7 @@ async function runUserBot(user, stopSignal) {
 
       while (!stopSignal.stopped) {
         await sleep(POLL_SECS);
+        cycleCounter++;  // ← ADDED increment counter
 
         if ((Date.now() - lastApiCall) / 1000 > MAX_IDLE_SECS) {
           await log(userId, `[${label}] ⏱️ Idle — reconnecting...`, "warn");
@@ -334,8 +337,8 @@ async function runUserBot(user, stopSignal) {
           if (signal === 0) {
             const trend    = get15mTrend(dfH1);
             const strength = getSignalStrength(dfM15, dfH1, dfH4);
-            const h4bias  = trend;                       // from get15mTrend(dfH1) = 4H bias
-            const h1trend = get15mTrend(dfM15);           // 1H trend from 15m df
+            const h4bias  = trend;
+            const h1trend = get15mTrend(dfM15);
             const h4icon  = h4bias  !== "neutral" ? "✅" : "❌";
             const h1match = h1trend === h4bias || h4bias === "neutral";
             const h1icon  = h1match ? "✅" : "❌";
@@ -350,13 +353,30 @@ async function runUserBot(user, stopSignal) {
               `[${label}] ${symbol} | 4H: ${h4bias.toUpperCase()} ${h4icon} | ${holdReason}`,
               "info"
             );
+            
+            // ← ADDED: Send to Telegram for important updates
+            const shouldSendToTelegram = (voteCount >= 3) || (cycleCounter % 5 === 0);
+            if (shouldSendToTelegram && user && user.telegramChatId) {
+              await notifySignalDetail({
+                symbol,
+                h4bias: h4bias.toUpperCase(),
+                h1trend: h1trend.toUpperCase(),
+                strength,
+                votes: voteCount,
+                status: "HOLD",
+                reason: holdReason
+              });
+            }
+            
             cycleResults.push({
               symbol,
               status:  "HOLD",
               trend,
-              h4bias:  trend,
-              h1trend: get15mTrend(dfM15),
+              h4bias:  trend.toUpperCase(),
+              h1trend: get15mTrend(dfM15).toUpperCase(),
               strength,
+              votes: voteCount,
+              reason: holdReason
             });
             continue;
           }
@@ -366,25 +386,27 @@ async function runUserBot(user, stopSignal) {
           const baseStake  = rm.calculateStake(balance);
           const volScalar  = getVolatilityScalar(dfM15);
           const stake      = parseFloat(Math.max(baseStake * volScalar, rm.minStake).toFixed(2));
-          const strength   = getSignalStrength(dfM15, df1h, df4h);
+          const strength   = getSignalStrength(dfM15, dfH1, dfH4);
           const limitOrder = {
             stop_loss:   parseFloat((stake * freshUser.risk.stopLossPct).toFixed(2)),
             take_profit: parseFloat((stake * freshUser.risk.takeProfitPct).toFixed(2)),
           };
           const multiplier = 100;
+          const voteCount = Math.round(strength * 7 / 100);
 
-          const h4biasForResult = dfH4 ? "bullish" : "neutral"; // from signal
           cycleResults.push({
             symbol,
             status:  label2,
-            h4bias:  direction === "MULTUP" ? "bullish" : "bearish",
-            h1trend: direction === "MULTUP" ? "bullish" : "bearish",
+            h4bias:  direction === "MULTUP" ? "BULLISH" : "BEARISH",
+            h1trend: direction === "MULTUP" ? "BULLISH" : "BEARISH",
             strength,
+            votes: voteCount,
+            stake,
           });
 
-          const tradeMsg = `[${label}] ${symbol} | 4H: ${dfH4 ? "✅" : "—"} | 1H: ✅ | ${strength.toFixed(0)}% (${Math.round(strength*7/100)}/7 votes) — ${label2}! | Stake: $${stake.toFixed(2)} | SL=$${limitOrder.stop_loss} TP=$${limitOrder.take_profit} | ⏱️ 2hr failsafe`;
+          const tradeMsg = `[${label}] ${symbol} | 4H: ${dfH4 ? "✅" : "—"} | 1H: ✅ | ${strength.toFixed(0)}% (${voteCount}/7 votes) — ${label2}! | Stake: $${stake.toFixed(2)} | SL=$${limitOrder.stop_loss} TP=$${limitOrder.take_profit} | ⏱️ 2hr failsafe`;
           await log(userId, tradeMsg, "trade");
-          await log(userId, getTradeReason(dfM15, df1h, df4h), "trade");
+          await log(userId, getTradeReason(dfM15, dfH1, dfH4), "trade");
 
           const result = await placeTradeWithRetry(ws, symbol, direction, stake, limitOrder);
 
@@ -435,6 +457,18 @@ async function runUserBot(user, stopSignal) {
           }
 
         } // end symbol loop
+
+        // ← ADDED: Send detailed scan to Telegram every 3 cycles (45 seconds)
+        if (cycleCounter % 3 === 0 && cycleResults.length > 0 && user && user.telegramChatId) {
+          await notifyDetailedScan({
+            label,
+            session: sessionName(),
+            balance,
+            openTrades: currentOpen,
+            maxTrades: rm.maxOpen,
+            symbolDetails: cycleResults
+          });
+        }
 
         if (cycleResults.length > 0) {
           await notifyCycleScan({ balance, openTrades: currentOpen, maxTrades: rm.maxOpen, session: sessionName(), results: cycleResults, label, botToken, chatId });
