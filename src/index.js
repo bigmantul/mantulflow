@@ -210,7 +210,7 @@ async function main() {
           const tf = await getMultiTf(ws, symbol);
           lastApiCall = Date.now();
 
-          const df15  = tf.m15;
+          const dfm15  = tf.m15;
           const df1h = tf.h1;
           const df4h = tf.h4;
 
@@ -249,9 +249,9 @@ async function main() {
           const direction = signal === 1 ? "MULTUP" : "MULTDOWN";
 
           const baseStake  = rm.calculateStake(balance);
-          const volScalar  = getVolatilityScalar(df15);
+          const volScalar  = getVolatilityScalar(dfm15);
           const stake      = parseFloat(Math.max(baseStake * volScalar, rm.minStake).toFixed(2));
-          const strength   = getSignalStrength(df15, df1h, df4h);
+          const strength   = getSignalStrength(dfm15, df1h, df4h);
           const limitOrder = sltp.getMultiplierLimitOrder(stake);
           const multiplier = 100;
 
