@@ -208,6 +208,7 @@ async function main() {
 
           // Fetch candles
           const tf = await getMultiTf(ws, symbol);
+          const { h4: dfH4, h1: dfH1, m15: dfM15 } = tf;
           lastApiCall = Date.now();
 
           const df5  = tf.m5;
@@ -229,7 +230,7 @@ async function main() {
           if (signal === 0) {
             const trend    = get15mTrend(dfH1);
             const strength = getSignalStrength(dfM15, dfH1, dfH4);
-            const h1trend   = get15mTrend(dfM15);
+            const h1trend   = get15mTrend(dfH1);  // ✅ correct 1H data
             const h4icon    = trend !== "neutral" ? "✅" : "❌";
             const h1icon    = h1trend === trend ? "✅" : "❌";
             const voteCount = Math.round(strength * 7 / 100);
@@ -237,7 +238,7 @@ async function main() {
             let holdReason;
             if (trend === "neutral")       holdReason = "4H neutral — no direction";
             else if (h1trend !== trend)    holdReason = `1H: ${h1trend.toUpperCase()} ${h1icon} — disagrees with 4H`;
-            else                           holdReason = `1H: ${h1trend.toUpperCase()} ✅ | ${voteCount}/7 votes — need 5`;
+            else                           holdReason = `1H: ${h1trend.toUpperCase()} ✅ | ${voteCount}/7 votes — need 4`;
 
             console.log(`${symbol} | 4H: ${trend.toUpperCase()} ${h4icon} | ${holdReason}`);
             cycleResults.push({ symbol, status: "HOLD", trend, strength });
