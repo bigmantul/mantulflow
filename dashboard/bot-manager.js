@@ -344,7 +344,7 @@ async function runUserBot(user, stopSignal) {
             let holdReason;
             if (h4bias === "neutral")         holdReason = "4H neutral — no direction";
             else if (h1trend !== h4bias)      holdReason = `1H: ${h1trend.toUpperCase()} ${h1icon} — disagrees with 4H`;
-            else                              holdReason = `1H: ${h1trend.toUpperCase()} ✅ | ${voteCount}/7 votes — need 4`;
+            else                              holdReason = `1H: ${h1trend.toUpperCase()} ✅ | ${voteCount}/7 votes — need 5`;
 
             await log(userId,
               `[${label}] ${symbol} | 4H: ${h4bias.toUpperCase()} ${h4icon} | ${holdReason}`,
@@ -364,9 +364,9 @@ async function runUserBot(user, stopSignal) {
           const direction  = signal === 1 ? "MULTUP" : "MULTDOWN";
           const label2     = signal === 1 ? "BUY" : "SELL";
           const baseStake  = rm.calculateStake(balance);
-          const volScalar  = getVolatilityScalar(df5);
+          const volScalar  = getVolatilityScalar(dfM15);
           const stake      = parseFloat(Math.max(baseStake * volScalar, rm.minStake).toFixed(2));
-          const strength   = getSignalStrength(df5, df15, df4h);
+          const strength   = getSignalStrength(dfM15, dfH1, dfH4);
           const limitOrder = {
             stop_loss:   parseFloat((stake * freshUser.risk.stopLossPct).toFixed(2)),
             take_profit: parseFloat((stake * freshUser.risk.takeProfitPct).toFixed(2)),
@@ -384,7 +384,7 @@ async function runUserBot(user, stopSignal) {
 
           const tradeMsg = `[${label}] ${symbol} | 4H: ${dfH4 ? "✅" : "—"} | 1H: ✅ | ${strength.toFixed(0)}% (${Math.round(strength*7/100)}/7 votes) — ${label2}! | Stake: $${stake.toFixed(2)} | SL=$${limitOrder.stop_loss} TP=$${limitOrder.take_profit} | ⏱️ 2hr failsafe`;
           await log(userId, tradeMsg, "trade");
-          await log(userId, getTradeReason(df5, df15, df4h), "trade");
+          await log(userId, getTradeReason(df15, dfh1, df4h), "trade");
 
           const result = await placeTradeWithRetry(ws, symbol, direction, stake, limitOrder);
 
