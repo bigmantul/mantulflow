@@ -1,35 +1,77 @@
-﻿export function notifyCycleScan({
+﻿
+// ═══════════════════════════════════════════════════════
+//  dashboard/src/utils/telegram.js
+// ═══════════════════════════════════════════════════════
+
+const TELEGRAM_BOT_TOKEN = process.env.TELEGRAM_BOT_TOKEN;
+const TELEGRAM_CHAT_ID = process.env.TELEGRAM_CHAT_ID;
+
+async function sendMessage(text) {
+  if (!TELEGRAM_BOT_TOKEN || !TELEGRAM_CHAT_ID) return;
+  if (TELEGRAM_BOT_TOKEN === "your_telegram_bot_token_here") return;
+
+  try {
+    const url = `https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/sendMessage`;
+
+    const res = await fetch(url, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({
+        chat_id: TELEGRAM_CHAT_ID,
+        text,
+        parse_mode: "HTML",
+      }),
+    });
+
+    if (!res.ok) {
+      console.error(
+        "Telegram send failed:",
+        await res.text()
+      );
+    }
+  } catch (err) {
+    console.error("Telegram error:", err.message);
+  }
+}
+
+// ═══════════════════════════════════════════════════════
+//  SCAN CYCLE
+// ═══════════════════════════════════════════════════════
+
+export function notifyCycleScan({
   balance,
   openTrades,
   maxTrades,
   session,
-  results,
+  results = [],
 }) {
   const lines = [
     `📊 <b>Mantul — Scan Cycle</b>`,
     `Session : ${session}`,
-    `Balance : $${balance.toFixed(2)}`,
+    `Balance : $${Number(balance || 0).toFixed(2)}`,
     `Open    : ${openTrades}/${maxTrades}`,
     ``,
   ];
 
   for (const r of results) {
 
-    // 🔒 LOCKED
+    // LOCKED
     if (r.status === "LOCKED") {
-      let remaining = "";
-
-      if (r.remainingMinutes != null) {
-        remaining = ` | Expires in ${r.remainingMinutes}m`;
-      }
+      const expiry =
+        r.remainingMinutes != null
+          ? ` | Expires in ${r.remainingMinutes}m`
+          : "";
 
       lines.push(
-        `🔒 ${r.symbol} | LOCKED — trade open${remaining}`
+        `🔒 ${r.symbol} | LOCKED — trade open${expiry}`
       );
+
       continue;
     }
 
-    // 🕐 CLOSED MARKET
+    // MARKET CLOSED
     if (r.status === "CLOSED") {
       lines.push(
         `🕐 ${r.symbol} | MARKET CLOSED`
@@ -37,7 +79,7 @@
       continue;
     }
 
-    // ⛔ FILTERED
+    // FILTERED
     if (r.status === "FILTERED") {
       lines.push(
         `⛔ ${r.symbol} | FILTERED`
@@ -45,13 +87,26 @@
       continue;
     }
 
-    const h4 = (r.h4Bias || r.h4 || "neutral").toUpperCase();
-    const h1 = (r.h1Bias || r.h1 || "neutral").toUpperCase();
+    const h4 = (
+      r.h4Bias ||
+      r.h4 ||
+      r.trend ||
+      "neutral"
+    ).toUpperCase();
 
-    // HOLDS
+    const h1 = (
+      r.h1Bias ||
+      r.h1 ||
+      "neutral"
+    ).toUpperCase();
+
+    const votes =
+      r.votes ??
+      Math.round((Number(r.strength || 0) / 100) * 7);
+
+    // HOLD
     if (r.status === "HOLD") {
 
-      // 4H Neutral
       if (h4 === "NEUTRAL") {
         lines.push(
           `⏸ ${r.symbol} | 4H: NEUTRAL ❌ | 4H neutral`
@@ -59,21 +114,15 @@
         continue;
       }
 
-      // 4H / 1H disagree
       if (
         h1 !== "NEUTRAL" &&
-        h4 !== h1
+        h1 !== h4
       ) {
         lines.push(
           `⏸ ${r.symbol} | 4H: ${h4} ✅ | 1H: ${h1} ❌ disagrees`
         );
         continue;
       }
-
-      // votes
-      const votes =
-        r.votes ??
-        Math.round(((r.strength || 0) / 100) * 7);
 
       lines.push(
         `⏸ ${r.symbol} | 4H: ${h4} ✅ | 1H: ${h1} ✅ | ${votes}/7 votes`
@@ -82,24 +131,119 @@
       continue;
     }
 
-    // BUY / SELL
-    if (r.status === "BUY" || r.status === "SELL") {
-
-      const icon = r.status === "BUY"
-        ? "🟢"
-        : "🔴";
-
-      const votes =
-        r.votes ??
-        Math.round(((r.strength || 0) / 100) * 7);
-
+    // BUY
+    if (r.status === "BUY") {
       lines.push(
-        `${icon} ${r.symbol} | 4H: ${h4} ✅ | 1H: ${h1} ✅ | ${votes}/7 votes — ${r.status}!`
+        `🟢 ${r.symbol} | 4H: ${h4} ✅ | 1H: ${h1} ✅ | ${votes}/7 votes — BUY!`
       );
+      continue;
+    }
 
+    // SELL
+    if (r.status === "SELL") {
+      lines.push(
+        `🔴 ${r.symbol} | 4H: ${h4} ✅ | 1H: ${h1} ✅ | ${votes}/7 votes — SELL!`
+      );
       continue;
     }
   }
 
   return sendMessage(lines.join("\n"));
+}
+
+// ═══════════════════════════════════════════════════════
+//  STARTUP
+// ═══════════════════════════════════════════════════════
+
+export function notifyStartup(balance, mode) {
+  return sendMessage(
+    `🤖 <b>Deriv Bot Started</b>\n` +
+    `Mode     : ${String(mode).toUpperCase()}\n` +
+    `Balance  : $${Number(balance).toFixed(2)}\n` +
+    `Strategy : SMC Multi-Timeframe\n` +
+    `Symbols  : Forex, Crypto, Metals\n` +
+    `Status   : Scanning every 15s...`
+  );
+}
+
+// ═══════════════════════════════════════════════════════
+//  TRADE OPENED
+// ═══════════════════════════════════════════════════════
+
+export function notifyTradeOpened({
+  symbol,
+  direction,
+  stake,
+  multiplier,
+  limitOrder,
+  strength,
+  contractId,
+}) {
+  const label =
+    direction === "MULTUP"
+      ? "🟢 BUY"
+      : "🔴 SELL";
+
+  return sendMessage(
+    `${label} <b>TRADE OPENED — ${symbol}</b>\n` +
+    `Contract : ${contractId}\n` +
+    `Stake    : $${Number(stake).toFixed(2)} x${multiplier}\n` +
+    `Strength : ${Number(strength || 0).toFixed(0)}%\n` +
+    `SL       : $${limitOrder?.stop_loss}\n` +
+    `TP       : $${limitOrder?.take_profit}`
+  );
+}
+
+// ═══════════════════════════════════════════════════════
+//  RISK BLOCK
+// ═══════════════════════════════════════════════════════
+
+export function notifyRiskBlock(reason) {
+  return sendMessage(
+    `⚠️ <b>Risk Block</b>\n${reason}`
+  );
+}
+
+// ═══════════════════════════════════════════════════════
+//  RECONNECTING
+// ═══════════════════════════════════════════════════════
+
+export function notifyReconnecting(error) {
+  return sendMessage(
+    `🔌 <b>Reconnecting...</b>\n` +
+    `Reason: ${error}`
+  );
+}
+
+// ═══════════════════════════════════════════════════════
+//  MAX TRADES
+// ═══════════════════════════════════════════════════════
+
+export function notifyMaxTrades(current, max) {
+  return sendMessage(
+    `🔒 <b>Max trades reached</b>\n` +
+    `Open: ${current}/${max} — waiting for a trade to close`
+  );
+}
+
+// ═══════════════════════════════════════════════════════
+//  DAILY SUMMARY
+// ═══════════════════════════════════════════════════════
+
+export function notifyDailySummary({
+  balance,
+  dailyPnl,
+  openTrades,
+  consecutiveLosses,
+}) {
+  const pnlIcon =
+    dailyPnl >= 0 ? "📈" : "📉";
+
+  return sendMessage(
+    `${pnlIcon} <b>Daily Summary</b>\n` +
+    `Balance    : $${Number(balance).toFixed(2)}\n` +
+    `Daily PnL  : ${dailyPnl >= 0 ? "+" : ""}$${Number(dailyPnl).toFixed(2)}\n` +
+    `Open trades: ${openTrades}\n` +
+    `Loss streak: ${consecutiveLosses}`
+  );
 }
