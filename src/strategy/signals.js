@@ -33,7 +33,7 @@ const MARKET_SCHEDULE = {
   frxUSDCHF: "forex", frxAUDUSD: "forex", frxUSDCAD: "forex",
   frxNZDUSD: "forex", frxXAUUSD: "forex", frxXAGUSD: "forex",
   cryBTCUSD: "24/7",  cryETHUSD: "24/7",
- 
+  cryLTCUSD: "24/7",  cryBCHUSD: "24/7",
 };
 
 export function isMarketOpen(symbol) {
@@ -362,9 +362,13 @@ function getSmcSignal(dfM15, dfH1, dfH4) {
   const h1Trend = getH1Trend(dfH1);
   votes.h1Trend = h1Trend;
 
-  // 1H must agree with 4H — opposite or neutral = skip
-  if (h1Trend !== htfBias) {
-    votes.rejectReason = `1H trend (${h1Trend}) disagrees with 4H bias (${htfBias}) — skipping`;
+  // 1H must not OPPOSE 4H — neutral is allowed, only opposite blocks
+  // e.g. 4H bullish + 1H bearish = skip
+  // e.g. 4H bullish + 1H neutral = allowed (pullback phase)
+  // e.g. 4H bullish + 1H bullish = best case
+  if ((htfBias === "bullish" && h1Trend === "bearish") ||
+      (htfBias === "bearish" && h1Trend === "bullish")) {
+    votes.rejectReason = `1H trend (${h1Trend}) OPPOSES 4H bias (${htfBias}) — skipping`;
     return [0, votes];
   }
 
@@ -396,8 +400,8 @@ function getSmcSignal(dfM15, dfH1, dfH4) {
     if (volume)                    score += 1;  // Vote 7
 
     votes.buyVotes = score;
-    if (score >= 5) return [1, votes];
-    votes.rejectReason = `${score}/7 bullish votes on 15m (need 5)`;
+    if (score >= 4) return [1, votes];
+    votes.rejectReason = `${score}/7 bullish votes on 15m (need 4)`;
     return [0, votes];
   }
 
@@ -413,8 +417,8 @@ function getSmcSignal(dfM15, dfH1, dfH4) {
     if (volume)                     score += 1;
 
     votes.sellVotes = score;
-    if (score >= 5) return [-1, votes];
-    votes.rejectReason = `${score}/7 bearish votes on 15m (need 5)`;
+    if (score >= 4) return [-1, votes];
+    votes.rejectReason = `${score}/7 bearish votes on 15m (need 4)`;
     return [0, votes];
   }
 
@@ -464,7 +468,7 @@ export function getTradeReason(dfM15, dfH1, dfH4 = null) {
   lines.push(`  [6] RSI (15m)    : ${v.rsi} ${v.rsi !== "neutral" ? "✅" : "❌"}`);
   lines.push(`  [7] Volume (15m) : ${v.volume ? "✅ above avg" : "❌ below avg"}`);
   lines.push(`  ─────────────────────────`);
-  lines.push(`  Score     : ${score}/7 — ${score >= 5 ? "✅ TRADE FIRES" : "❌ need 5"}`);
+  lines.push(`  Score     : ${score}/7 — ${score >= 4 ? "✅ TRADE FIRES" : "❌ need 4"}`);
 
   return lines.join("\n");
 }
