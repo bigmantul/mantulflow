@@ -39,7 +39,9 @@ async function sendMessage(text) {
 // ═══════════════════════════════════════════════════════
 //  SCAN CYCLE
 // ═══════════════════════════════════════════════════════
-
+console.log(
+  JSON.stringify(results, null, 2)
+);
 export function notifyCycleScan({
   balance,
   openTrades,
