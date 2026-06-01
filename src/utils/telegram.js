@@ -82,8 +82,8 @@ export function notifyStartup(balance, mode) {
     `🤖 <b>Deriv Bot Started</b>\n` +
     `Mode     : ${mode.toUpperCase()}\n` +
     `Balance  : $${balance.toFixed(2)}\n` +
-    `Strategy : SMC — ALL 7 confluences required\n` +
-    `Symbols  : R_75, R_100, XAU, XAG, BTC, ETH\n` +
+    `Strategy : Confluences required\n` +
+    `Symbols  : Crypto, Metals, Forex\n` +
     `Status   : Scanning every 15s...`
   );
 }
