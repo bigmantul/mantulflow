@@ -400,8 +400,8 @@ function getSmcSignal(dfM15, dfH1, dfH4) {
     if (volume)                    score += 1;  // Vote 7
 
     votes.buyVotes = score;
-    if (score >= 4) return [1, votes];
-    votes.rejectReason = `${score}/7 bullish votes on 15m (need 4)`;
+    if (score >= 5) return [1, votes];
+    votes.rejectReason = `${score}/7 bullish votes on 15m (need 5)`;
     return [0, votes];
   }
 
@@ -417,8 +417,8 @@ function getSmcSignal(dfM15, dfH1, dfH4) {
     if (volume)                     score += 1;
 
     votes.sellVotes = score;
-    if (score >= 4) return [-1, votes];
-    votes.rejectReason = `${score}/7 bearish votes on 15m (need 4)`;
+    if (score >= 5) return [-1, votes];
+    votes.rejectReason = `${score}/7 bearish votes on 15m (need 5)`;
     return [0, votes];
   }
 
@@ -468,7 +468,7 @@ export function getTradeReason(dfM15, dfH1, dfH4 = null) {
   lines.push(`  [6] RSI (15m)    : ${v.rsi} ${v.rsi !== "neutral" ? "✅" : "❌"}`);
   lines.push(`  [7] Volume (15m) : ${v.volume ? "✅ above avg" : "❌ below avg"}`);
   lines.push(`  ─────────────────────────`);
-  lines.push(`  Score     : ${score}/7 — ${score >= 4 ? "✅ TRADE FIRES" : "❌ need 4"}`);
+  lines.push(`  Score     : ${score}/7 — ${score >= 5 ? "✅ TRADE FIRES" : "❌ need 5"}`);
 
   return lines.join("\n");
 }
