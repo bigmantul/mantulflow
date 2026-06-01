@@ -3,10 +3,10 @@
 //
 //  Fetches OHLC candle data via Deriv WebSocket
 //
-//  NEW Timeframe stack:
-//    daily  = 86400s  → HTF bias (was 4H/14400s)
-//    h1     = 3600s   → Entry: BOS, OB, EMA, RSI (was 15m/900s)
-//    m15    = 900s    → Confirmation candle (was 5m/300s)
+//  Timeframe stack:
+//    h4  = 14400s  → HTF bias (4H)
+//    h1  = 3600s   → Trend filter (1H)
+//    m15 = 900s    → Entry signal + confirmation (15m)
 // ═══════════════════════════════════════════════════════
 
 import { sendMessage } from "../utils/ws-client.js";
@@ -61,16 +61,15 @@ export async function getCandles(ws, symbol, granularity = 3600, count = 200) {
 /**
  * Fetch all three timeframes in parallel
  *
- * NEW stack:
- *   daily = 86400s  (HTF bias)
- *   h1    = 3600s   (entry — BOS, OB, EMA, RSI, sweep)
- *   m15   = 900s    (confirmation candle)
+ *   h4  = 14400s  (4H  — HTF bias)
+ *   h1  = 3600s   (1H  — trend / entry filter)
+ *   m15 = 900s    (15m — entry signal + confirmation)
  */
 export async function getMultiTf(ws, symbol) {
-  const [daily, h1, m15] = await Promise.all([
-    getCandles(ws, symbol, 86400, 100),  // Daily candles — HTF bias
-    getCandles(ws, symbol, 3600,  200),  // 1H candles   — entry TF
-    getCandles(ws, symbol, 900,   200),  // 15m candles  — confirmation
+  const [h4, h1, m15] = await Promise.all([
+    getCandles(ws, symbol, 14400, 200),  // 4H  — HTF bias
+    getCandles(ws, symbol, 3600,  200),  // 1H  — trend
+    getCandles(ws, symbol, 900,   200),  // 15m — entry
   ]);
-  return { daily, h1, m15 };
+  return { h4, h1, m15 };
 }

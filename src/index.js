@@ -217,18 +217,18 @@ async function main() {
           if (!dfM15 || dfM15.length < 2) continue;
 
           // Market quality filter
-          if (!marketIsTradeable(dfH1)) {
+          if (!marketIsTradeable(dfM15)) {
             console.log(`${symbol} | FILTERED (poor market conditions)`);
             cycleResults.push({ symbol, status: "FILTERED" });
             continue;
           }
 
           // SMC signal
-          const signal = getLatestSignalMtf(dfM15, dfH1, dfDaily);
+          const signal = getLatestSignalMtf(dfM15, dfH1, dfH4);
 
           if (signal === 0) {
             const trend    = get15mTrend(dfH1);
-            const strength = getSignalStrength(dfM15, dfH1, dfDaily);
+            const strength = getSignalStrength(dfM15, dfH1, dfH4);
             console.log(`${symbol} | HOLD | HTF: ${trend} | Strength: ${strength.toFixed(0)}%`);
             cycleResults.push({ symbol, status: "HOLD", trend, strength });
             continue;
@@ -248,7 +248,7 @@ async function main() {
           console.log(
             `\n${symbol} | ${label} | Strength: ${strength.toFixed(0)}% | Stake: $${stake.toFixed(2)} | Expires: 2hr`
           );
-          console.log(getTradeReason(dfM15, dfH1, dfDaily));
+          console.log(getTradeReason(dfM15, dfH1, dfH4));
 
           cycleResults.push({ symbol, status: label, strength });
 

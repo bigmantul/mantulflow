@@ -320,20 +320,20 @@ async function runUserBot(user, stopSignal) {
 
           const tf = await getMultiTf(ws, symbol);
           lastApiCall = Date.now();
-          const { daily: dfDaily, h1: dfH1, m15: dfM15 } = tf;
+          const { h4: dfH4, h1: dfH1, m15: dfM15 } = tf;
 
           if (!dfM15 || dfM15.length < 2) continue;
 
-          if (!marketIsTradeable(dfH1)) {
+          if (!marketIsTradeable(dfM15)) {
             await log(userId, `[${label}] ${symbol} | FILTERED (poor market conditions)`, "info");
             cycleResults.push({ symbol, status: "FILTERED" });
             continue;
           }
 
-          const signal = getLatestSignalMtf(dfM15, dfH1, dfDaily);
+          const signal = getLatestSignalMtf(dfM15, dfH1, dfH4);
           if (signal === 0) {
             const trend    = get15mTrend(dfH1);
-            const strength = getSignalStrength(dfM15, dfH1, dfDaily);
+            const strength = getSignalStrength(dfM15, dfH1, dfH4);
             await log(userId, `[${label}] ${symbol} | HOLD | HTF: ${trend} | Strength: ${strength.toFixed(0)}%`, "info");
             cycleResults.push({ symbol, status: "HOLD", trend, strength });
             continue;
