@@ -82,7 +82,7 @@ export function notifyStartup(balance, mode) {
     `Mode     : ${mode.toUpperCase()}\n` +
     `Balance  : $${balance.toFixed(2)}\n` +
     `Strategy : Confluences required\n` +
-    `Symbols  :Forex, Crypto, Metals,\n` +
+    `Symbols  :Forex, Crypto, Metals\n` +
     `Status   : Scanning every 15s...`
   );
 }
