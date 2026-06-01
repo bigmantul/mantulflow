@@ -32,7 +32,7 @@ const SYMBOLS = [
   // Metals
   "frxXAUUSD", "frxXAGUSD",
   // Crypto
-  "cryBTCUSD", "cryETHUSD",
+  "cryBTCUSD", "cryETHUSD", "cryLTCUSD", "cryBCHUSD",
 ];
 const POLL_SECS          = 15;
 const MAX_IDLE_SECS      = 30;
@@ -294,13 +294,13 @@ async function runUserBot(user, stopSignal) {
 
           // Lock check — uses DB-backed symbol set
           if (activeSymbols.has(symbol)) {
-            await log(userId, `[${label}] ${symbol} | LOCKED (trade open) — skipping`, "info");
+            await log(userId, `[${label}] ${symbol} | 🔒 LOCKED — trade already open`, "info");
             cycleResults.push({ symbol, status: "LOCKED" });
             continue;
           }
 
           if (!isMarketOpen(symbol)) {
-            await log(userId, `[${label}] ${symbol} | MARKET CLOSED — skipping`, "info");
+            await log(userId, `[${label}] ${symbol} | 🕐 MARKET CLOSED — weekend`, "info");
             cycleResults.push({ symbol, status: "CLOSED" });
             continue;
           }
@@ -325,7 +325,7 @@ async function runUserBot(user, stopSignal) {
           if (!dfM15 || dfM15.length < 2) continue;
 
           if (!marketIsTradeable(dfM15)) {
-            await log(userId, `[${label}] ${symbol} | FILTERED (poor market conditions)`, "info");
+            await log(userId, `[${label}] ${symbol} | ⛔ FILTERED — poor volatility`, "info");
             cycleResults.push({ symbol, status: "FILTERED" });
             continue;
           }
@@ -334,7 +334,22 @@ async function runUserBot(user, stopSignal) {
           if (signal === 0) {
             const trend    = get15mTrend(dfH1);
             const strength = getSignalStrength(dfM15, dfH1, dfH4);
-            await log(userId, `[${label}] ${symbol} | HOLD | HTF: ${trend} | Strength: ${strength.toFixed(0)}%`, "info");
+            const h4bias  = trend;                       // from get15mTrend(dfH1) = 4H bias
+            const h1trend = get15mTrend(dfM15);           // 1H trend from 15m df
+            const h4icon  = h4bias  !== "neutral" ? "✅" : "❌";
+            const h1match = h1trend === h4bias || h4bias === "neutral";
+            const h1icon  = h1match ? "✅" : "❌";
+            const voteCount = Math.round(strength * 7 / 100);
+
+            let holdReason;
+            if (h4bias === "neutral")         holdReason = "4H neutral — no direction";
+            else if (h1trend !== h4bias)      holdReason = `1H: ${h1trend.toUpperCase()} ${h1icon} — disagrees with 4H`;
+            else                              holdReason = `1H: ${h1trend.toUpperCase()} ✅ | ${voteCount}/7 votes — need 5`;
+
+            await log(userId,
+              `[${label}] ${symbol} | 4H: ${h4bias.toUpperCase()} ${h4icon} | ${holdReason}`,
+              "info"
+            );
             cycleResults.push({ symbol, status: "HOLD", trend, strength });
             continue;
           }
@@ -353,7 +368,7 @@ async function runUserBot(user, stopSignal) {
 
           cycleResults.push({ symbol, status: label2, strength });
 
-          const tradeMsg = `[${label}] ${symbol} | ${label2} | Strength: ${strength.toFixed(0)}% | Stake: $${stake.toFixed(2)} | SL=$${limitOrder.stop_loss} TP=$${limitOrder.take_profit} | Failsafe: 2hr close`;
+          const tradeMsg = `[${label}] ${symbol} | 4H: ${dfH4 ? "✅" : "—"} | 1H: ✅ | ${strength.toFixed(0)}% (${Math.round(strength*7/100)}/7 votes) — ${label2}! | Stake: $${stake.toFixed(2)} | SL=$${limitOrder.stop_loss} TP=$${limitOrder.take_profit} | ⏱️ 2hr failsafe`;
           await log(userId, tradeMsg, "trade");
           await log(userId, getTradeReason(df5, df15, df4h), "trade");
 

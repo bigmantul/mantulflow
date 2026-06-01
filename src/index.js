@@ -48,7 +48,7 @@ const SYMBOLS = [
   // Metals
   "frxXAUUSD", "frxXAGUSD",
   // Crypto
-  "cryBTCUSD", "cryETHUSD",
+  "cryBTCUSD", "cryETHUSD", "cryLTCUSD", "cryBCHUSD",
 ];
 
 const POLL_SECS        = 15;
@@ -229,7 +229,17 @@ async function main() {
           if (signal === 0) {
             const trend    = get15mTrend(dfH1);
             const strength = getSignalStrength(dfM15, dfH1, dfH4);
-            console.log(`${symbol} | HOLD | HTF: ${trend} | Strength: ${strength.toFixed(0)}%`);
+            const h1trend   = get15mTrend(dfM15);
+            const h4icon    = trend !== "neutral" ? "✅" : "❌";
+            const h1icon    = h1trend === trend ? "✅" : "❌";
+            const voteCount = Math.round(strength * 7 / 100);
+
+            let holdReason;
+            if (trend === "neutral")       holdReason = "4H neutral — no direction";
+            else if (h1trend !== trend)    holdReason = `1H: ${h1trend.toUpperCase()} ${h1icon} — disagrees with 4H`;
+            else                           holdReason = `1H: ${h1trend.toUpperCase()} ✅ | ${voteCount}/7 votes — need 5`;
+
+            console.log(`${symbol} | 4H: ${trend.toUpperCase()} ${h4icon} | ${holdReason}`);
             cycleResults.push({ symbol, status: "HOLD", trend, strength });
             continue;
           }
