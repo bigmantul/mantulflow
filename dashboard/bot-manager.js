@@ -29,7 +29,7 @@ const SYMBOLS = [
   // Forex
   "frxEURUSD", "frxGBPUSD", "frxUSDJPY", "frxUSDCHF",
   "frxAUDUSD", "frxUSDCAD", "frxNZDUSD",
-   // Metals
+  // Metals
   "frxXAUUSD", "frxXAGUSD",
   // Crypto
   "cryBTCUSD", "cryETHUSD",
@@ -339,23 +339,25 @@ async function runUserBot(user, stopSignal) {
             continue;
           }
 
-          const direction  = signal === 1 ? "CALL" : "PUT";  // Rise/Fall
-          const label2     = signal === 1 ? "BUY (CALL)" : "SELL (PUT)";
+          const direction  = signal === 1 ? "MULTUP" : "MULTDOWN";
+          const label2     = signal === 1 ? "BUY" : "SELL";
           const baseStake  = rm.calculateStake(balance);
-          const volScalar  = getVolatilityScalar(dfM15);
+          const volScalar  = getVolatilityScalar(df5);
           const stake      = parseFloat(Math.max(baseStake * volScalar, rm.minStake).toFixed(2));
-          const strength   = getSignalStrength(dfM15, dfH1, dfDaily);
-          // Rise/Fall has no SL/TP or multiplier
-          // 2hr expiry is the natural exit
-          const multiplier = null;
+          const strength   = getSignalStrength(df5, df15, df4h);
+          const limitOrder = {
+            stop_loss:   parseFloat((stake * freshUser.risk.stopLossPct).toFixed(2)),
+            take_profit: parseFloat((stake * freshUser.risk.takeProfitPct).toFixed(2)),
+          };
+          const multiplier = 100;
 
           cycleResults.push({ symbol, status: label2, strength });
 
-          const tradeMsg = `[${label}] ${symbol} | ${label2} | Strength: ${strength.toFixed(0)}% | Stake: $${stake.toFixed(2)} | Expires: 2hr`;
+          const tradeMsg = `[${label}] ${symbol} | ${label2} | Strength: ${strength.toFixed(0)}% | Stake: $${stake.toFixed(2)} | SL=$${limitOrder.stop_loss} TP=$${limitOrder.take_profit} | Failsafe: 2hr close`;
           await log(userId, tradeMsg, "trade");
-          await log(userId, getTradeReason(dfM15, dfH1, dfDaily), "trade");
+          await log(userId, getTradeReason(df5, df15, df4h), "trade");
 
-          const result = await placeTradeWithRetry(ws, symbol, direction, stake);
+          const result = await placeTradeWithRetry(ws, symbol, direction, stake, limitOrder);
 
           if (result) {
             lastApiCall = Date.now();
@@ -393,7 +395,7 @@ async function runUserBot(user, stopSignal) {
 
             await notifyTradeOpened({
               symbol, direction, stake, multiplier,
-              limitOrder: null, strength,
+              limitOrder, strength,
               contractId, label, botToken, chatId,
             });
 

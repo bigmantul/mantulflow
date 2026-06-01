@@ -45,7 +45,7 @@ const SYMBOLS = [
   // Forex
   "frxEURUSD", "frxGBPUSD", "frxUSDJPY", "frxUSDCHF",
   "frxAUDUSD", "frxUSDCAD", "frxNZDUSD",
-   // Metals
+  // Metals
   "frxXAUUSD", "frxXAGUSD",
   // Crypto
   "cryBTCUSD", "cryETHUSD",
@@ -236,13 +236,14 @@ async function main() {
 
           // Signal fired
           const label     = signal === 1 ? "BUY"    : "SELL";
-          const direction = signal === 1 ? "CALL" : "PUT";  // Rise/Fall
+          const direction = signal === 1 ? "MULTUP" : "MULTDOWN";
 
           const baseStake  = rm.calculateStake(balance);
           const volScalar  = getVolatilityScalar(df5);
           const stake      = parseFloat(Math.max(baseStake * volScalar, rm.minStake).toFixed(2));
           const strength   = getSignalStrength(df5, df15, df4h);
-          const multiplier = null; // Rise/Fall — no multiplier needed
+          const limitOrder = sltp.getMultiplierLimitOrder(stake);
+          const multiplier = 100;
 
           console.log(
             `\n${symbol} | ${label} | Strength: ${strength.toFixed(0)}% | Stake: $${stake.toFixed(2)} | Expires: 2hr`
@@ -252,7 +253,7 @@ async function main() {
           cycleResults.push({ symbol, status: label, strength });
 
           // Place trade
-          const result = await placeTradeWithRetry(ws, symbol, direction, stake);
+          const result = await placeTradeWithRetry(ws, symbol, direction, stake, limitOrder);
 
           if (result) {
             lastApiCall = Date.now();
