@@ -78,7 +78,7 @@ async function main() {
   console.log("═══════════════════════════════════════════════");
   console.log("  Launching bot...");
   console.log("  Strategy  : Smart Money Concepts (SMC)");
-  console.log("  Timeframes: 15m execution | 1H entry | 4H bias");
+  console.log("  Timeframes: 5m execution | 15m entry | 4H bias");
   console.log("═══════════════════════════════════════════════\n");
 
   initPortfolio(SYMBOLS);
@@ -210,8 +210,8 @@ async function main() {
           const tf = await getMultiTf(ws, symbol);
           lastApiCall = Date.now();
 
-          const dfM15  = tf.m15;
-          const df1h = tf.h1;
+          const df5  = tf.m5;
+          const df15 = tf.m15;
           const df4h = tf.h4;
 
           if (!dfM15 || dfM15.length < 2) continue;
@@ -249,9 +249,9 @@ async function main() {
           const direction = signal === 1 ? "MULTUP" : "MULTDOWN";
 
           const baseStake  = rm.calculateStake(balance);
-          const volScalar  = getVolatilityScalar(dfM15);
+          const volScalar  = getVolatilityScalar(df5);
           const stake      = parseFloat(Math.max(baseStake * volScalar, rm.minStake).toFixed(2));
-          const strength   = getSignalStrength(dfM15, df1h, df4h);
+          const strength   = getSignalStrength(df5, df15, df4h);
           const limitOrder = sltp.getMultiplierLimitOrder(stake);
           const multiplier = 100;
 

@@ -6,7 +6,6 @@
 //  2. Trade sync — correctly detects open vs closed
 //  3. PnL update — fetches real PnL when trade closes
 //  4. Bot logging — saves logs to MongoDB (72hr TTL)
-//  5. Telegram logging — sends important logs to Telegram
 // ═══════════════════════════════════════════════════════
 
 import { connectForMode }                from "../src/auth/deriv-auth.js";
@@ -23,7 +22,7 @@ import { Trade, User, BotLog }             from "./db.js";
 import {
   notifyStartup, notifyTradeOpened, notifyRiskBlock,
   notifyReconnecting, notifyMaxTrades, notifyDailySummary,
-  notifyCycleScan, sendTelegramMessage,
+  notifyCycleScan,
 } from "../src/utils/telegram.js";
 
 const SYMBOLS = [
@@ -33,7 +32,7 @@ const SYMBOLS = [
   // Metals
   "frxXAUUSD", "frxXAGUSD",
   // Crypto
-  "cryBTCUSD", "cryETHUSD", "cryLTCUSD", "cryBCHUSD",
+  "cryBTCUSD", "cryETHUSD",
 ];
 const POLL_SECS          = 15;
 const MAX_IDLE_SECS      = 30;
@@ -52,77 +51,20 @@ async function getBalance(ws) {
 
 // ── BOT LOGGER ────────────────────────────────────────
 // Saves log messages to MongoDB with 72hr TTL
-// Also prints to console AND sends important logs to Telegram
-async function log(userId, message, level = "info", user = null) {
+// Also prints to console
+async function log(userId, message, level = "info") {
   console.log(message);
-  
-  // Save to MongoDB
   try {
     await BotLog.create({ userId, message, level });
   } catch (e) {
     // Don't crash the bot if logging fails
-  }
-  
-  // Send to Telegram for important logs
-  if (user && user.telegramChatId && TELEGRAM_BOT_TOKEN) {
-    try {
-      // Define which logs should go to Telegram
-      const importantPatterns = [
-        /✅ Connected/,
-        /🔒 LOCKED/,
-        /🚫 Risk block/,
-        /✅ Trade recorded/,
-        /❌ Error/,
-        /⏱️ Idle/,
-        /⚠️/,
-        /SYNC.*Trade.*→/,
-        /Market CLOSED/,
-        /FILTERED/,
-        /Max open trades/,
-        /✅ \d+ slot/,
-        /📡 Session/,
-      ];
-      
-      const shouldSendToTelegram = 
-        level === "error" ||
-        level === "trade" ||
-        level === "warn" ||
-        importantPatterns.some(pattern => pattern.test(message));
-      
-      if (shouldSendToTelegram) {
-        // Format message for Telegram (cleaner, without excessive brackets)
-        let telegramMsg = message;
-        
-        // Remove [label] prefix for cleaner Telegram messages
-        telegramMsg = telegramMsg.replace(/^\[.*?\]\s/, '');
-        
-        // Add emoji prefix based on level and content
-        if (level === "error") telegramMsg = `❌ ${telegramMsg}`;
-        else if (level === "trade") telegramMsg = `💰 ${telegramMsg}`;
-        else if (level === "warn") telegramMsg = `⚠️ ${telegramMsg}`;
-        else if (message.includes("LOCKED")) telegramMsg = `🔒 ${telegramMsg}`;
-        else if (message.includes("Connected")) telegramMsg = `✅ ${telegramMsg}`;
-        else if (message.includes("Risk block")) telegramMsg = `🚫 ${telegramMsg}`;
-        else if (message.includes("Trade recorded")) telegramMsg = `💾 ${telegramMsg}`;
-        else if (message.includes("Session")) telegramMsg = `📡 ${telegramMsg}`;
-        
-        // Truncate if too long (Telegram limit is 4096 chars)
-        if (telegramMsg.length > 4000) {
-          telegramMsg = telegramMsg.substring(0, 4000) + "...";
-        }
-        
-        await sendTelegramMessage(TELEGRAM_BOT_TOKEN, user.telegramChatId, telegramMsg);
-      }
-    } catch (teleError) {
-      console.error(`Failed to send log to Telegram: ${teleError.message}`);
-    }
   }
 }
 
 // ── SYNC TRADE STATUSES ───────────────────────────────
 // Checks all "open" trades in DB against live Deriv portfolio
 // Updates status + PnL for any that have closed
-async function syncTradeStatuses(ws, userId, label, user = null) {
+async function syncTradeStatuses(ws, userId, label) {
   try {
     const openTrades = await Trade.find({ userId, status: "open" });
     if (!openTrades.length) return;
@@ -180,12 +122,11 @@ async function syncTradeStatuses(ws, userId, label, user = null) {
 
       await log(userId,
         `[${label}] [sync] Trade ${trade.contractId} → ${finalStatus} | PnL: $${finalPnl.toFixed(2)}`,
-        "trade",
-        user
+        "trade"
       );
     }
   } catch (e) {
-    await log(userId, `[${label}] [sync] Error: ${e.message}`, "error", user);
+    await log(userId, `[${label}] [sync] Error: ${e.message}`, "error");
   }
 }
 
@@ -251,7 +192,7 @@ async function runUserBot(user, stopSignal) {
   const botToken = TELEGRAM_BOT_TOKEN;
   const chatId   = user.telegramChatId;
 
-  await log(userId, `[${label}] Bot starting...`, "info", user);
+  await log(userId, `[${label}] Bot starting...`, "info");
 
   const rm = new RiskManager({
     riskPct:              user.risk.riskPct,
@@ -278,21 +219,20 @@ async function runUserBot(user, stopSignal) {
       lastApiCall = Date.now();
       if (rm.startingBalance === null) rm.setStartingBalance(balance);
 
-      await log(userId, `[${label}] ✅ Connected | Balance: $${balance.toFixed(2)} | Open: ${openCount}/${rm.maxOpen}`, "info", user);
+      await log(userId, `[${label}] ✅ Connected | Balance: $${balance.toFixed(2)} | Open: ${openCount}/${rm.maxOpen}`, "info");
       await notifyStartup(balance, user.derivMode, label, botToken, chatId);
 
       while (!stopSignal.stopped) {
         await sleep(POLL_SECS);
 
         if ((Date.now() - lastApiCall) / 1000 > MAX_IDLE_SECS) {
-          await log(userId, `[${label}] ⏱️ Idle — reconnecting...`, "warn", user);
-          ws.close(); 
-          break;
+          await log(userId, `[${label}] ⏱️ Idle — reconnecting...`, "warn");
+          ws.close(); break;
         }
 
         const freshUser = await User.findById(userId);
         if (!freshUser || !freshUser.botActive) {
-          await log(userId, `[${label}] Bot stopped from dashboard`, "info", user);
+          await log(userId, `[${label}] Bot stopped from dashboard`, "info");
           ws.close();
           stopSignal.stopped = true;
           break;
@@ -302,7 +242,7 @@ async function runUserBot(user, stopSignal) {
         lastApiCall = Date.now();
 
         // Sync trade statuses — updates closed trades + live PnL
-        await syncTradeStatuses(ws, user._id, label, user);
+        await syncTradeStatuses(ws, user._id, label);
 
         const currentOpen = await portfolio.sync(ws);
         lastApiCall       = Date.now();
@@ -315,7 +255,7 @@ async function runUserBot(user, stopSignal) {
         rm.riskPct              = freshUser.risk.riskPct;
 
         const cycleHeader = `[${label}] 📡 Session: ${sessionName()} | Balance: $${balance.toFixed(2)} | Open: ${currentOpen}/${rm.maxOpen}`;
-        await log(userId, cycleHeader, "info", user);
+        await log(userId, cycleHeader, "info");
 
         // Daily summary
         const todayStr = new Date().toISOString().slice(0, 10);
@@ -325,7 +265,7 @@ async function runUserBot(user, stopSignal) {
         }
 
         if (currentOpen >= rm.maxOpen) {
-          await log(userId, `[${label}] 🔒 Max open trades (${currentOpen}/${rm.maxOpen}) — waiting`, "warn", user);
+          await log(userId, `[${label}] 🔒 Max open trades (${currentOpen}/${rm.maxOpen}) — waiting`, "warn");
           await notifyMaxTrades(currentOpen, rm.maxOpen, label, botToken, chatId);
           continue;
         }
@@ -335,13 +275,13 @@ async function runUserBot(user, stopSignal) {
           const reason = s.consecutiveLosses >= rm.maxConsecutiveLosses
             ? `${s.consecutiveLosses} consecutive losses`
             : `Daily loss limit ($${Math.abs(s.dailyPnl).toFixed(2)})`;
-          await log(userId, `[${label}] 🚫 Risk block: ${reason}`, "warn", user);
+          await log(userId, `[${label}] 🚫 Risk block: ${reason}`, "warn");
           await notifyRiskBlock(reason, label, botToken, chatId);
           continue;
         }
 
         const slotsLeft    = rm.maxOpen - currentOpen;
-        await log(userId, `[${label}] ✅ ${slotsLeft} slot(s) available — scanning...`, "info", user);
+        await log(userId, `[${label}] ✅ ${slotsLeft} slot(s) available — scanning...`, "info");
 
         const cycleResults = [];
         let   placed       = 0;
@@ -354,13 +294,13 @@ async function runUserBot(user, stopSignal) {
 
           // Lock check — uses DB-backed symbol set
           if (activeSymbols.has(symbol)) {
-            await log(userId, `[${label}] ${symbol} | 🔒 LOCKED — trade already open`, "info", user);
+            await log(userId, `[${label}] ${symbol} | 🔒 LOCKED — trade already open`, "info");
             cycleResults.push({ symbol, status: "LOCKED" });
             continue;
           }
 
           if (!isMarketOpen(symbol)) {
-            await log(userId, `[${label}] ${symbol} | 🕐 MARKET CLOSED — weekend`, "info", user);
+            await log(userId, `[${label}] ${symbol} | 🕐 MARKET CLOSED — weekend`, "info");
             cycleResults.push({ symbol, status: "CLOSED" });
             continue;
           }
@@ -372,7 +312,7 @@ async function runUserBot(user, stopSignal) {
             status: "open",
           });
           if (existingOpenTrade) {
-            await log(userId, `[${label}] ${symbol} | LOCKED (DB check) — skipping`, "info", user);
+            await log(userId, `[${label}] ${symbol} | LOCKED (DB check) — skipping`, "info");
             portfolio.lockSymbol(symbol);
             cycleResults.push({ symbol, status: "LOCKED" });
             continue;
@@ -385,7 +325,7 @@ async function runUserBot(user, stopSignal) {
           if (!dfM15 || dfM15.length < 2) continue;
 
           if (!marketIsTradeable(dfM15)) {
-            await log(userId, `[${label}] ${symbol} | ⛔ FILTERED — poor volatility`, "info", user);
+            await log(userId, `[${label}] ${symbol} | ⛔ FILTERED — poor volatility`, "info");
             cycleResults.push({ symbol, status: "FILTERED" });
             continue;
           }
@@ -408,8 +348,7 @@ async function runUserBot(user, stopSignal) {
 
             await log(userId,
               `[${label}] ${symbol} | 4H: ${h4bias.toUpperCase()} ${h4icon} | ${holdReason}`,
-              "info",
-              user
+              "info"
             );
             cycleResults.push({
               symbol,
@@ -427,7 +366,7 @@ async function runUserBot(user, stopSignal) {
           const baseStake  = rm.calculateStake(balance);
           const volScalar  = getVolatilityScalar(dfM15);
           const stake      = parseFloat(Math.max(baseStake * volScalar, rm.minStake).toFixed(2));
-          const strength   = getSignalStrength(dfM15, dfH1, dfH4);
+          const strength   = getSignalStrength(dfM15, df1h, df4h);
           const limitOrder = {
             stop_loss:   parseFloat((stake * freshUser.risk.stopLossPct).toFixed(2)),
             take_profit: parseFloat((stake * freshUser.risk.takeProfitPct).toFixed(2)),
@@ -444,8 +383,8 @@ async function runUserBot(user, stopSignal) {
           });
 
           const tradeMsg = `[${label}] ${symbol} | 4H: ${dfH4 ? "✅" : "—"} | 1H: ✅ | ${strength.toFixed(0)}% (${Math.round(strength*7/100)}/7 votes) — ${label2}! | Stake: $${stake.toFixed(2)} | SL=$${limitOrder.stop_loss} TP=$${limitOrder.take_profit} | ⏱️ 2hr failsafe`;
-          await log(userId, tradeMsg, "trade", user);
-          await log(userId, getTradeReason(dfM15, dfH1, dfH4), "trade", user);
+          await log(userId, tradeMsg, "trade");
+          await log(userId, getTradeReason(dfM15, df1h, df4h), "trade");
 
           const result = await placeTradeWithRetry(ws, symbol, direction, stake, limitOrder);
 
@@ -479,7 +418,7 @@ async function runUserBot(user, stopSignal) {
             } catch (dbErr) {
               // If duplicate contractId — trade already saved, skip
               if (!dbErr.message.includes("duplicate key")) {
-                await log(userId, `[${label}] DB save error: ${dbErr.message}`, "error", user);
+                await log(userId, `[${label}] DB save error: ${dbErr.message}`, "error");
               }
             }
 
@@ -491,8 +430,7 @@ async function runUserBot(user, stopSignal) {
 
             await log(userId,
               `[${label}] ✅ Trade recorded | ${symbol} | ${label2} | $${stake} | ID: ${contractId}`,
-              "trade",
-              user
+              "trade"
             );
           }
 
@@ -506,13 +444,13 @@ async function runUserBot(user, stopSignal) {
 
     } catch (e) {
       if (stopSignal.stopped) break;
-      await log(userId, `[${label}] ❌ Error: ${e.message}`, "error", user);
+      await log(userId, `[${label}] ❌ Error: ${e.message}`, "error");
       await notifyReconnecting(e.message, label, botToken, chatId);
       await sleep(10);
     }
   } // outer loop
 
-  await log(userId, `[${label}] Bot fully stopped.`, "info", user);
+  await log(userId, `[${label}] Bot fully stopped.`, "info");
   runningBots.delete(userId);
 }
 
@@ -522,8 +460,7 @@ export const botManager = {
   async startUser(user) {
     const userId = user._id.toString();
     if (runningBots.has(userId)) {
-      console.log(`[${user.name}] Already running`); 
-      return;
+      console.log(`[${user.name}] Already running`); return;
     }
     const stopSignal = { stopped: false };
     runningBots.set(userId, stopSignal);
