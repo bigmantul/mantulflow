@@ -23,7 +23,7 @@ import { Trade, User, BotLog }             from "./db.js";
 import {
   notifyStartup, notifyTradeOpened, notifyRiskBlock,
   notifyReconnecting, notifyMaxTrades, notifyDailySummary,
-  notifyCycleScan, notifySignalDetail, notifyDetailedScan,
+  notifyCycleScan, notifyDetailedScan,
 } from "../src/utils/telegram.js";
 
 const SYMBOLS = [
@@ -63,18 +63,14 @@ async function log(userId, message, level = "info") {
 }
 
 // ── SYNC TRADE STATUSES ───────────────────────────────
-// Checks all "open" trades in DB against live Deriv portfolio
-// Updates status + PnL for any that have closed
 async function syncTradeStatuses(ws, userId, label) {
   try {
     const openTrades = await Trade.find({ userId, status: "open" });
     if (!openTrades.length) return;
 
-    // Get live portfolio from Deriv
     const resp      = await sendMessage(ws, { portfolio: 1 }, "portfolio");
     const contracts = resp?.portfolio?.contracts ?? [];
 
-    // Map of contractId → contract details for active contracts
     const activeContracts = new Map();
     for (const c of contracts) {
       const status = String(c.status ?? "").toLowerCase();
@@ -87,15 +83,12 @@ async function syncTradeStatuses(ws, userId, label) {
       const contractIdStr = String(trade.contractId);
 
       if (activeContracts.has(contractIdStr)) {
-        // Still open on Deriv — update PnL in real time
         const liveContract = activeContracts.get(contractIdStr);
         const livePnl      = parseFloat(liveContract.profit ?? liveContract.bid_price ?? 0);
         await Trade.findByIdAndUpdate(trade._id, { pnl: livePnl });
         continue;
       }
 
-      // Not in active portfolio — trade has closed
-      // Try to get final details
       let finalPnl    = 0;
       let finalStatus = "closed";
 
@@ -111,7 +104,6 @@ async function syncTradeStatuses(ws, userId, label) {
           finalStatus = finalPnl > 0 ? "won" : "lost";
         }
       } catch {
-        // Contract too old to fetch — mark as closed
         finalStatus = "closed";
       }
 
@@ -131,10 +123,7 @@ async function syncTradeStatuses(ws, userId, label) {
   }
 }
 
-
 // ── PORTFOLIO TRACKER ─────────────────────────────────
-// Now uses DB as source of truth for locked symbols
-// so locks persist across reconnects
 function createPortfolio(userId) {
   let activeSymbols = new Set();
   let openCount     = 0;
@@ -167,8 +156,6 @@ function createPortfolio(userId) {
           }
         }
 
-        // Also check DB for open trades — this prevents
-        // duplicate trades even after reconnection
         const dbOpenTrades = await Trade.find({ userId, status: "open" });
         for (const t of dbOpenTrades) {
           activeNow.add(t.symbol);
@@ -184,7 +171,6 @@ function createPortfolio(userId) {
     },
   };
 }
-
 
 // ── RUN ONE USER'S BOT ────────────────────────────────
 async function runUserBot(user, stopSignal) {
@@ -204,7 +190,6 @@ async function runUserBot(user, stopSignal) {
 
   const portfolio     = createPortfolio(user._id);
   let lastSummaryDate = "";
-  let cycleCounter = 0;  // ← ADDED for Telegram throttling
 
   while (!stopSignal.stopped) {
     let lastApiCall = Date.now();
@@ -226,7 +211,6 @@ async function runUserBot(user, stopSignal) {
 
       while (!stopSignal.stopped) {
         await sleep(POLL_SECS);
-        cycleCounter++;  // ← ADDED increment counter
 
         if ((Date.now() - lastApiCall) / 1000 > MAX_IDLE_SECS) {
           await log(userId, `[${label}] ⏱️ Idle — reconnecting...`, "warn");
@@ -244,14 +228,12 @@ async function runUserBot(user, stopSignal) {
         balance     = await getBalance(ws);
         lastApiCall = Date.now();
 
-        // Sync trade statuses — updates closed trades + live PnL
         await syncTradeStatuses(ws, user._id, label);
 
         const currentOpen = await portfolio.sync(ws);
         lastApiCall       = Date.now();
         rm.openTrades     = currentOpen;
 
-        // Apply latest risk settings from DB
         rm.maxOpen              = freshUser.risk.maxOpenTrades;
         rm.maxConsecutiveLosses = freshUser.risk.maxConsecutiveLosses;
         rm.maxDailyLossPct      = freshUser.risk.maxDailyLossPct;
@@ -260,7 +242,6 @@ async function runUserBot(user, stopSignal) {
         const cycleHeader = `[${label}] 📡 Session: ${sessionName()} | Balance: $${balance.toFixed(2)} | Open: ${currentOpen}/${rm.maxOpen}`;
         await log(userId, cycleHeader, "info");
 
-        // Daily summary
         const todayStr = new Date().toISOString().slice(0, 10);
         if (new Date().getUTCHours() === 23 && lastSummaryDate !== todayStr) {
           lastSummaryDate = todayStr;
@@ -295,7 +276,6 @@ async function runUserBot(user, stopSignal) {
 
           const activeSymbols = portfolio.getActiveSymbols();
 
-          // Lock check — uses DB-backed symbol set
           if (activeSymbols.has(symbol)) {
             await log(userId, `[${label}] ${symbol} | 🔒 LOCKED — trade already open`, "info");
             cycleResults.push({ symbol, status: "LOCKED" });
@@ -308,7 +288,6 @@ async function runUserBot(user, stopSignal) {
             continue;
           }
 
-          // Extra DB check — prevent duplicate even if in-memory missed it
           const existingOpenTrade = await Trade.findOne({
             userId: user._id,
             symbol,
@@ -354,26 +333,12 @@ async function runUserBot(user, stopSignal) {
               "info"
             );
             
-            // ← ADDED: Send to Telegram for important updates
-            const shouldSendToTelegram = (voteCount >= 3) || (cycleCounter % 5 === 0);
-            if (shouldSendToTelegram && user && user.telegramChatId) {
-              await notifySignalDetail({
-                symbol,
-                h4bias: h4bias.toUpperCase(),
-                h1trend: h1trend.toUpperCase(),
-                strength,
-                votes: voteCount,
-                status: "HOLD",
-                reason: holdReason
-              });
-            }
-            
             cycleResults.push({
               symbol,
               status:  "HOLD",
-              trend,
-              h4bias:  trend.toUpperCase(),
-              h1trend: get15mTrend(dfM15).toUpperCase(),
+              trend: h4bias,
+              h4bias: h4bias.toUpperCase(),
+              h1trend: h1trend.toUpperCase(),
               strength,
               votes: voteCount,
               reason: holdReason
@@ -413,7 +378,6 @@ async function runUserBot(user, stopSignal) {
           if (result) {
             lastApiCall = Date.now();
 
-            // Lock symbol immediately in memory AND via DB trade record
             portfolio.lockSymbol(symbol);
             rm.tradeOpened();
             placed++;
@@ -421,7 +385,6 @@ async function runUserBot(user, stopSignal) {
             const contractId = typeof result === "object" ? result.contractId : String(result);
             const buyPrice   = typeof result === "object" ? result.buyPrice : 0;
 
-            // Save to DB — contractId is unique so no duplicates possible
             try {
               await Trade.create({
                 userId:     user._id,
@@ -438,7 +401,6 @@ async function runUserBot(user, stopSignal) {
                 pnl:        0,
               });
             } catch (dbErr) {
-              // If duplicate contractId — trade already saved, skip
               if (!dbErr.message.includes("duplicate key")) {
                 await log(userId, `[${label}] DB save error: ${dbErr.message}`, "error");
               }
@@ -455,11 +417,10 @@ async function runUserBot(user, stopSignal) {
               "trade"
             );
           }
+        }
 
-        } // end symbol loop
-
-        // ← ADDED: Send detailed scan to Telegram every 3 cycles (45 seconds)
-        if (cycleCounter % 3 === 0 && cycleResults.length > 0 && user && user.telegramChatId) {
+        // Send detailed scan to Telegram EVERY cycle (matches console logs)
+        if (cycleResults.length > 0 && chatId) {
           await notifyDetailedScan({
             label,
             session: sessionName(),
@@ -470,24 +431,18 @@ async function runUserBot(user, stopSignal) {
           });
         }
 
-        if (cycleResults.length > 0) {
-          await notifyCycleScan({ balance, openTrades: currentOpen, maxTrades: rm.maxOpen, session: sessionName(), results: cycleResults, label, botToken, chatId });
-        }
-
-      } // inner loop
-
+      }
     } catch (e) {
       if (stopSignal.stopped) break;
       await log(userId, `[${label}] ❌ Error: ${e.message}`, "error");
       await notifyReconnecting(e.message, label, botToken, chatId);
       await sleep(10);
     }
-  } // outer loop
+  }
 
   await log(userId, `[${label}] Bot fully stopped.`, "info");
   runningBots.delete(userId);
 }
-
 
 // ── BOT MANAGER PUBLIC API ────────────────────────────
 export const botManager = {
@@ -520,7 +475,6 @@ export const botManager = {
   isRunning(userId) { return runningBots.has(userId); },
   runningCount()    { return runningBots.size; },
 };
-
 
 export async function resumeActiveBots() {
   const activeUsers = await User.find({ botActive: true });
