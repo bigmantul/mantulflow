@@ -384,7 +384,7 @@ async function runUserBot(user, stopSignal) {
 
           const tradeMsg = `[${label}] ${symbol} | 4H: ${dfH4 ? "✅" : "—"} | 1H: ✅ | ${strength.toFixed(0)}% (${Math.round(strength*7/100)}/7 votes) — ${label2}! | Stake: $${stake.toFixed(2)} | SL=$${limitOrder.stop_loss} TP=$${limitOrder.take_profit} | ⏱️ 2hr failsafe`;
           await log(userId, tradeMsg, "trade");
-          await log(userId, getTradeReason(df15, dfh1, df4h), "trade");
+          await log(userId, getTradeReason(dfM15, dfH1, dfH4), "trade");
 
           const result = await placeTradeWithRetry(ws, symbol, direction, stake, limitOrder);
 
