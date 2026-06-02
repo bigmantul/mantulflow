@@ -368,7 +368,7 @@ async function runUserBot(user, stopSignal) {
           const direction  = signal === 1 ? "MULTUP" : "MULTDOWN";
           const label2     = signal === 1 ? "BUY" : "SELL";
           const baseStake  = rm.calculateStake(balance);
-          const volScalar  = getVolatilityScalar(dM15);
+          const volScalar  = getVolatilityScalar(dfM15);
           const stake      = parseFloat(Math.max(baseStake * volScalar, rm.minStake).toFixed(2));
           const strength   = getSignalStrength(dfM15, dfH1, dfH4);
           const limitOrder = {
