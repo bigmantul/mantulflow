@@ -38,7 +38,9 @@ const POLL_SECS          = 15;
 const MAX_IDLE_SECS      = 30;
 const TELEGRAM_BOT_TOKEN = process.env.TELEGRAM_BOT_TOKEN;
 
-const runningBots = new Map();
+const runningBots   = new Map();
+// Tracks open trade timers: contractId → { symbol, openedAt, userId }
+const tradeTimers   = new Map();
 
 function sleep(secs) {
   return new Promise(resolve => setTimeout(resolve, secs * 1000));
@@ -119,9 +121,9 @@ async function syncTradeStatuses(ws, userId, label) {
         pnl:      finalPnl,
         closedAt: new Date(),
       });
-      portfolio.unlockSymbol(trade.symbol);
 
-      // timer cleanup handled by portfolio.unlockSymbol on next sync
+      // Remove timer when trade closes
+      tradeTimers.delete(String(trade.contractId));
       await log(userId,
         `[${label}] [sync] Trade ${trade.contractId} → ${finalStatus} | PnL: $${finalPnl.toFixed(2)}`,
         "trade"
@@ -139,45 +141,14 @@ async function syncTradeStatuses(ws, userId, label) {
 function createPortfolio(userId) {
   let activeSymbols = new Set();
   let openCount     = 0;
-  // Per-user timer map: symbol → { contractId, expiresAt }
-  // Completely isolated — no sharing between users
-  const timers = new Map();
 
   return {
     getActiveSymbols: () => activeSymbols,
     getOpenCount:     () => openCount,
 
-    // Lock symbol and start 2hr countdown timer
-    lockSymbol(sym, contractId) {
+    lockSymbol(sym) {
       activeSymbols.add(sym);
       openCount = activeSymbols.size;
-      if (contractId) {
-        timers.set(sym, {
-          contractId: String(contractId),
-          expiresAt:  Date.now() + 2 * 60 * 60 * 1000,
-        });
-      }
-    },
-
-    // Unlock symbol and remove its timer
-    unlockSymbol(sym) {
-      activeSymbols.delete(sym);
-      timers.delete(sym);
-      openCount = Math.max(0, openCount - 1);
-    },
-
-    // Get countdown string for a symbol e.g. " | ⏱️ Expires in 1h 47m"
-    getCountdown(sym) {
-      const t = timers.get(sym);
-      if (!t) return "";
-      const remaining = t.expiresAt - Date.now();
-      if (remaining <= 0) return " | ⏱️ Expiring soon";
-      const hrs  = Math.floor(remaining / 3600000);
-      const mins = Math.floor((remaining % 3600000) / 60000);
-      const secs = Math.floor((remaining % 60000) / 1000);
-      return hrs > 0
-        ? ` | ⏱️ Expires in ${hrs}h ${mins}m`
-        : ` | ⏱️ Expires in ${mins}m ${secs}s`;
     },
 
     async sync(ws) {
@@ -199,15 +170,11 @@ function createPortfolio(userId) {
           }
         }
 
-        // Also check DB for open trades — prevents duplicate trades after reconnect
+        // Also check DB for open trades — this prevents
+        // duplicate trades even after reconnection
         const dbOpenTrades = await Trade.find({ userId, status: "open" });
         for (const t of dbOpenTrades) {
           activeNow.add(t.symbol);
-        }
-
-        // Remove timers for symbols no longer active
-        for (const sym of timers.keys()) {
-          if (!activeNow.has(sym)) timers.delete(sym);
         }
 
         activeSymbols = activeNow;
@@ -331,9 +298,8 @@ async function runUserBot(user, stopSignal) {
 
           // Lock check — uses DB-backed symbol set
           if (activeSymbols.has(symbol)) {
-            const countdown = portfolio.getCountdown(symbol);
-            await log(userId, `[${label}] ${symbol} | 🔒 LOCKED${countdown}`, "info");
-            cycleResults.push({ symbol, status: "LOCKED", countdown });
+            await log(userId, `[${label}] ${symbol} | 🔒 LOCKED — trade already open`, "info");
+            cycleResults.push({ symbol, status: "LOCKED" });
             continue;
           }
 
@@ -430,7 +396,14 @@ async function runUserBot(user, stopSignal) {
             lastApiCall = Date.now();
 
             // Lock symbol immediately in memory AND via DB trade record
-            portfolio.lockSymbol(symbol, contractId);  // locks symbol + starts 2hr timer
+            portfolio.lockSymbol(symbol);
+            // Track timer for countdown display
+            tradeTimers.set(String(contractId), {
+              symbol,
+              openedAt: Date.now(),
+              userId:   user._id.toString(),
+              expiresAt: Date.now() + 2 * 60 * 60 * 1000,
+            });
             rm.tradeOpened();
             placed++;
 
