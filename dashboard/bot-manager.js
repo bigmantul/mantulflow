@@ -33,13 +33,14 @@ const SYMBOLS = [
   "frxXAUUSD", "frxXAGUSD",
   // Crypto
   "cryBTCUSD", "cryETHUSD",
-
 ];
 const POLL_SECS          = 15;
 const MAX_IDLE_SECS      = 30;
 const TELEGRAM_BOT_TOKEN = process.env.TELEGRAM_BOT_TOKEN;
 
-const runningBots = new Map();
+const runningBots   = new Map();
+// Tracks open trade timers: contractId → { symbol, openedAt, userId }
+const tradeTimers   = new Map();
 
 function sleep(secs) {
   return new Promise(resolve => setTimeout(resolve, secs * 1000));
@@ -121,6 +122,8 @@ async function syncTradeStatuses(ws, userId, label) {
         closedAt: new Date(),
       });
 
+      // Remove timer when trade closes
+      tradeTimers.delete(String(trade.contractId));
       await log(userId,
         `[${label}] [sync] Trade ${trade.contractId} → ${finalStatus} | PnL: $${finalPnl.toFixed(2)}`,
         "trade"
@@ -365,7 +368,7 @@ async function runUserBot(user, stopSignal) {
           const direction  = signal === 1 ? "MULTUP" : "MULTDOWN";
           const label2     = signal === 1 ? "BUY" : "SELL";
           const baseStake  = rm.calculateStake(balance);
-          const volScalar  = getVolatilityScalar(dfM15);
+          const volScalar  = getVolatilityScalar(dM15);
           const stake      = parseFloat(Math.max(baseStake * volScalar, rm.minStake).toFixed(2));
           const strength   = getSignalStrength(dfM15, dfH1, dfH4);
           const limitOrder = {
@@ -394,6 +397,13 @@ async function runUserBot(user, stopSignal) {
 
             // Lock symbol immediately in memory AND via DB trade record
             portfolio.lockSymbol(symbol);
+            // Track timer for countdown display
+            tradeTimers.set(String(contractId), {
+              symbol,
+              openedAt: Date.now(),
+              userId:   user._id.toString(),
+              expiresAt: Date.now() + 2 * 60 * 60 * 1000,
+            });
             rm.tradeOpened();
             placed++;
 

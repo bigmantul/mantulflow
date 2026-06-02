@@ -214,6 +214,7 @@ async function loadUsers() {
         }
         <button class="action-btn btn-view" onclick="viewUser('${u._id}', '${u.name}')">View</button>
         <button class="action-btn btn-view" style="background:#1a2e1a;color:#86efac" onclick="adminSyncTrades('${u._id}', '${u.name}', this)">Sync</button>
+        <button class="action-btn btn-view" style="background:#2d2006;color:#fbbf24" onclick="adminImportTrades('${u._id}', '${u.name}', this)">Import</button>
         <button class="action-btn btn-del" onclick="deleteUser('${u._id}', '${u.name}')">Del</button>
       </td>
     </tr>
@@ -228,6 +229,29 @@ async function loadUsers() {
       </tr></thead>
       <tbody>${rows}</tbody>
     </table>`;
+}
+
+async function adminImportTrades(userId, name, btn) {
+  if (!confirm(`Import all trades from Deriv for ${name}?`)) return;
+  btn.disabled    = true;
+  btn.textContent = "...";
+  const data = await fetch(`/api/admin/users/${userId}/import-trades`, {
+    method: "POST",
+    headers: { Authorization: `Bearer ${adminToken}`, "Content-Type": "application/json" },
+  }).then(r => r.json());
+  if (data) alert(`${name}: Imported ${data.imported || 0} | Updated ${data.updated || 0} | Skipped ${data.skipped || 0}`);
+  btn.disabled    = false;
+  btn.textContent = "Import";
+  await loadAll();
+}
+
+async function resetTrades(userId, name) {
+  if (!confirm(`Reset ALL trade history for ${name}?\nThis cannot be undone.`)) return;
+  const data = await API(`/users/${userId}/trades`, "DELETE");
+  if (data) {
+    alert(`${name}: ${data.message}`);
+    await loadAll();
+  }
 }
 
 async function adminSyncTrades(userId, name, btn) {

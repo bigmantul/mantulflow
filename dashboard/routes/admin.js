@@ -267,6 +267,22 @@ router.post("/users/:id/import-trades", adminAuth, async (req, res) => {
   }
 });
 
+// ── RESET TRADE HISTORY ──────────────────────────────
+router.delete("/users/:id/trades", adminAuth, async (req, res) => {
+  try {
+    const user = await User.findById(req.params.id);
+    if (!user) return res.status(404).json({ error: "User not found" });
+
+    const result = await Trade.deleteMany({ userId: user._id });
+    res.json({
+      message: `Trade history cleared for ${user.name}`,
+      deleted: result.deletedCount,
+    });
+  } catch (e) {
+    res.status(500).json({ error: e.message });
+  }
+});
+
 // ── DELETE USER ───────────────────────────────────────
 router.delete("/users/:id", adminAuth, async (req, res) => {
   try {

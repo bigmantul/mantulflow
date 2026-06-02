@@ -30,7 +30,7 @@ export function notifyStartup(balance, mode, label, botToken, chatId) {
     `🤖 <b>${label || "Bot"} — Started</b>\n` +
     `Mode    : ${(mode || "demo").toUpperCase()}\n` +
     `Balance : $${balance.toFixed(2)}\n` +
-    `Strategy: SMC — 4H/1H/15m | Min 5/7 votes`,
+    `Strategy: LOADING 4H/1H/15m | Min 5/7 votes`,
     botToken, chatId
   );
 }
@@ -103,7 +103,8 @@ export function notifyCycleScan({ balance, openTrades, maxTrades, session, resul
     const sym = r.symbol;
 
     if (r.status === "LOCKED") {
-      lines.push(`🔒 ${sym} | LOCKED — trade open`);
+      const cd = r.countdown ? r.countdown : "";
+      lines.push(`🔒 ${sym} | LOCKED${cd}`);
 
     } else if (r.status === "CLOSED") {
       lines.push(`🕐 ${sym} | MARKET CLOSED`);
