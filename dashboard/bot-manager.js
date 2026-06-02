@@ -32,15 +32,13 @@ const SYMBOLS = [
   // Metals
   "frxXAUUSD", "frxXAGUSD",
   // Crypto
-  "cryBTCUSD", "cryETHUSD",
+  "cryBTCUSD", "cryETHUSD", "cryLTCUSD", "cryBCHUSD",
 ];
 const POLL_SECS          = 15;
 const MAX_IDLE_SECS      = 30;
 const TELEGRAM_BOT_TOKEN = process.env.TELEGRAM_BOT_TOKEN;
 
-const runningBots   = new Map();
-// Tracks open trade timers: contractId → { symbol, openedAt, userId }
-const tradeTimers   = new Map();
+const runningBots = new Map();
 
 function sleep(secs) {
   return new Promise(resolve => setTimeout(resolve, secs * 1000));
@@ -121,9 +119,9 @@ async function syncTradeStatuses(ws, userId, label) {
         pnl:      finalPnl,
         closedAt: new Date(),
       });
+      portfolio.unlockSymbol(trade.symbol);
 
-      // Remove timer when trade closes
-      tradeTimers.delete(String(trade.contractId));
+      // timer cleanup handled by portfolio.unlockSymbol on next sync
       await log(userId,
         `[${label}] [sync] Trade ${trade.contractId} → ${finalStatus} | PnL: $${finalPnl.toFixed(2)}`,
         "trade"
@@ -348,7 +346,7 @@ async function runUserBot(user, stopSignal) {
             let holdReason;
             if (h4bias === "neutral")         holdReason = "4H neutral — no direction";
             else if (h1trend !== h4bias)      holdReason = `1H: ${h1trend.toUpperCase()} ${h1icon} — disagrees with 4H`;
-            else                              holdReason = `1H: ${h1trend.toUpperCase()} ✅ | ${voteCount}/7 votes — need 5`;
+            else                              holdReason = `1H: ${h1trend.toUpperCase()} ✅ | ${voteCount}/7 votes — need 4`;
 
             await log(userId,
               `[${label}] ${symbol} | 4H: ${h4bias.toUpperCase()} ${h4icon} | ${holdReason}`,
@@ -368,9 +366,9 @@ async function runUserBot(user, stopSignal) {
           const direction  = signal === 1 ? "MULTUP" : "MULTDOWN";
           const label2     = signal === 1 ? "BUY" : "SELL";
           const baseStake  = rm.calculateStake(balance);
-          const volScalar  = getVolatilityScalar(dfM15);
+          const volScalar  = getVolatilityScalar(df5);
           const stake      = parseFloat(Math.max(baseStake * volScalar, rm.minStake).toFixed(2));
-          const strength   = getSignalStrength(dfM15, dfH1, dfH4);
+          const strength   = getSignalStrength(df5, df15, df4h);
           const limitOrder = {
             stop_loss:   parseFloat((stake * freshUser.risk.stopLossPct).toFixed(2)),
             take_profit: parseFloat((stake * freshUser.risk.takeProfitPct).toFixed(2)),
@@ -388,7 +386,7 @@ async function runUserBot(user, stopSignal) {
 
           const tradeMsg = `[${label}] ${symbol} | 4H: ${dfH4 ? "✅" : "—"} | 1H: ✅ | ${strength.toFixed(0)}% (${Math.round(strength*7/100)}/7 votes) — ${label2}! | Stake: $${stake.toFixed(2)} | SL=$${limitOrder.stop_loss} TP=$${limitOrder.take_profit} | ⏱️ 2hr failsafe`;
           await log(userId, tradeMsg, "trade");
-          await log(userId, getTradeReason(dfM15, dfH1, dfH4), "trade");
+          await log(userId, getTradeReason(df5, df15, df4h), "trade");
 
           const result = await placeTradeWithRetry(ws, symbol, direction, stake, limitOrder);
 
@@ -396,14 +394,7 @@ async function runUserBot(user, stopSignal) {
             lastApiCall = Date.now();
 
             // Lock symbol immediately in memory AND via DB trade record
-            portfolio.lockSymbol(symbol);
-            // Track timer for countdown display
-            tradeTimers.set(String(contractId), {
-              symbol,
-              openedAt: Date.now(),
-              userId:   user._id.toString(),
-              expiresAt: Date.now() + 2 * 60 * 60 * 1000,
-            });
+            portfolio.lockSymbol(symbol, contractId);  // locks symbol + starts 2hr timer
             rm.tradeOpened();
             placed++;
 

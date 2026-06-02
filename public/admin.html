@@ -215,6 +215,7 @@ async function loadUsers() {
         <button class="action-btn btn-view" onclick="viewUser('${u._id}', '${u.name}')">View</button>
         <button class="action-btn btn-view" style="background:#1a2e1a;color:#86efac" onclick="adminSyncTrades('${u._id}', '${u.name}', this)">Sync</button>
         <button class="action-btn btn-view" style="background:#2d2006;color:#fbbf24" onclick="adminImportTrades('${u._id}', '${u.name}', this)">Import</button>
+        <button class="action-btn btn-del" style="background:#1e293b;color:#fbbf24" onclick="resetTrades('${u._id}', '${u.name}')">Reset</button>
         <button class="action-btn btn-del" onclick="deleteUser('${u._id}', '${u.name}')">Del</button>
       </td>
     </tr>
