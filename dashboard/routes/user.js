@@ -11,9 +11,11 @@ import { Trade }   from "../db.js";
 const router = express.Router();
 
 // ── GET PROFILE ───────────────────────────────────────
+// IMPORTANT: Include derivPAT and derivAppId for WebSocket connection
 router.get("/me", protect, async (req, res) => {
   try {
-    const user = await User.findById(req.user._id).select("-password -derivPAT");
+    // Only hide password — keep derivPAT for dashboard WebSocket
+    const user = await User.findById(req.user._id).select("-password");
     res.json(user);
   } catch (e) {
     res.status(500).json({ error: e.message });
@@ -76,9 +78,9 @@ router.put("/settings", protect, async (req, res) => {
     const { derivPAT, derivAppId, derivMode, telegramChatId } = req.body;
     const user = await User.findById(req.user._id);
 
-    if (derivPAT)                    user.derivPAT       = derivPAT;
-    if (derivAppId)                  user.derivAppId     = derivAppId;
-    if (derivMode)                   user.derivMode      = derivMode;
+    if (derivPAT !== undefined)      user.derivPAT       = derivPAT;
+    if (derivAppId !== undefined)    user.derivAppId     = derivAppId;
+    if (derivMode !== undefined)     user.derivMode      = derivMode;
     if (telegramChatId !== undefined) user.telegramChatId = telegramChatId;
 
     await user.save();
@@ -94,13 +96,10 @@ router.put("/settings", protect, async (req, res) => {
 });
 
 // ── MANUAL SYNC TRADES ────────────────────────────────
-// Forces an immediate check of all open trades against
-// Deriv and closes any that are no longer active
 router.post("/sync-trades", protect, async (req, res) => {
   try {
     const userId = req.user._id;
 
-    // Find ALL trades that could be open — status "open" or pnl=0 with no closedAt
     const openTrades = await Trade.find({
       userId,
       $or: [
@@ -110,7 +109,6 @@ router.post("/sync-trades", protect, async (req, res) => {
     });
 
     if (!openTrades.length) {
-      // Double check — count all trades for this user
       const allTrades = await Trade.countDocuments({ userId });
       return res.json({
         message: allTrades > 0
@@ -121,8 +119,6 @@ router.post("/sync-trades", protect, async (req, res) => {
       });
     }
 
-    // Get the user's bot instance WebSocket
-    // If bot is running, use its connection — otherwise connect fresh
     const user = await User.findById(userId);
     const { connectForMode }    = await import("../../src/auth/deriv-auth.js");
     const { connectWebSocket, sendMessage } = await import("../../src/utils/ws-client.js");
@@ -130,7 +126,6 @@ router.post("/sync-trades", protect, async (req, res) => {
     const wsUrl = await connectForMode(user.derivMode, user.derivPAT, user.derivAppId);
     const ws    = await connectWebSocket(wsUrl);
 
-    // Get live portfolio
     const resp      = await sendMessage(ws, { portfolio: 1 }, "portfolio");
     const contracts = resp?.portfolio?.contracts ?? [];
 
@@ -151,7 +146,6 @@ router.post("/sync-trades", protect, async (req, res) => {
         continue;
       }
 
-      // Trade closed on Deriv — get final PnL
       try {
         const detail   = await sendMessage(ws, {
           proposal_open_contract: 1,
@@ -185,9 +179,6 @@ router.post("/sync-trades", protect, async (req, res) => {
 });
 
 // ── IMPORT ALL TRADES FROM DERIV ─────────────────────
-// Pulls ALL open contracts from Deriv portfolio and saves
-// them to MongoDB — works for trades opened before dashboard
-// was deployed or opened manually on the Deriv app
 router.post("/import-trades", protect, async (req, res) => {
   try {
     const userId = req.user._id;
@@ -196,11 +187,9 @@ router.post("/import-trades", protect, async (req, res) => {
     const { connectForMode }                 = await import("../../src/auth/deriv-auth.js");
     const { connectWebSocket, sendMessage }  = await import("../../src/utils/ws-client.js");
 
-    // Connect to Deriv
     const wsUrl = await connectForMode(user.derivMode, user.derivPAT, user.derivAppId);
     const ws    = await connectWebSocket(wsUrl);
 
-    // Get full portfolio from Deriv
     const resp      = await sendMessage(ws, { portfolio: 1 }, "portfolio");
     const contracts = resp?.portfolio?.contracts ?? [];
 
@@ -212,22 +201,18 @@ router.post("/import-trades", protect, async (req, res) => {
     for (const c of contracts) {
       const status = String(c.status ?? "").toLowerCase();
 
-      // Skip already closed contracts
       if (["sold", "closed", "expired"].includes(status)) continue;
 
       const contractId = String(c.contract_id);
 
-      // Detect symbol from shortcode/underlying
       let symbol = c.underlying || c.symbol || "";
       if (!symbol && c.shortcode) {
-        // Parse from shortcode e.g. "MULTUP_R_100_1.82_..."
         const symbols = ["R_75","R_100","frxXAUUSD","frxXAGUSD","cryBTCUSD","cryETHUSD"];
         for (const s of symbols) {
           if (c.shortcode.includes(s)) { symbol = s; break; }
         }
       }
 
-      // Detect direction
       let direction = "MULTUP";
       if (c.shortcode && c.shortcode.includes("MULTDOWN")) direction = "MULTDOWN";
       else if (c.contract_type) direction = c.contract_type;
@@ -237,18 +222,15 @@ router.post("/import-trades", protect, async (req, res) => {
       const multiplier = parseInt(c.multiplier ?? 100);
       const pnl        = parseFloat(c.profit ?? 0);
 
-      // Check if already in DB
       const existing = await Trade.findOne({ userId, contractId });
 
       if (existing) {
-        // Update PnL if already imported
         await Trade.findByIdAndUpdate(existing._id, { pnl, status: "open" });
         updated++;
         results.push({ contractId, symbol, action: "updated", pnl });
         continue;
       }
 
-      // Save new trade to DB
       try {
         await Trade.create({
           userId,
@@ -276,7 +258,6 @@ router.post("/import-trades", protect, async (req, res) => {
       }
     }
 
-    // Also get closed contract history (last 100)
     try {
       const histResp = await sendMessage(ws, {
         profit_table: 1,
@@ -332,7 +313,6 @@ router.post("/import-trades", protect, async (req, res) => {
         }
       }
     } catch (histErr) {
-      // History fetch failed — not critical, continue
       console.log("History fetch failed:", histErr.message);
     }
 
