@@ -2,49 +2,153 @@
 <html lang="en">
 <head>
 <meta charset="UTF-8"/>
-<meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+<meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=yes"/>
 <title>MANTUL FLOW — Live Trading Dashboard</title>
 <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
 <style>
   *{margin:0;padding:0;box-sizing:border-box}
-  body{font-family:'Inter',-apple-system,sans-serif;background:#05070f;color:#e2e8f0;min-height:100vh;position:relative;overflow-x:hidden;}
   
-  body::before{content:'';position:fixed;width:500px;height:500px;background:#2563eb;filter:blur(150px);opacity:.12;top:10%;left:-10%;animation:floatOrb 14s ease-in-out infinite;pointer-events:none;z-index:0;}
-  body::after{content:'';position:fixed;width:400px;height:400px;background:#06b6d4;filter:blur(150px);opacity:.1;bottom:10%;right:-10%;animation:floatOrb2 16s ease-in-out infinite;pointer-events:none;z-index:0;}
+  body{
+    font-family:'Inter',-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;
+    background:#05070f;
+    color:#e2e8f0;
+    min-height:100vh;
+    position:relative;
+    overflow-x:hidden;
+  }
+  
+  /* Animated Background Orbs */
+  body::before{
+    content:'';
+    position:fixed;
+    width:500px;
+    height:500px;
+    background:#2563eb;
+    filter:blur(150px);
+    opacity:.12;
+    top:10%;
+    left:-10%;
+    animation:floatOrb 14s ease-in-out infinite;
+    pointer-events:none;
+    z-index:0;
+  }
+  body::after{
+    content:'';
+    position:fixed;
+    width:400px;
+    height:400px;
+    background:#06b6d4;
+    filter:blur(150px);
+    opacity:.1;
+    bottom:10%;
+    right:-10%;
+    animation:floatOrb2 16s ease-in-out infinite;
+    pointer-events:none;
+    z-index:0;
+  }
   @keyframes floatOrb{0%,100%{transform:translateY(0)}50%{transform:translateY(-60px)}}
   @keyframes floatOrb2{0%,100%{transform:translateY(0)}50%{transform:translateY(60px)}}
   
-  .card,.stat-card{background:rgba(17,24,39,0.55);backdrop-filter:blur(20px);border:1px solid rgba(255,255,255,0.06);box-shadow:0 8px 32px rgba(0,0,0,0.3);transition:all 0.35s ease;}
-  .card:hover,.stat-card:hover{transform:translateY(-4px);border-color:rgba(56,189,248,0.3);}
+  /* Glassmorphism */
+  .card,.stat-card,.hero-card,.signal-card,.heatmap-card,.trades-card{
+    background:rgba(17,24,39,0.55);
+    backdrop-filter:blur(20px);
+    border:1px solid rgba(255,255,255,0.06);
+    box-shadow:0 8px 32px rgba(0,0,0,0.3);
+    transition:all 0.35s cubic-bezier(0.2,0.9,0.4,1.1);
+  }
+  .card:hover,.stat-card:hover{
+    transform:translateY(-4px);
+    border-color:rgba(56,189,248,0.3);
+    box-shadow:0 20px 40px rgba(0,0,0,0.4);
+  }
   
-  .header{background:rgba(17,24,39,0.7);backdrop-filter:blur(20px);border-bottom:1px solid rgba(56,189,248,0.15);padding:16px 24px;display:flex;align-items:center;justify-content:space-between;position:sticky;top:0;z-index:100;}
+  .header{
+    background:rgba(17,24,39,0.7);
+    backdrop-filter:blur(20px);
+    border-bottom:1px solid rgba(56,189,248,0.15);
+    padding:16px 24px;
+    display:flex;
+    align-items:center;
+    justify-content:space-between;
+    position:sticky;
+    top:0;
+    z-index:100;
+  }
   .header h1{font-size:18px;font-weight:700;background:linear-gradient(135deg,#38bdf8,#818cf8);-webkit-background-clip:text;background-clip:text;color:transparent;}
   .user-info{display:flex;align-items:center;gap:16px;}
   .user-name{color:#94a3b8;font-size:14px;}
   .btn-logout{padding:6px 14px;background:rgba(255,255,255,0.05);border:1px solid rgba(56,189,248,0.3);border-radius:8px;color:#94a3b8;cursor:pointer;transition:0.2s;}
   .btn-logout:hover{background:rgba(248,113,113,0.2);border-color:#f87171;color:#f87171;}
+  
   .main{max-width:1400px;margin:0 auto;padding:24px;position:relative;z-index:1;}
   
+  /* Hero Section */
   .hero-section{display:grid;grid-template-columns:1fr 1.5fr;gap:20px;margin-bottom:28px;}
   @media(max-width:900px){.hero-section{grid-template-columns:1fr;}}
-  .hero-card{background:linear-gradient(135deg,rgba(30,64,175,0.3),rgba(6,182,212,0.2));border-radius:28px;padding:28px;position:relative;overflow:hidden;}
-  .hero-greeting{font-size:13px;color:#38bdf8;margin-bottom:8px;}
+  
+  .hero-card{
+    background:linear-gradient(135deg,rgba(30,64,175,0.3),rgba(6,182,212,0.2));
+    border-radius:28px;
+    padding:28px;
+    position:relative;
+    overflow:hidden;
+  }
+  .hero-card::before{
+    content:'';
+    position:absolute;
+    top:-50%;
+    right:-30%;
+    width:300px;
+    height:300px;
+    background:radial-gradient(circle,rgba(56,189,248,0.2),transparent);
+    border-radius:50%;
+  }
+  .hero-greeting{font-size:13px;color:#38bdf8;letter-spacing:1px;margin-bottom:8px;}
   .hero-title{font-size:28px;font-weight:800;margin-bottom:8px;}
+  .balance-label{font-size:12px;color:#7f8ea3;margin-bottom:4px;}
   .balance-amount{font-size:42px;font-weight:800;background:linear-gradient(135deg,#fff,#38bdf8);-webkit-background-clip:text;background-clip:text;color:transparent;}
   .health-bar{flex:1;height:6px;background:rgba(255,255,255,0.1);border-radius:3px;overflow:hidden;}
   .health-fill{height:100%;background:linear-gradient(90deg,#10b981,#34d399);border-radius:3px;transition:width 0.5s ease;}
-  .refresh-btn{background:rgba(56,189,248,0.15);border:none;border-radius:20px;padding:4px 10px;margin-left:10px;cursor:pointer;font-size:11px;color:#38bdf8;}
+  .refresh-btn{background:rgba(56,189,248,0.15);border:none;border-radius:20px;padding:4px 10px;margin-left:10px;cursor:pointer;font-size:11px;color:#38bdf8;transition:0.2s;}
+  .refresh-btn:hover{background:rgba(56,189,248,0.3);}
   
+  /* Stats Grid */
   .stats-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:16px;margin-bottom:28px;}
   .stat-card{border-radius:20px;padding:20px;}
-  .stat-label{font-size:11px;color:#7f8ea3;text-transform:uppercase;margin-bottom:6px;}
+  .stat-label{font-size:11px;color:#7f8ea3;text-transform:uppercase;letter-spacing:0.6px;margin-bottom:6px;}
   .stat-value{font-size:28px;font-weight:700;}
   .stat-value.green{color:#34d399;}
   .stat-value.red{color:#f87171;}
   .stat-value.blue{color:#38bdf8;}
+  .stat-value.yellow{color:#fbbf24;}
   
-  .market-row{display:flex;flex-wrap:wrap;gap:12px;margin-bottom:28px;padding:16px;background:rgba(17,24,39,0.4);backdrop-filter:blur(12px);border-radius:24px;max-height:200px;overflow-y:auto;}
-  .market-ticker{padding:10px 18px;background:rgba(0,0,0,0.3);border-radius:40px;font-size:13px;font-weight:600;display:flex;align-items:center;gap:10px;}
+  /* Live Market Tickers */
+  .market-row{
+    display:flex;
+    flex-wrap:wrap;
+    gap:12px;
+    margin-bottom:28px;
+    padding:16px;
+    background:rgba(17,24,39,0.4);
+    backdrop-filter:blur(12px);
+    border-radius:24px;
+    max-height:180px;
+    overflow-y:auto;
+  }
+  .market-ticker{
+    padding:10px 18px;
+    background:rgba(0,0,0,0.3);
+    border-radius:40px;
+    font-size:13px;
+    font-weight:600;
+    display:flex;
+    align-items:center;
+    gap:10px;
+    transition:0.2s;
+    cursor:pointer;
+  }
+  .market-ticker:hover{background:rgba(56,189,248,0.15);transform:scale(1.02);}
   .ticker-symbol{color:#94a3b8;font-family:monospace;}
   .ticker-price{color:#fff;font-weight:700;}
   .ticker-change.up{color:#10b981;}
@@ -52,12 +156,16 @@
   .live-dot{width:8px;height:8px;background:#10b981;border-radius:50%;animation:pulse 1.5s infinite;}
   @keyframes pulse{0%,100%{opacity:1;}50%{opacity:0.4;}}
   
+  /* Two Column Layout */
   .two-col{display:grid;grid-template-columns:1fr 1fr;gap:20px;margin-bottom:28px;}
   @media(max-width:900px){.two-col{grid-template-columns:1fr;}}
   
+  /* AI Panel */
   .ai-panel{border-radius:24px;padding:24px;}
-  .ai-header{font-size:12px;color:#38bdf8;text-transform:uppercase;margin-bottom:20px;}
+  .ai-header{font-size:12px;color:#38bdf8;text-transform:uppercase;letter-spacing:1px;margin-bottom:20px;}
   .ai-stat{display:flex;justify-content:space-between;padding:12px 0;border-bottom:1px solid rgba(255,255,255,0.05);}
+  .ai-label{color:#94a3b8;font-size:13px;}
+  .ai-value{font-weight:700;color:#38bdf8;}
   .confidence-bar{height:6px;background:rgba(255,255,255,0.1);border-radius:3px;margin-top:8px;overflow:hidden;}
   .confidence-fill{height:100%;background:linear-gradient(90deg,#38bdf8,#818cf8);border-radius:3px;transition:width 0.5s ease;}
   .risk-bar{height:8px;background:rgba(255,255,255,0.1);border-radius:4px;overflow:hidden;margin-top:8px;}
@@ -65,20 +173,28 @@
   .badges-row{display:flex;gap:12px;margin-top:16px;flex-wrap:wrap;}
   .perf-badge{background:rgba(255,255,255,0.05);border-radius:40px;padding:8px 16px;font-size:12px;}
   
-  .chart-container{height:280px;}
+  /* Chart */
+  .chart-container{height:280px;position:relative;}
+  
+  /* Signals + Heatmap */
   .signals-heatmap{display:grid;grid-template-columns:1fr 1fr;gap:20px;margin-bottom:28px;}
   @media(max-width:700px){.signals-heatmap{grid-template-columns:1fr;}}
   .signal-card,.heatmap-card{border-radius:24px;padding:24px;}
-  .signal-item{display:flex;justify-content:space-between;padding:12px 0;border-bottom:1px solid rgba(255,255,255,0.05);}
+  .signal-item{display:flex;justify-content:space-between;align-items:center;padding:12px 0;border-bottom:1px solid rgba(255,255,255,0.05);}
+  .signal-dir{font-weight:700;}
   .signal-dir.buy{color:#10b981;}
   .signal-dir.sell{color:#f87171;}
-  .heatmap-item{display:flex;justify-content:space-between;padding:10px 0;}
+  .heatmap-item{display:flex;justify-content:space-between;align-items:center;padding:10px 0;}
+  .heatmap-percent{font-weight:700;}
   .heatmap-percent.high{color:#10b981;}
+  .heatmap-percent.medium{color:#fbbf24;}
   .heatmap-percent.low{color:#f87171;}
+  .gauge-value{font-size:48px;font-weight:800;background:linear-gradient(135deg,#38bdf8,#818cf8);-webkit-background-clip:text;background-clip:text;color:transparent;}
   
+  /* Trade History */
   .trades-card{border-radius:24px;padding:24px;overflow-x:auto;}
   table{width:100%;border-collapse:collapse;font-size:13px;}
-  th{text-align:left;padding:12px;color:#7f8ea3;border-bottom:1px solid rgba(255,255,255,0.05);}
+  th{text-align:left;padding:12px;color:#7f8ea3;border-bottom:1px solid rgba(255,255,255,0.05);font-weight:500;}
   td{padding:12px;border-bottom:1px solid rgba(255,255,255,0.03);}
   .badge{padding:4px 10px;border-radius:20px;font-size:11px;font-weight:600;}
   .badge.buy{background:rgba(16,185,129,0.15);color:#10b981;}
@@ -87,20 +203,46 @@
   .badge.lost{background:rgba(248,113,113,0.15);color:#f87171;}
   .badge.open{background:rgba(56,189,248,0.15);color:#38bdf8;}
   
-  .toast{position:fixed;bottom:30px;right:30px;background:rgba(17,24,39,0.95);backdrop-filter:blur(20px);border:1px solid rgba(56,189,248,0.3);border-radius:16px;padding:14px 24px;z-index:1000;transform:translateX(400px);transition:transform 0.3s ease;}
-  .toast.show{transform:translateX(0);}
-  
-  .toggle-btn{padding:10px 24px;border-radius:12px;border:none;font-weight:700;cursor:pointer;}
-  .sync-btn,.save-btn{padding:8px 16px;background:rgba(30,41,59,0.8);color:#94a3b8;border:1px solid rgba(255,255,255,0.05);border-radius:10px;cursor:pointer;margin:4px;}
+  /* Bot Control */
+  .toggle-btn{padding:10px 24px;border-radius:12px;border:none;font-weight:700;cursor:pointer;transition:0.2s;}
+  .sync-btn,.save-btn{padding:8px 16px;background:rgba(30,41,59,0.8);color:#94a3b8;border:1px solid rgba(255,255,255,0.05);border-radius:10px;cursor:pointer;margin:4px;transition:0.2s;}
+  .sync-btn:hover,.save-btn:hover{background:#334155;color:#e2e8f0;}
   .form-group{margin-bottom:12px;}
   .form-group label{font-size:11px;color:#7f8ea3;margin-bottom:4px;display:block;}
-  .form-group input,.form-group select{width:100%;padding:10px 12px;background:rgba(15,23,42,0.8);border:1px solid rgba(255,255,255,0.08);border-radius:10px;color:#e2e8f0;}
+  .form-group input,.form-group select{width:100%;padding:10px 12px;background:rgba(15,23,42,0.8);border:1px solid rgba(255,255,255,0.08);border-radius:10px;color:#e2e8f0;font-size:13px;outline:none;}
+  .form-group input:focus{border-color:#38bdf8;}
   
-  .empty{text-align:center;padding:40px;color:#475569;}
+  /* Activity Timeline */
+  .timeline-list{max-height:300px;overflow-y:auto;}
+  .timeline-item{display:flex;gap:12px;padding:10px 0;border-bottom:1px solid rgba(255,255,255,0.05);}
+  .timeline-time{font-size:10px;color:#4a5568;min-width:60px;}
+  .timeline-text{font-size:11px;color:#94a3b8;}
+  
+  /* Tabs */
   .tabs{display:flex;gap:8px;margin-bottom:16px;flex-wrap:wrap;}
-  .filter-tab{padding:6px 14px;border-radius:6px;border:1px solid rgba(255,255,255,0.1);background:transparent;color:#64748b;cursor:pointer;}
+  .filter-tab{padding:6px 14px;border-radius:6px;border:1px solid rgba(255,255,255,0.1);background:transparent;color:#64748b;font-size:13px;cursor:pointer;transition:0.2s;}
   .filter-tab.active{background:rgba(56,189,248,0.15);border-color:#38bdf8;color:#e2e8f0;}
   
+  /* Toast */
+  .toast{
+    position:fixed;
+    bottom:30px;
+    right:30px;
+    background:rgba(17,24,39,0.95);
+    backdrop-filter:blur(20px);
+    border:1px solid rgba(56,189,248,0.3);
+    border-radius:16px;
+    padding:14px 24px;
+    z-index:1000;
+    transform:translateX(400px);
+    transition:transform 0.3s ease;
+    font-size:13px;
+  }
+  .toast.show{transform:translateX(0);}
+  .toast.success{border-left:3px solid #10b981;}
+  .toast.error{border-left:3px solid #f87171;}
+  
+  .empty{text-align:center;padding:40px;color:#475569;}
   .loading-spinner{width:20px;height:20px;border:2px solid rgba(56,189,248,0.2);border-top-color:#38bdf8;border-radius:50%;animation:spin 1s linear infinite;display:inline-block;}
   @keyframes spin{to{transform:rotate(360deg);}}
 </style>
@@ -116,90 +258,116 @@
 </div>
 
 <div class="main">
+  <!-- Hero Section -->
   <div class="hero-section">
     <div class="hero-card">
       <div class="hero-greeting">WELCOME BACK</div>
       <div class="hero-title" id="heroName">-- 👋</div>
-      <div class="balance-label">Account Balance <button class="refresh-btn" onclick="refreshBalance()">⟳ Refresh</button></div>
+      <div class="balance-label">
+        Account Balance
+        <button class="refresh-btn" onclick="refreshBalance()">⟳ Refresh</button>
+      </div>
       <div class="balance-amount" id="balanceAmount">$0.00</div>
       <div style="display:flex;align-items:center;gap:12px;margin-top:16px;">
-        <span>Account Health</span>
+        <span style="font-size:12px">Account Health</span>
         <div class="health-bar"><div class="health-fill" id="healthFill" style="width:50%"></div></div>
-        <span id="healthPercent">50%</span>
+        <span style="font-size:12px;color:#34d399" id="healthPercent">50%</span>
       </div>
     </div>
     <div class="card" style="padding:28px;border-radius:28px;">
       <div style="display:flex;align-items:center;gap:12px;margin-bottom:20px;">
-        <div class="live-dot"></div><span>LIVE DERIV CONNECTION</span>
+        <div class="live-dot"></div>
+        <span style="font-weight:600">LIVE DERIV CONNECTION</span>
       </div>
-      <div class="ai-stat"><span>Connection Status</span><span id="wsStatus" style="color:#fbbf24">● CONNECTING...</span></div>
-      <div class="ai-stat"><span>Bot Status</span><span id="botStatusDisplay">● Loading...</span></div>
-      <div class="ai-stat"><span>Last Price Update</span><span id="lastUpdate">--:--:--</span></div>
-      <div class="ai-stat"><span>PAT Token Status</span><span id="patStatus">Checking...</span></div>
+      <div class="ai-stat"><span class="ai-label">Connection Status</span><span id="wsStatus" style="color:#fbbf24">● CONNECTING...</span></div>
+      <div class="ai-stat"><span class="ai-label">Bot Status</span><span id="botStatusDisplay">● Loading...</span></div>
+      <div class="ai-stat"><span class="ai-label">Last Price Update</span><span id="lastUpdate">--:--:--</span></div>
+      <div class="ai-stat"><span class="ai-label">PAT Token</span><span id="patStatus">Checking...</span></div>
     </div>
   </div>
 
+  <!-- Stats Row -->
   <div class="stats-grid">
     <div class="stat-card"><div class="stat-label">Win Rate</div><div class="stat-value blue" id="statWinRate">--%</div></div>
     <div class="stat-card"><div class="stat-label">Total PnL</div><div class="stat-value" id="statTotalPnl">$--</div></div>
     <div class="stat-card"><div class="stat-label">Today PnL</div><div class="stat-value" id="statTodayPnl">$--</div></div>
-    <div class="stat-card"><div class="stat-label">Total Trades</div><div class="stat-value" id="statTotal">--</div></div>
-    <div class="stat-card"><div class="stat-label">Open Now</div><div class="stat-value" id="statOpen">--</div></div>
+    <div class="stat-card"><div class="stat-label">Total Trades</div><div class="stat-value yellow" id="statTotal">--</div></div>
+    <div class="stat-card"><div class="stat-label">Open Now</div><div class="stat-value blue" id="statOpen">--</div></div>
   </div>
 
+  <!-- Live Market Tickers -->
   <div class="market-row" id="marketTickers">
-    <div style="text-align:center;width:100%">Connecting to Deriv WebSocket...</div>
+    <div class="empty"><div class="loading-spinner" style="margin-right:8px;"></div> Connecting to Deriv for live prices...</div>
   </div>
 
+  <!-- Two Column: AI Panel + Chart -->
   <div class="two-col">
     <div class="ai-panel card">
       <div class="ai-header">🤖 AI INTELLIGENCE</div>
-      <div class="ai-stat"><span>Scanning Markets</span><span id="scanningMarkets">11</span></div>
-      <div class="ai-stat"><span>Trend Matches</span><span id="trendMatches">--</span></div>
-      <div class="ai-stat"><span>Potential Entries</span><span id="potentialEntries">--</span></div>
-      <div class="ai-stat"><span>Confidence</span><span id="confidenceValue">--%</span></div>
+      <div class="ai-stat"><span class="ai-label">Scanning Markets</span><span id="scanningMarkets">11</span></div>
+      <div class="ai-stat"><span class="ai-label">Trend Matches</span><span id="trendMatches">--</span></div>
+      <div class="ai-stat"><span class="ai-label">Potential Entries</span><span id="potentialEntries">--</span></div>
+      <div class="ai-stat"><span class="ai-label">Confidence</span><span id="confidenceValue">--%</span></div>
       <div class="confidence-bar"><div class="confidence-fill" id="confidenceFill" style="width:0%"></div></div>
+      
       <div class="risk-meter" style="margin-top:20px;">
-        <div style="display:flex;justify-content:space-between;"><span>Risk Exposure</span><span id="riskPercent">--%</span></div>
+        <div style="display:flex;justify-content:space-between;"><span class="ai-label">Risk Exposure</span><span id="riskPercent">--%</span></div>
         <div class="risk-bar"><div class="risk-fill" id="riskFill" style="width:0%"></div></div>
+        <div style="font-size:11px;color:#fbbf24;margin-top:6px" id="riskLevel">⚖️ Calculating...</div>
       </div>
+
       <div class="badges-row">
         <div class="perf-badge">🏆 Best Trade: <strong id="bestTrade">--</strong></div>
         <div class="perf-badge">🔥 Win Streak: <strong id="winStreak">--</strong></div>
         <div class="perf-badge">📈 Monthly Return: <strong id="monthlyReturn">--</strong></div>
       </div>
     </div>
+
     <div class="card" style="padding:24px;border-radius:24px">
       <div class="ai-header">📈 EQUITY CURVE</div>
-      <div class="chart-container"><canvas id="equityChart"></canvas></div>
+      <div class="chart-container">
+        <canvas id="equityChart"></canvas>
+      </div>
+      <div style="display:flex;justify-content:center;gap:24px;margin-top:16px">
+        <div><span style="color:#38bdf8">●</span> Account Balance</div>
+        <div><span style="color:#10b981">●</span> Daily PnL</div>
+      </div>
     </div>
   </div>
 
+  <!-- Signals + Heatmap -->
   <div class="signals-heatmap">
     <div class="signal-card card">
       <div class="ai-header">🎯 RECENT AI SIGNALS</div>
-      <div id="signalsList"><div class="empty">Analyzing market data...</div></div>
+      <div id="signalsList"><div class="empty">Waiting for market data...</div></div>
     </div>
     <div class="heatmap-card card">
       <div class="ai-header">🔥 TRADING HEATMAP</div>
       <div id="heatmapList"><div class="empty">Loading real prices...</div></div>
       <div class="gauge-container" style="text-align:center;margin-top:20px;">
-        <div style="font-size:48px;font-weight:800;background:linear-gradient(135deg,#38bdf8,#818cf8);-webkit-background-clip:text;background-clip:text;color:transparent" id="gaugeConfidence">--</div>
-        <div style="font-size:11px;color:#7f8ea3">Market Confidence (%)</div>
+        <div class="gauge-value" id="gaugeConfidence">--</div>
+        <div style="font-size:11px;color:#7f8ea3;margin-top:4px">Market Confidence (%)</div>
+        <div class="confidence-bar" style="margin-top:8px"><div class="confidence-fill" id="gaugeFill" style="width:0%"></div></div>
       </div>
     </div>
   </div>
 
+  <!-- Bot Control + Activity -->
   <div class="two-col">
     <div class="card" style="padding:24px;border-radius:24px">
       <div class="ai-header">⚙️ BOT CONTROL</div>
       <div style="display:flex;justify-content:space-between;align-items:center;padding:16px;background:rgba(0,0,0,0.2);border-radius:16px;margin-bottom:16px">
-        <div><div class="live-dot" id="botDot" style="margin-bottom:6px;background:#334155"></div><div id="botLabel">Stopped</div></div>
-        <button class="toggle-btn" id="toggleBtn" onclick="toggleBot()" style="padding:10px 24px;border-radius:12px;border:none;font-weight:700;cursor:pointer;background:rgba(16,185,129,0.8);color:white">Start</button>
+        <div>
+          <div class="live-dot" id="botDot" style="margin-bottom:6px;background:#334155"></div>
+          <div id="botLabel" style="font-weight:600">Stopped</div>
+          <div style="font-size:11px;color:#7f8ea3" id="botSub">Click Start to begin</div>
+        </div>
+        <button class="toggle-btn" id="toggleBtn" onclick="toggleBot()" style="background:rgba(16,185,129,0.8);color:white">Start</button>
       </div>
-      <button class="sync-btn" onclick="syncTrades()">🔄 Sync Open Trades</button>
-      <button class="sync-btn" onclick="importTrades()">📥 Import Trade History</button>
-      <div class="risk-form" style="margin-top:16px">
+      <button class="sync-btn" onclick="syncTrades()" style="width:100%;margin-bottom:8px">🔄 Sync Open Trades</button>
+      <button class="sync-btn" onclick="importTrades()" style="width:100%;margin-bottom:16px">📥 Import Trade History</button>
+      
+      <div class="risk-form">
         <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:12px">
           <div class="form-group"><label>Stake % of Balance</label><input type="number" id="riskPct" step="1" min="1" max="50" placeholder="10"/></div>
           <div class="form-group"><label>Max Open Trades</label><input type="number" id="maxOpen" min="1" max="10" placeholder="3"/></div>
@@ -208,17 +376,21 @@
           <div class="form-group"><label>Stop Loss %</label><input type="number" id="stopLoss" step="5" min="10" max="200" placeholder="80"/></div>
           <div class="form-group"><label>Take Profit %</label><input type="number" id="takeProfit" step="10" min="10" max="1000" placeholder="200"/></div>
         </div>
-        <button class="save-btn" onclick="saveRisk()">Save Risk Settings</button>
+        <button class="save-btn" onclick="saveRisk()" style="width:100%">Save Risk Settings</button>
       </div>
     </div>
+
     <div class="card" style="padding:24px;border-radius:24px">
-      <div class="ai-header">⏱️ RECENT ACTIVITY</div>
-      <div id="timelineList" style="max-height:300px;overflow-y:auto"><div class="empty">No activity yet</div></div>
+      <div class="ai-header">⏱️ BOT ACTIVITY</div>
+      <div class="timeline-list" id="timelineList">
+        <div class="empty">No activity yet. Start the bot to see logs.</div>
+      </div>
     </div>
   </div>
 
+  <!-- Account Settings -->
   <div class="card" style="padding:24px;border-radius:24px;margin-bottom:28px">
-    <div class="ai-header">🔐 ACCOUNT SETTINGS</div>
+    <div class="ai-header">🔐 DERIV CONNECTION</div>
     <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(200px,1fr));gap:16px">
       <div class="form-group"><label>Deriv PAT Token</label><input type="password" id="settingsPAT" placeholder="pat_xxxxxxxx"/></div>
       <div class="form-group"><label>Deriv App ID</label><input type="text" id="settingsAppId" placeholder="App ID"/></div>
@@ -228,6 +400,7 @@
     <button class="save-btn" onclick="saveSettings()" style="margin-top:16px">Update Settings & Reconnect</button>
   </div>
 
+  <!-- Trade History -->
   <div class="trades-card card">
     <div class="ai-header">📊 TRADE HISTORY</div>
     <div class="tabs">
@@ -244,7 +417,7 @@
 
 <script>
 // ============================================
-// CONFIGURATION
+// DERIV SYMBOLS FOR LIVE PRICES
 // ============================================
 const DERIV_SYMBOLS = {
   "EUR/USD": "frxEURUSD",
@@ -266,11 +439,11 @@ let previousPrices = {};
 let botActive = false;
 let currentTradeFilter = "all";
 let equityChart = null;
-let currentUser = null;
 
 function showToast(msg, type) {
   const toast = document.getElementById('toast');
   toast.textContent = msg;
+  toast.className = `toast ${type}`;
   toast.classList.add('show');
   setTimeout(() => toast.classList.remove('show'), 3000);
 }
@@ -289,13 +462,13 @@ const API = async (path, method = "GET", body = null) => {
 };
 
 // ============================================
-// DERIV WEBSOCKET CONNECTION
+// DERIV WEBSOCKET FOR LIVE PRICES
 // ============================================
 function connectDerivWebSocket(pat, appId) {
   if (!pat || pat === '' || pat === 'pat_xxxxxxxx') {
     document.getElementById('wsStatus').innerHTML = '⚠️ No PAT Token';
     document.getElementById('wsStatus').style.color = '#f87171';
-    document.getElementById('patStatus').innerHTML = '❌ No PAT token in settings';
+    document.getElementById('patStatus').innerHTML = '❌ No PAT token';
     document.getElementById('patStatus').style.color = '#f87171';
     return false;
   }
@@ -387,9 +560,12 @@ function updateMarketTickers() {
   if (!container) return;
   
   let html = '';
+  let hasPrices = false;
+  
   for (const [pair, data] of Object.entries(DERIV_SYMBOLS)) {
     const priceData = realMarketPrices[pair];
     if (priceData) {
+      hasPrices = true;
       const changeClass = priceData.change >= 0 ? 'up' : 'down';
       const changeSymbol = priceData.change >= 0 ? '▲' : '▼';
       let priceDisplay = priceData.price;
@@ -404,10 +580,18 @@ function updateMarketTickers() {
         <span class="ticker-change ${changeClass}">${changeSymbol} ${Math.abs(priceData.change).toFixed(2)}%</span>
       </div>`;
     } else {
-      html += `<div class="market-ticker"><span class="ticker-symbol">${pair}</span><span class="ticker-price">Waiting...</span></div>`;
+      html += `<div class="market-ticker">
+        <span class="ticker-symbol">${pair}</span>
+        <span class="ticker-price">---</span>
+      </div>`;
     }
   }
-  container.innerHTML = html;
+  
+  if (!hasPrices) {
+    container.innerHTML = '<div class="empty"><div class="loading-spinner" style="margin-right:8px;"></div> Waiting for live prices from Deriv...</div>';
+  } else {
+    container.innerHTML = html;
+  }
 }
 
 function updateHeatmapAndSignals() {
@@ -459,6 +643,7 @@ function updateHeatmapAndSignals() {
     
     const avgConfidence = Math.round(signals.reduce((sum, s) => sum + s.confidence, 0) / signals.length);
     document.getElementById('gaugeConfidence').textContent = avgConfidence || 50;
+    document.getElementById('gaugeFill').style.width = (avgConfidence || 50) + '%';
     document.getElementById('confidenceValue').textContent = (avgConfidence || 50) + '%';
     document.getElementById('confidenceFill').style.width = (avgConfidence || 50) + '%';
   }
@@ -469,32 +654,32 @@ function updateHeatmapAndSignals() {
 // ============================================
 async function loadUserData() {
   try {
-    currentUser = await API("/user/me");
-    document.getElementById("headerName").textContent = currentUser.name;
-    document.getElementById("heroName").innerHTML = currentUser.name.split(' ')[0] + ' 👋';
-    botActive = currentUser.botActive;
+    const user = await API("/user/me");
+    document.getElementById("headerName").textContent = user.name;
+    document.getElementById("heroName").innerHTML = user.name.split(' ')[0] + ' 👋';
+    botActive = user.botActive;
     
     updateBotUI(botActive);
     document.getElementById('botStatusDisplay').innerHTML = botActive ? '🟢 RUNNING' : '⚪ STOPPED';
     document.getElementById('botStatusDisplay').style.color = botActive ? '#10b981' : '#94a3b8';
     
     // Load settings into form
-    document.getElementById("settingsPAT").value = currentUser.derivPAT || '';
-    document.getElementById("settingsAppId").value = currentUser.derivAppId || '33kDvVzcElBmdV0wfzTy1';
-    document.getElementById("settingsMode").value = currentUser.derivMode || 'demo';
-    document.getElementById("settingsChatId").value = currentUser.telegramChatId || '';
+    document.getElementById("settingsPAT").value = user.derivPAT || '';
+    document.getElementById("settingsAppId").value = user.derivAppId || '33kDvVzcElBmdV0wfzTy1';
+    document.getElementById("settingsMode").value = user.derivMode || 'demo';
+    document.getElementById("settingsChatId").value = user.telegramChatId || '';
     
     // Load risk settings
-    if (currentUser.risk) {
-      document.getElementById("riskPct").value = Math.round(currentUser.risk.riskPct * 100);
-      document.getElementById("maxOpen").value = currentUser.risk.maxOpenTrades;
-      document.getElementById("stopLoss").value = Math.round(currentUser.risk.stopLossPct * 100);
-      document.getElementById("takeProfit").value = Math.round(currentUser.risk.takeProfitPct * 100);
+    if (user.risk) {
+      document.getElementById("riskPct").value = Math.round(user.risk.riskPct * 100);
+      document.getElementById("maxOpen").value = user.risk.maxOpenTrades;
+      document.getElementById("stopLoss").value = Math.round(user.risk.stopLossPct * 100);
+      document.getElementById("takeProfit").value = Math.round(user.risk.takeProfitPct * 100);
     }
     
-    // Connect to Deriv WebSocket with the PAT token
-    if (currentUser.derivPAT && currentUser.derivPAT !== '') {
-      connectDerivWebSocket(currentUser.derivPAT, currentUser.derivAppId);
+    // Connect to Deriv WebSocket
+    if (user.derivPAT && user.derivPAT !== '') {
+      connectDerivWebSocket(user.derivPAT, user.derivAppId);
     } else {
       document.getElementById('wsStatus').innerHTML = '⚠️ No PAT Token in settings';
       document.getElementById('wsStatus').style.color = '#f87171';
@@ -502,7 +687,7 @@ async function loadUserData() {
       document.getElementById('patStatus').style.color = '#f87171';
     }
     
-    return currentUser;
+    return user;
   } catch(e) {
     console.error('Failed to load user:', e);
     showToast('Failed to load user data', 'error');
@@ -530,6 +715,11 @@ async function loadStats() {
     const riskExposure = Math.min(95, Math.floor(((s.open || 0) / 5) * 100));
     document.getElementById('riskPercent').textContent = riskExposure + '%';
     document.getElementById('riskFill').style.width = riskExposure + '%';
+    
+    let riskLevel = '🟢 Low Risk';
+    if (riskExposure > 70) riskLevel = '🔴 High Risk';
+    else if (riskExposure > 40) riskLevel = '⚠️ Moderate Risk';
+    document.getElementById('riskLevel').innerHTML = riskLevel;
     
     // Get trades for badges
     const trades = await API("/trades?limit=200");
@@ -594,9 +784,9 @@ async function loadBotActivity() {
     const container = document.getElementById('timelineList');
     if (logs && logs.length > 0) {
       container.innerHTML = logs.slice(0, 8).map(l => `
-        <div style="display:flex;gap:12px;padding:10px 0;border-bottom:1px solid rgba(255,255,255,0.05)">
-          <span style="font-size:10px;color:#4a5568;min-width:60px">${new Date(l.createdAt).toLocaleTimeString()}</span>
-          <span style="font-size:11px;color:#94a3b8">${l.message?.substring(0, 80) || ''}</span>
+        <div class="timeline-item">
+          <span class="timeline-time">${new Date(l.createdAt).toLocaleTimeString()}</span>
+          <span class="timeline-text">${escapeHtml(l.message?.substring(0, 80) || '')}</span>
         </div>
       `).join('');
     } else {
@@ -605,6 +795,11 @@ async function loadBotActivity() {
   } catch(e) {
     console.error('Failed to load bot activity:', e);
   }
+}
+
+function escapeHtml(text) {
+  if (!text) return '';
+  return text.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
 }
 
 async function initChart() {
@@ -655,9 +850,11 @@ async function updateEquityChart() {
 function updateBotUI(active) {
   const dot = document.getElementById("botDot");
   const lbl = document.getElementById("botLabel");
+  const sub = document.getElementById("botSub");
   const btn = document.getElementById("toggleBtn");
   dot.style.background = active ? "#34d399" : "#334155";
   lbl.textContent = active ? "Running" : "Stopped";
+  sub.textContent = active ? "Bot is scanning markets" : "Click Start to begin";
   btn.textContent = active ? "Stop" : "Start";
   btn.style.background = active ? "rgba(248,113,113,0.8)" : "rgba(16,185,129,0.8)";
   btn.style.color = "white";
@@ -665,27 +862,48 @@ function updateBotUI(active) {
 
 async function toggleBot() {
   const newState = !botActive;
-  const res = await API("/user/bot", "PUT", { active: newState });
-  botActive = res.botActive;
-  updateBotUI(botActive);
-  document.getElementById('botStatusDisplay').innerHTML = botActive ? '🟢 RUNNING' : '⚪ STOPPED';
-  document.getElementById('botStatusDisplay').style.color = botActive ? '#10b981' : '#94a3b8';
-  showToast(`Bot ${botActive ? 'started' : 'stopped'}`, 'success');
+  const btn = document.getElementById("toggleBtn");
+  btn.disabled = true;
+  btn.textContent = "Please wait...";
+  
+  try {
+    const res = await API("/user/bot", "PUT", { active: newState });
+    botActive = res.botActive;
+    updateBotUI(botActive);
+    document.getElementById('botStatusDisplay').innerHTML = botActive ? '🟢 RUNNING' : '⚪ STOPPED';
+    document.getElementById('botStatusDisplay').style.color = botActive ? '#10b981' : '#94a3b8';
+    showToast(`Bot ${botActive ? 'started' : 'stopped'} successfully`, 'success');
+  } catch(e) {
+    showToast('Failed to toggle bot', 'error');
+  } finally {
+    btn.disabled = false;
+    btn.textContent = botActive ? "Stop" : "Start";
+  }
 }
 
 async function syncTrades() {
-  const data = await API("/user/sync-trades", "POST");
-  showToast(data.message || "Open trades synced!", 'success');
-  await loadStats();
-  await loadTrades(currentTradeFilter);
+  try {
+    showToast('Syncing open trades...', 'success');
+    const data = await API("/user/sync-trades", "POST");
+    showToast(data.message || "Trades synced!", 'success');
+    await loadStats();
+    await loadTrades(currentTradeFilter);
+  } catch(e) {
+    showToast('Sync failed: ' + e.message, 'error');
+  }
 }
 
 async function importTrades() {
-  const data = await API("/user/import-trades", "POST");
-  showToast(data.message || "Trade history imported!", 'success');
-  await loadStats();
-  await loadTrades(currentTradeFilter);
-  await updateEquityChart();
+  try {
+    showToast('Importing trade history...', 'success');
+    const data = await API("/user/import-trades", "POST");
+    showToast(data.message || "Trade history imported!", 'success');
+    await loadStats();
+    await loadTrades(currentTradeFilter);
+    await updateEquityChart();
+  } catch(e) {
+    showToast('Import failed: ' + e.message, 'error');
+  }
 }
 
 async function saveRisk() {
