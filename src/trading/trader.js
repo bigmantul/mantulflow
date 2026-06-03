@@ -25,7 +25,6 @@ const FALLBACK_MULTIPLIERS = {
   frxUSDCHF: 100, frxAUDUSD: 100, frxUSDCAD: 100,
   frxNZDUSD: 100,
   cryBTCUSD: 100, cryETHUSD: 100,
-  cryLTCUSD: 100, cryBCHUSD: 100,
   frxXAUUSD: 100, frxXAGUSD: 100,
 };
 
