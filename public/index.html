@@ -2,172 +2,1008 @@
 <html lang="en">
 <head>
 <meta charset="UTF-8"/>
-<meta name="viewport" content="width=device-width, initial-scale=1.0"/>
-<title>MANTUL'S UNIFIED TRADING BOT FOR DERIV</title>
+<meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=yes"/>
+<title>Mantul Flow | AI-Powered Smart Money Trading Platform</title>
 <style>
-  *{margin:0;padding:0;box-sizing:border-box}
-  body{font-family:'Segoe UI',sans-serif;background:#0a0e1a;color:#e2e8f0;min-height:100vh;display:flex;align-items:center;justify-content:center}
-  .container{width:100%;max-width:440px;padding:24px}
-  .logo{text-align:center;margin-bottom:32px}
-  .logo h1{font-size:28px;font-weight:700;color:#38bdf8}
-  .logo p{color:#64748b;font-size:14px;margin-top:4px}
-  .card{background:#111827;border:1px solid #1e293b;border-radius:16px;padding:32px}
-  .tabs{display:flex;margin-bottom:24px;background:#0f172a;border-radius:8px;padding:4px}
-  .tab{flex:1;padding:8px;text-align:center;cursor:pointer;border-radius:6px;font-size:14px;font-weight:500;color:#64748b;transition:.2s}
-  .tab.active{background:#1e40af;color:#fff}
-  .form-group{margin-bottom:16px}
-  label{display:block;font-size:13px;color:#94a3b8;margin-bottom:6px}
-  input,select{width:100%;padding:10px 14px;background:#0f172a;border:1px solid #1e293b;border-radius:8px;color:#e2e8f0;font-size:14px;outline:none;transition:.2s}
-  input:focus,select:focus{border-color:#38bdf8}
-  .btn{width:100%;padding:12px;border-radius:8px;border:none;font-size:15px;font-weight:600;cursor:pointer;transition:.2s;margin-top:8px}
-  .btn-primary{background:#1e40af;color:#fff}
-  .btn-primary:hover{background:#1d4ed8}
-  .error{color:#f87171;font-size:13px;margin-top:8px;display:none}
-  .divider{display:flex;align-items:center;gap:12px;margin:20px 0;color:#334155;font-size:12px}
-  .divider::before,.divider::after{content:'';flex:1;height:1px;background:#1e293b}
-  .section-title{font-size:12px;color:#475569;text-transform:uppercase;letter-spacing:.8px;margin-bottom:12px}
+  * {
+    margin: 0;
+    padding: 0;
+    box-sizing: border-box;
+  }
+
+  body {
+    font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+    background: #05070f;
+    color: #e2e8f0;
+    min-height: 100vh;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    position: relative;
+    overflow-x: hidden;
+  }
+
+  /* Premium Animated Background */
+  .bg-gradient {
+    position: fixed;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    background: radial-gradient(ellipse at 20% 30%, #0a0f1f 0%, #03050a 100%);
+    z-index: 0;
+  }
+
+  .bg-gradient::before {
+    content: '';
+    position: absolute;
+    top: -50%;
+    left: -50%;
+    width: 200%;
+    height: 200%;
+    background: radial-gradient(circle at 30% 40%, rgba(56, 189, 248, 0.12) 0%, transparent 40%),
+                radial-gradient(circle at 70% 60%, rgba(129, 140, 248, 0.08) 0%, transparent 40%);
+    animation: bgDrift 25s ease-in-out infinite;
+  }
+
+  @keyframes bgDrift {
+    0%, 100% { transform: translate(0, 0) rotate(0deg); }
+    33% { transform: translate(3%, 2%) rotate(2deg); }
+    66% { transform: translate(-2%, 4%) rotate(-1deg); }
+  }
+
+  /* Animated Grid */
+  .grid-overlay {
+    position: fixed;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    background-image: 
+      linear-gradient(rgba(56, 189, 248, 0.03) 1px, transparent 1px),
+      linear-gradient(90deg, rgba(56, 189, 248, 0.03) 1px, transparent 1px);
+    background-size: 60px 60px;
+    pointer-events: none;
+    z-index: 0;
+    animation: gridMove 20s linear infinite;
+  }
+
+  @keyframes gridMove {
+    0% { transform: translate(0, 0); }
+    100% { transform: translate(60px, 60px); }
+  }
+
+  /* Floating Orbs */
+  .orb {
+    position: fixed;
+    border-radius: 50%;
+    filter: blur(90px);
+    pointer-events: none;
+    z-index: 0;
+    animation: orbFloat 20s ease-in-out infinite;
+  }
+
+  .orb-1 { width: 500px; height: 500px; background: #1e40af; top: -200px; left: -200px; opacity: 0.25; }
+  .orb-2 { width: 600px; height: 600px; background: #06b6d4; bottom: -250px; right: -250px; opacity: 0.2; animation-delay: -7s; }
+  .orb-3 { width: 350px; height: 350px; background: #2563eb; top: 40%; left: 30%; opacity: 0.15; animation-delay: -14s; }
+  .orb-4 { width: 250px; height: 250px; background: #818cf8; bottom: 20%; right: 15%; opacity: 0.12; animation-delay: -5s; }
+
+  @keyframes orbFloat {
+    0%, 100% { transform: translate(0, 0) scale(1); }
+    33% { transform: translate(40px, -40px) scale(1.08); }
+    66% { transform: translate(-30px, 30px) scale(0.95); }
+  }
+
+  /* Particles */
+  .particle {
+    position: fixed;
+    background: linear-gradient(135deg, #38bdf8, #818cf8);
+    border-radius: 50%;
+    pointer-events: none;
+    z-index: 0;
+    opacity: 0;
+    animation: particleFloat linear infinite;
+  }
+
+  @keyframes particleFloat {
+    0% { transform: translateY(0) translateX(0); opacity: 0; }
+    15% { opacity: 0.5; }
+    85% { opacity: 0.3; }
+    100% { transform: translateY(-100vh) translateX(60px); opacity: 0; }
+  }
+
+  .container {
+    width: 100%;
+    max-width: 1400px;
+    padding: 24px;
+    position: relative;
+    z-index: 10;
+    display: flex;
+    flex-wrap: wrap;
+    gap: 28px;
+    align-items: flex-start;
+    justify-content: center;
+  }
+
+  /* Left Panel - Live Metrics (Scrollable) */
+  .metrics-panel {
+    flex: 1.2;
+    min-width: 280px;
+    max-width: 380px;
+    background: rgba(10, 15, 27, 0.55);
+    backdrop-filter: blur(20px);
+    border: 1px solid rgba(56, 189, 248, 0.15);
+    border-radius: 32px;
+    padding: 24px;
+    animation: fadeInLeft 0.8s ease-out;
+    transition: all 0.3s ease;
+    max-height: 85vh;
+    overflow-y: auto;
+  }
+
+  .metrics-panel::-webkit-scrollbar {
+    width: 4px;
+  }
+
+  .metrics-panel::-webkit-scrollbar-track {
+    background: rgba(30, 41, 59, 0.3);
+    border-radius: 4px;
+  }
+
+  .metrics-panel::-webkit-scrollbar-thumb {
+    background: #38bdf8;
+    border-radius: 4px;
+  }
+
+  .metrics-panel:hover {
+    border-color: rgba(56, 189, 248, 0.35);
+    box-shadow: 0 20px 40px -12px rgba(56, 189, 248, 0.15);
+  }
+
+  .metrics-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    margin-bottom: 24px;
+    padding-bottom: 16px;
+    border-bottom: 1px solid rgba(56, 189, 248, 0.15);
+  }
+
+  .metrics-header-left {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+  }
+
+  .live-dot {
+    width: 8px;
+    height: 8px;
+    background: #10b981;
+    border-radius: 50%;
+    animation: pulse 1.5s ease-in-out infinite;
+  }
+
+  @keyframes pulse {
+    0%, 100% { opacity: 1; transform: scale(1); }
+    50% { opacity: 0.4; transform: scale(0.8); }
+  }
+
+  .metrics-header h3 {
+    font-size: 13px;
+    font-weight: 600;
+    letter-spacing: 1px;
+    color: #94a3b8;
+    text-transform: uppercase;
+  }
+
+  .last-update {
+    font-size: 9px;
+    color: #4a5568;
+  }
+
+  .category-title {
+    font-size: 11px;
+    font-weight: 700;
+    color: #38bdf8;
+    text-transform: uppercase;
+    letter-spacing: 1px;
+    margin: 20px 0 12px 0;
+    padding-left: 8px;
+    border-left: 2px solid #38bdf8;
+  }
+
+  .category-title:first-of-type {
+    margin-top: 0;
+  }
+
+  .metric-item {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 10px 12px;
+    margin: 4px 0;
+    border-radius: 14px;
+    transition: all 0.2s ease;
+    cursor: pointer;
+  }
+
+  .metric-item:hover {
+    background: rgba(56, 189, 248, 0.08);
+    transform: translateX(4px);
+  }
+
+  .metric-label {
+    font-size: 12px;
+    font-weight: 500;
+    color: #8b92a8;
+    font-family: monospace;
+  }
+
+  .metric-value-container {
+    text-align: right;
+  }
+
+  .metric-value {
+    font-size: 14px;
+    font-weight: 700;
+    color: #e2e8f0;
+  }
+
+  .metric-change {
+    font-size: 10px;
+    margin-left: 6px;
+  }
+
+  .metric-change.up { color: #10b981; }
+  .metric-change.down { color: #f87171; }
+
+  .loading-metrics {
+    text-align: center;
+    padding: 40px;
+    color: #475569;
+    font-size: 12px;
+  }
+
+  /* Right Panel */
+  .card-wrapper {
+    flex: 1;
+    min-width: 360px;
+    max-width: 480px;
+  }
+
+  /* Logo */
+  .logo {
+    text-align: center;
+    margin-bottom: 32px;
+    animation: fadeInDown 0.7s ease-out;
+  }
+
+  .logo-icon {
+    width: 56px;
+    height: 56px;
+    background: linear-gradient(135deg, #1e40af, #06b6d4);
+    border-radius: 20px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    margin: 0 auto 16px;
+    box-shadow: 0 10px 25px -8px rgba(6, 182, 212, 0.4);
+    animation: iconPulse 3s ease-in-out infinite;
+  }
+
+  @keyframes iconPulse {
+    0%, 100% { box-shadow: 0 10px 25px -8px rgba(6, 182, 212, 0.4); }
+    50% { box-shadow: 0 15px 35px -5px rgba(6, 182, 212, 0.7); }
+  }
+
+  .logo-icon span {
+    font-size: 28px;
+    font-weight: 800;
+    color: white;
+  }
+
+  .logo h1 {
+    font-size: 38px;
+    font-weight: 800;
+    letter-spacing: -1px;
+    background: linear-gradient(135deg, #ffffff, #38bdf8, #818cf8, #38bdf8);
+    background-size: 300% auto;
+    -webkit-background-clip: text;
+    background-clip: text;
+    color: transparent;
+    animation: shimmer 5s linear infinite;
+  }
+
+  @keyframes shimmer {
+    0% { background-position: 0% 50%; }
+    50% { background-position: 100% 50%; }
+    100% { background-position: 0% 50%; }
+  }
+
+  .logo p {
+    color: #6c757d;
+    font-size: 11px;
+    letter-spacing: 1.5px;
+    text-transform: uppercase;
+    margin-top: 8px;
+  }
+
+  /* Card */
+  .card {
+    background: rgba(15, 20, 32, 0.7);
+    backdrop-filter: blur(20px);
+    border: 1px solid rgba(56, 189, 248, 0.2);
+    border-radius: 36px;
+    padding: 32px;
+    transition: all 0.4s cubic-bezier(0.2, 0.9, 0.4, 1.1);
+    animation: fadeInUp 0.7s ease-out 0.1s backwards;
+  }
+
+  .card:hover {
+    transform: translateY(-4px);
+    border-color: rgba(56, 189, 248, 0.45);
+    box-shadow: 0 30px 50px -20px rgba(56, 189, 248, 0.25);
+  }
+
+  /* Tabs */
+  .tabs {
+    display: flex;
+    gap: 10px;
+    margin-bottom: 32px;
+    background: rgba(0, 0, 0, 0.3);
+    border-radius: 60px;
+    padding: 5px;
+  }
+
+  .tab {
+    flex: 1;
+    padding: 12px 16px;
+    text-align: center;
+    cursor: pointer;
+    border-radius: 60px;
+    font-size: 14px;
+    font-weight: 600;
+    color: #94a3b8;
+    transition: all 0.3s ease;
+    background: transparent;
+    border: none;
+  }
+
+  .tab.active {
+    background: linear-gradient(135deg, #1e40af, #1d4ed8);
+    color: #fff;
+    box-shadow: 0 6px 14px rgba(30, 64, 175, 0.5);
+    transform: scale(1.02);
+  }
+
+  .tab:not(.active):hover {
+    color: #cbd5e1;
+    background: rgba(56, 189, 248, 0.1);
+    transform: translateY(-2px);
+  }
+
+  /* Form */
+  .form-group {
+    margin-bottom: 22px;
+  }
+
+  label {
+    display: block;
+    font-size: 11px;
+    font-weight: 600;
+    color: #8b92a8;
+    margin-bottom: 8px;
+    text-transform: uppercase;
+    letter-spacing: 0.8px;
+  }
+
+  input, select {
+    width: 100%;
+    padding: 14px 18px;
+    background: rgba(8, 12, 22, 0.8);
+    border: 1.5px solid rgba(48, 61, 85, 0.6);
+    border-radius: 18px;
+    color: #eef2ff;
+    font-size: 14px;
+    font-weight: 500;
+    outline: none;
+    transition: all 0.25s ease;
+  }
+
+  input:focus, select:focus {
+    border-color: #38bdf8;
+    background: rgba(8, 12, 22, 1);
+    box-shadow: 0 0 0 4px rgba(56, 189, 248, 0.12);
+    transform: scale(1.01);
+  }
+
+  /* Button */
+  .btn {
+    width: 100%;
+    padding: 16px;
+    border-radius: 24px;
+    border: none;
+    font-size: 15px;
+    font-weight: 700;
+    cursor: pointer;
+    transition: all 0.3s cubic-bezier(0.2, 0.9, 0.4, 1.1);
+    margin-top: 16px;
+    background: linear-gradient(135deg, #1e40af, #1d4ed8);
+    color: #fff;
+    box-shadow: 0 8px 20px rgba(30, 64, 175, 0.4);
+    position: relative;
+    overflow: hidden;
+  }
+
+  .btn::before {
+    content: '';
+    position: absolute;
+    top: 0;
+    left: -100%;
+    width: 100%;
+    height: 100%;
+    background: linear-gradient(90deg, transparent, rgba(255,255,255,0.2), transparent);
+    transition: left 0.5s;
+  }
+
+  .btn:hover::before {
+    left: 100%;
+  }
+
+  .btn:hover {
+    transform: translateY(-3px);
+    background: linear-gradient(135deg, #1d4ed8, #2563eb);
+    box-shadow: 0 12px 28px rgba(37, 99, 235, 0.6);
+  }
+
+  .btn:active {
+    transform: translateY(1px);
+  }
+
+  .btn.loading {
+    pointer-events: none;
+    opacity: 0.8;
+  }
+
+  .btn.loading::after {
+    content: '';
+    width: 18px;
+    height: 18px;
+    border: 2px solid white;
+    border-top-color: transparent;
+    border-radius: 50%;
+    position: absolute;
+    right: 20px;
+    top: calc(50% - 9px);
+    animation: spin 0.8s linear infinite;
+  }
+
+  @keyframes spin {
+    to { transform: rotate(360deg); }
+  }
+
+  /* Divider */
+  .divider {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    margin: 28px 0 20px;
+    color: #334155;
+    font-size: 10px;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 1px;
+  }
+
+  .divider::before,
+  .divider::after {
+    content: '';
+    flex: 1;
+    height: 1px;
+    background: linear-gradient(90deg, transparent, #334155, transparent);
+  }
+
+  /* Trust Indicators */
+  .trust-indicators {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 16px;
+    margin-top: 24px;
+    padding-top: 20px;
+    border-top: 1px solid rgba(56, 189, 248, 0.12);
+  }
+
+  .trust-item {
+    flex: 1;
+    min-width: 110px;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    font-size: 11px;
+    font-weight: 500;
+    color: #7f8ea3;
+  }
+
+  .trust-item::before {
+    content: "✓";
+    color: #10b981;
+    font-weight: bold;
+    font-size: 14px;
+  }
+
+  /* Footer */
+  .footer {
+    text-align: center;
+    margin-top: 28px;
+    padding-top: 20px;
+    border-top: 1px solid rgba(56, 189, 248, 0.1);
+    font-size: 11px;
+    color: #4a5568;
+  }
+
+  .footer p:first-child {
+    color: #6c757d;
+    margin-bottom: 6px;
+  }
+
+  .footer p:last-child {
+    font-size: 10px;
+    color: #3b4252;
+  }
+
+  /* Error */
+  .error {
+    color: #f87171;
+    font-size: 12px;
+    margin-top: 8px;
+    display: none;
+    background: rgba(248, 113, 113, 0.08);
+    padding: 10px 14px;
+    border-radius: 14px;
+    border-left: 3px solid #f87171;
+  }
+
+  /* Loading Overlay */
+  .loading-overlay {
+    position: fixed;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    background: rgba(5, 7, 15, 0.95);
+    backdrop-filter: blur(10px);
+    z-index: 1000;
+    display: none;
+    align-items: center;
+    justify-content: center;
+    flex-direction: column;
+    gap: 20px;
+  }
+
+  .spinner {
+    width: 60px;
+    height: 60px;
+    border: 3px solid rgba(56, 189, 248, 0.2);
+    border-top-color: #38bdf8;
+    border-radius: 50%;
+    animation: spin 1s linear infinite;
+  }
+
+  .loading-overlay p {
+    color: #38bdf8;
+    font-size: 14px;
+    letter-spacing: 2px;
+  }
+
+  /* Connection status */
+  .connection-status {
+    font-size: 10px;
+    display: flex;
+    align-items: center;
+    gap: 6px;
+  }
+
+  .status-connected {
+    color: #10b981;
+  }
+
+  .status-disconnected {
+    color: #f87171;
+  }
+
+  /* Animations */
+  @keyframes fadeInUp {
+    from { opacity: 0; transform: translateY(35px); }
+    to { opacity: 1; transform: translateY(0); }
+  }
+
+  @keyframes fadeInLeft {
+    from { opacity: 0; transform: translateX(-35px); }
+    to { opacity: 1; transform: translateX(0); }
+  }
+
+  @keyframes fadeInDown {
+    from { opacity: 0; transform: translateY(-25px); }
+    to { opacity: 1; transform: translateY(0); }
+  }
+
+  /* Responsive */
+  @media (max-width: 900px) {
+    .container { flex-direction: column; }
+    .metrics-panel { max-width: 100%; max-height: 400px; order: 2; }
+    .card-wrapper { max-width: 100%; order: 1; }
+    .card { padding: 24px; }
+    .logo h1 { font-size: 30px; }
+  }
+
+  @media (max-width: 480px) {
+    .container { padding: 16px; }
+    .card { padding: 20px; border-radius: 28px; }
+    .trust-indicators { flex-direction: column; gap: 10px; }
+    .trust-item { min-width: auto; }
+  }
 </style>
 </head>
 <body>
+
+<div class="bg-gradient"></div>
+<div class="grid-overlay"></div>
+<div class="orb orb-1"></div>
+<div class="orb orb-2"></div>
+<div class="orb orb-3"></div>
+<div class="orb orb-4"></div>
+
 <div class="container">
-  <div class="logo">
-    <h1>⚡ MANTUL'S UNIFIED TRADING BOT FOR DERIV</h1>
-    <p>Unified Smart Money Concepts Trading Platform</p>
+  <!-- Left Panel - Live Metrics with Real Deriv Data -->
+  <div class="metrics-panel" id="metricsPanel">
+    <div class="metrics-header">
+      <div class="metrics-header-left">
+        <div class="live-dot"></div>
+        <h3>LIVE MARKET DATA</h3>
+      </div>
+      <div class="connection-status" id="connectionStatus">
+        <span>🔌 Connecting...</span>
+      </div>
+    </div>
+    <div id="metricsContent">
+      <div class="loading-metrics">
+        <div class="spinner" style="width: 30px; height: 30px; margin: 0 auto 16px;"></div>
+        Connecting to Deriv WebSocket...
+      </div>
+    </div>
   </div>
 
-  <div class="card">
-    <div class="tabs">
-      <div class="tab active" onclick="showTab('login')">Login</div>
-      <div class="tab" onclick="showTab('signup')">Sign Up</div>
+  <!-- Right Panel -->
+  <div class="card-wrapper">
+    <div class="logo">
+      <div class="logo-icon"><span>⟳</span></div>
+      <h1>MANTUL FLOW</h1>
+      <p>AI-Powered Smart Money Trading Platform</p>
     </div>
 
-    <!-- LOGIN -->
-    <div id="loginForm">
-      <div class="form-group">
-        <label>Email</label>
-        <input type="email" id="loginEmail" placeholder="you@email.com"/>
-      </div>
-      <div class="form-group">
-        <label>Password</label>
-        <input type="password" id="loginPassword" placeholder="••••••••"/>
-      </div>
-      <div class="error" id="loginError"></div>
-      <button class="btn btn-primary" onclick="login()">Login</button>
-    </div>
-
-    <!-- SIGNUP -->
-    <div id="signupForm" style="display:none">
-      <div class="form-group">
-        <label>Full Name</label>
-        <input type="text" id="signupName" placeholder="BIG MANTUL"/>
-      </div>
-      <div class="form-group">
-        <label>Email</label>
-        <input type="email" id="signupEmail" placeholder="MANTUL@email.com"/>
-      </div>
-      <div class="form-group">
-        <label>Password</label>
-        <input type="password" id="signupPassword" placeholder="Min 6 characters"/>
+    <div class="card">
+      <div class="tabs">
+        <button class="tab active" onclick="showTab('login')">Login</button>
+        <button class="tab" onclick="showTab('signup')">Sign Up</button>
       </div>
 
-      <div class="divider">Deriv Account</div>
-
-      <div class="form-group">
-        <label>Deriv PAT Token</label>
-        <input type="text" id="signupPAT" placeholder="pat_xxxxxxxxxxxxxxxx"/>
-      </div>
-      <div class="form-group">
-        <label>Deriv App ID</label>
-        <input type="text" id="signupAppId" placeholder="33kDvVzcElBmdV0wfzTy1"/>
-      </div>
-      <div class="form-group">
-        <label>Trading Mode</label>
-        <select id="signupMode">
-          <option value="demo">Demo (Virtual Money)</option>
-          <option value="real">Real (Live Trading)</option>
-        </select>
-      </div>
-
-      <div class="divider">Telegram (Optional)</div>
-
-      <div class="form-group">
-        <label>Telegram Chat ID</label>
-        <input type="text" id="signupChatId" placeholder="123456789 — get from @userinfobot"/>
+      <!-- LOGIN -->
+      <div id="loginForm">
+        <div class="form-group">
+          <label>Email</label>
+          <input type="email" id="loginEmail" placeholder="trader@mantul.com"/>
+        </div>
+        <div class="form-group">
+          <label>Password</label>
+          <input type="password" id="loginPassword" placeholder="········"/>
+        </div>
+        <div class="error" id="loginError"></div>
+        <button class="btn" id="loginBtn" onclick="login()">Access Trading Terminal →</button>
+        
+        <div class="trust-indicators">
+          <div class="trust-item">Encrypted Authentication</div>
+          <div class="trust-item">Secure Deriv Integration</div>
+          <div class="trust-item">Real-Time Trade Monitoring</div>
+        </div>
       </div>
 
-      <div class="error" id="signupError"></div>
-      <button class="btn btn-primary" onclick="signup()">Create Account</button>
+      <!-- SIGNUP -->
+      <div id="signupForm" style="display:none">
+        <div class="form-group">
+          <label>Full Name</label>
+          <input type="text" id="signupName" placeholder="Alex Mantul"/>
+        </div>
+        <div class="form-group">
+          <label>Email</label>
+          <input type="email" id="signupEmail" placeholder="alex@mantul.com"/>
+        </div>
+        <div class="form-group">
+          <label>Password</label>
+          <input type="password" id="signupPassword" placeholder="Min 6 characters"/>
+        </div>
+
+        <div class="divider">⚡ Deriv Integration</div>
+
+        <div class="form-group">
+          <label>Deriv PAT Token</label>
+          <input type="text" id="signupPAT" placeholder="pat_xxxxxxxxxxxx"/>
+        </div>
+        <div class="form-group">
+          <label>Deriv App ID</label>
+          <input type="text" id="signupAppId" placeholder="33kDvVzcElBmdV0wfzTy1"/>
+        </div>
+        <div class="form-group">
+          <label>Trading Mode</label>
+          <select id="signupMode">
+            <option value="demo">📊 Demo (Virtual Money)</option>
+            <option value="real">💰 Real (Live Trading)</option>
+          </select>
+        </div>
+
+        <div class="divider">📱 Telegram (Optional)</div>
+
+        <div class="form-group">
+          <label>Telegram Chat ID</label>
+          <input type="text" id="signupChatId" placeholder="Get from @userinfobot"/>
+        </div>
+
+        <div class="error" id="signupError"></div>
+        <button class="btn" id="signupBtn" onclick="signup()">Deploy AI Bot →</button>
+
+        <div class="trust-indicators">
+          <div class="trust-item">Encrypted Authentication</div>
+          <div class="trust-item">Secure Deriv Integration</div>
+          <div class="trust-item">Real-Time Trade Monitoring</div>
+        </div>
+      </div>
+
+      <div class="footer">
+        <p>© 2026 Mantul Flow</p>
+        <p>AI-Powered Smart Money Trading Platform</p>
+      </div>
     </div>
   </div>
 </div>
 
-<script>
-  // Redirect if already logged in
-  if (localStorage.getItem("token")) window.location.href = "/dashboard.html";
+<!-- Loading Overlay -->
+<div id="loadingOverlay" class="loading-overlay">
+  <div class="spinner"></div>
+  <p>CONNECTING TO MANTUL FLOW</p>
+</div>
 
-  function showTab(tab) {
-    document.getElementById("loginForm").style.display   = tab === "login"  ? "block" : "none";
-    document.getElementById("signupForm").style.display  = tab === "signup" ? "block" : "none";
-    document.querySelectorAll(".tab").forEach((t,i) => {
-      t.classList.toggle("active", (tab === "login" && i === 0) || (tab === "signup" && i === 1));
+<script>
+  // ============================================
+  // DERIV WEBSOCKET REAL-TIME MARKET DATA
+  // ============================================
+  
+  // Define all your trading pairs with their Deriv symbols
+  const TRADING_PAIRS = {
+    // Forex
+    "EUR/USD": { symbol: "frxEURUSD", category: "Forex" },
+    "GBP/USD": { symbol: "frxGBPUSD", category: "Forex" },
+    "USD/JPY": { symbol: "frxUSDJPY", category: "Forex" },
+    "USD/CHF": { symbol: "frxUSDCHF", category: "Forex" },
+    "AUD/USD": { symbol: "frxAUDUSD", category: "Forex" },
+    "USD/CAD": { symbol: "frxUSDCAD", category: "Forex" },
+    "NZD/USD": { symbol: "frxNZDUSD", category: "Forex" },
+    // Metals
+    "XAU/USD": { symbol: "frxXAUUSD", category: "Metals" },
+    "XAG/USD": { symbol: "frxXAGUSD", category: "Metals" },
+    // Crypto
+    "BTC/USD": { symbol: "cryBTCUSD", category: "Crypto" },
+    "ETH/USD": { symbol: "cryETHUSD", category: "Crypto" }
+  };
+
+  let derivWs = null;
+  let marketPrices = {};
+  let lastUpdateTime = null;
+  let reconnectAttempts = 0;
+  let previousPrices = {};
+
+  // Initialize Deriv WebSocket connection
+  function initDerivWebSocket(appId = '33kDvVzcElBmdV0wfzTy1') {
+    if (derivWs && derivWs.readyState === WebSocket.OPEN) {
+      console.log('WebSocket already connected');
+      return;
+    }
+
+    const wsUrl = `wss://ws.binaryws.com/websockets/v3?app_id=${appId}`;
+    derivWs = new WebSocket(wsUrl);
+
+    derivWs.onopen = () => {
+      console.log('✅ Deriv WebSocket connected');
+      updateConnectionStatus(true);
+      reconnectAttempts = 0;
+      
+      // Authorize if PAT token is available (from env/session)
+      const patToken = localStorage.getItem('deriv_pat_token') || 
+                       document.getElementById('signupPAT')?.value || 
+                       'YOUR_PAT_TOKEN_HERE';
+      
+      if (patToken && patToken !== 'YOUR_PAT_TOKEN_HERE') {
+        derivWs.send(JSON.stringify({ 
+          authorize: patToken 
+        }));
+      }
+      
+      // Subscribe to all trading pairs
+      subscribeToAllPairs();
+    };
+
+    derivWs.onmessage = (event) => {
+      try {
+        const data = JSON.parse(event.data);
+        
+        // Handle price ticks
+        if (data.msg_type === 'tick') {
+          const symbol = data.tick?.symbol || data.echo_req?.ticks;
+          if (symbol && data.tick?.quote) {
+            const price = parseFloat(data.tick.quote);
+            const pairName = getPairNameBySymbol(symbol);
+            if (pairName) {
+              // Calculate change %
+              const prevPrice = previousPrices[pairName] || price;
+              const change = ((price - prevPrice) / prevPrice) * 100;
+              previousPrices[pairName] = price;
+              
+              marketPrices[pairName] = {
+                price: price,
+                change: change,
+                timestamp: Date.now()
+              };
+              lastUpdateTime = new Date();
+              updateMetricsDisplay();
+            }
+          }
+        }
+        
+        // Handle authorization response
+        if (data.msg_type === 'authorize') {
+          console.log('✅ Deriv authorized:', data.authorize?.loginid);
+        }
+        
+      } catch (e) {
+        console.error('Error parsing WebSocket message:', e);
+      }
+    };
+
+    derivWs.onerror = (error) => {
+      console.error('❌ Deriv WebSocket error:', error);
+      updateConnectionStatus(false);
+    };
+
+    derivWs.onclose = () => {
+      console.log('🔌 Deriv WebSocket disconnected');
+      updateConnectionStatus(false);
+      
+      // Auto-reconnect with exponential backoff
+      const delay = Math.min(5000 * Math.pow(1.5, reconnectAttempts), 30000);
+      reconnectAttempts++;
+      setTimeout(() => {
+        console.log(`🔄 Reconnecting to Deriv... (attempt ${reconnectAttempts})`);
+        initDerivWebSocket();
+      }, delay);
+    };
+  }
+
+  function updateConnectionStatus(connected) {
+    const statusEl = document.getElementById('connectionStatus');
+    if (statusEl) {
+      if (connected) {
+        statusEl.innerHTML = '<span class="status-connected">● LIVE</span>';
+      } else {
+        statusEl.innerHTML = '<span class="status-disconnected">○ RECONNECTING...</span>';
+      }
+    }
+  }
+
+  function subscribeToAllPairs() {
+    if (!derivWs || derivWs.readyState !== WebSocket.OPEN) return;
+    
+    Object.values(TRADING_PAIRS).forEach(pair => {
+      const subscribeMsg = {
+        ticks: pair.symbol,
+        subscribe: 1
+      };
+      derivWs.send(JSON.stringify(subscribeMsg));
+      console.log(`📡 Subscribed to: ${pair.symbol}`);
     });
   }
 
-  async function login() {
-    const email    = document.getElementById("loginEmail").value.trim();
-    const password = document.getElementById("loginPassword").value;
-    const errEl    = document.getElementById("loginError");
-    errEl.style.display = "none";
-
-    if (!email || !password) { errEl.textContent = "Fill in all fields"; errEl.style.display = "block"; return; }
-
-    try {
-      const res  = await fetch("/api/auth/login", {
-        method: "POST", headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ email, password }),
-      });
-      const data = await res.json();
-      if (!res.ok) { errEl.textContent = data.error; errEl.style.display = "block"; return; }
-      localStorage.setItem("token", data.token);
-      localStorage.setItem("user",  JSON.stringify(data.user));
-      window.location.href = "/dashboard.html";
-    } catch (e) {
-      errEl.textContent = "Network error"; errEl.style.display = "block";
+  function getPairNameBySymbol(symbol) {
+    for (const [name, data] of Object.entries(TRADING_PAIRS)) {
+      if (data.symbol === symbol) return name;
     }
+    return null;
   }
 
-  async function signup() {
-    const name       = document.getElementById("signupName").value.trim();
-    const email      = document.getElementById("signupEmail").value.trim();
-    const password   = document.getElementById("signupPassword").value;
-    const derivPAT   = document.getElementById("signupPAT").value.trim();
-    const derivAppId = document.getElementById("signupAppId").value.trim();
-    const derivMode  = document.getElementById("signupMode").value;
-    const chatId     = document.getElementById("signupChatId").value.trim();
-    const errEl      = document.getElementById("signupError");
-    errEl.style.display = "none";
-
-    if (!name || !email || !password || !derivPAT || !derivAppId) {
-      errEl.textContent = "Fill in all required fields"; errEl.style.display = "block"; return;
+  function formatPrice(price, symbol) {
+    if (!price) return '--.--';
+    // Crypto uses smaller decimals
+    if (symbol.includes('BTC') || symbol.includes('ETH')) {
+      return price.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 });
     }
-    if (password.length < 6) {
-      errEl.textContent = "Password must be at least 6 characters"; errEl.style.display = "block"; return;
+    // Metals (XAU/XAG)
+    if (symbol.includes('XAU')) {
+      return price.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 });
     }
-
-    try {
-      const res  = await fetch("/api/auth/signup", {
-        method: "POST", headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ name, email, password, derivPAT, derivAppId, derivMode, telegramChatId: chatId }),
-      });
-      const data = await res.json();
-      if (!res.ok) { errEl.textContent = data.error; errEl.style.display = "block"; return; }
-      localStorage.setItem("token", data.token);
-      localStorage.setItem("user",  JSON.stringify(data.user));
-      window.location.href = "/dashboard.html";
-    } catch (e) {
-      errEl.textContent = "Network error"; errEl.style.display = "block";
+    if (symbol.includes('XAG')) {
+      return price.toLocaleString(undefined, { minimumFractionDigits: 3, maximumFractionDigits: 3 });
     }
+    // Forex
+    return price.toLocaleString(undefined, { minimumFractionDigits: 5, maximumFractionDigits: 5 });
   }
-</script>
-</body>
-</html>
+
+  function updateMetricsDisplay() {
+    const container = document.getElementById('metricsContent');
+    if (!container) return;
+
+    if (Object.keys(marketPrices).length === 0) {
+      container.innerHTML = `
+        <div class="loading-metrics">
+          <div class="spinner" style="width: 30px; height: 30px; margin: 0 auto 16px;"></div>
+          Waiting for market data...
+        </div>`;
+      return;
+    }
+
+    const categories = ['Forex', 'Metals', 'Crypto'];
+    let html = '';
+    
+    // Add last update time
+    if (lastUpdateTime) {
+      html += `<div class="last-update" style="text-align: right; margin-bottom: 12px;">Updated: ${lastUpdateTime.toLocaleTimeString()}</div>`;
+    }
+
+    categories.forEach(category => {
+      const pairsInCategory = Object.entries(TRADING_PAIRS).filter(([_, data]) => data.category === category);
+      if (pairsInCategory.length === 0) return;
+      
+      html += `<div class="category-title">${category}</div>`;
+      
+      pairsInCategory.forEach(([pairName]) => {
+        const data = marketPrices[pairName];
+        const price = data?.price || null;
+        const change = data?.change || 0;
+        const changeClass = change >= 0 ? 'up' : 'down';
+        const changeSymbol = change >= 0 ? '▲' : '▼';
+        
+        html += `
+          <div class="metric-item">
+            <span class="metric-label">${pairName}</span>
+            <div class="metric-value-container">
+              <span class="metric-value">${formatPrice(price, pairName)}</span>
+              ${price ? `<span class="metric-change ${changeClass}">${changeSymbol} ${Math.abs(change).toFixed(2)}%</span>` : '<span class="metric-change">--</span>'}
+            </div>
+          </div>
+        `;
+      });
+    });
+    
+    container.innerHTML = html;
+  }
+
+  // Start WebSocket connection
+  initDerivWebSocket();
+
+  // Refresh display every 500ms
+  setInterval(() => {
+    if (Object.keys(marketPrices).length > 0) {
+      updateMetricsDisplay();
+    }
+  }, 500);
+
+  // ============================================
+  // AUTH & UI LOGIC
+  // ============================================
+
+  // Create particles
+  function createParticles() {
+    for (let i = 0; i < 60; i++) {
+      const particle = document.createElement('div');
+      particle.classList.add('particle');
+      const size = Math.random() * 3 + 1.5;
+      particle.style.width = size + 'px';
+      particle.style.height = size + 'px';
+      particle.style.left = Math.random() * 100 + '%';
+      particle.style.top = Math.random() * 100 + '%';}}
