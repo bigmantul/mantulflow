@@ -17,7 +17,7 @@ import {
   sessionName,
   isMarketOpen,
 } from "./strategy/signals.js";
-import { placeTradeWithRetry }           from "./trading/trader.js";
+import { placeTradeWithRetry, startForcedCloseTimer } from "./trading/trader.js";
 import {
   initPortfolio,
   syncActiveSymbols,
@@ -48,7 +48,7 @@ const SYMBOLS = [
   // Metals
   "frxXAUUSD", "frxXAGUSD",
   // Crypto
-  "cryBTCUSD", "cryETHUSD",
+  "cryBTCUSD", "cryETHUSD", "cryLTCUSD", "cryBCHUSD",
 ];
 
 const POLL_SECS        = 15;
@@ -269,6 +269,18 @@ async function main() {
             lockSymbol(symbol);
             rm.tradeOpened();
             tradesPlacedThisCycle++;
+
+            // Start 2hr forced close timer
+            startForcedCloseTimer({
+              contractId: typeof result === "object" ? result.contractId : String(result),
+              symbol,
+              direction,
+              stake,
+              token:  process.env.DERIV_PAT_TOKEN,
+              appId:  process.env.DERIV_APP_ID,
+              mode:   TRADING_MODE,
+              label:  "Bot",
+            });
 
             await notifyTradeOpened({
               symbol,

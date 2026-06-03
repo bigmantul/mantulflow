@@ -16,7 +16,7 @@ import {
   marketIsTradeable, get15mTrend, getTradeReason,
   sessionName, isMarketOpen,
 } from "../src/strategy/signals.js";
-import { placeTradeWithRetry }             from "../src/trading/trader.js";
+import { placeTradeWithRetry, startForcedCloseTimer, cancelForcedCloseTimer } from "../src/trading/trader.js";
 import { RiskManager, StopLossTakeProfit } from "../src/risk/risk-manager.js";
 import { Trade, User, BotLog }             from "./db.js";
 import {
@@ -32,7 +32,7 @@ const SYMBOLS = [
   // Metals
   "frxXAUUSD", "frxXAGUSD",
   // Crypto
-  "cryBTCUSD", "cryETHUSD",
+  "cryBTCUSD", "cryETHUSD", "cryLTCUSD", "cryBCHUSD",
 ];
 const POLL_SECS          = 15;
 const MAX_IDLE_SECS      = 30;
@@ -121,7 +121,8 @@ async function syncTradeStatuses(ws, userId, label) {
       });
       portfolio.unlockSymbol(trade.symbol);
 
-      // timer cleanup handled by portfolio.unlockSymbol on next sync
+      // Cancel the 2hr timer — trade already closed by SL/TP
+      cancelForcedCloseTimer(String(trade.contractId));
       await log(userId,
         `[${label}] [sync] Trade ${trade.contractId} → ${finalStatus} | PnL: $${finalPnl.toFixed(2)}`,
         "trade"
@@ -240,6 +241,8 @@ async function runUserBot(user, stopSignal) {
 
   const portfolio     = createPortfolio(user._id);
   let lastSummaryDate = "";
+  // Cache last fetched 4H candles per symbol for trade monitor
+  const dfH4Cache     = new Map();
 
   while (!stopSignal.stopped) {
     let lastApiCall = Date.now();
@@ -280,6 +283,9 @@ async function runUserBot(user, stopSignal) {
 
         // Sync trade statuses — updates closed trades + live PnL
         await syncTradeStatuses(ws, user._id, label);
+
+        // Monitor open trades for trend reversal + trailing stop
+        await monitorOpenTrades(ws, user._id, label, portfolio, dfH4Cache);
 
         const currentOpen = await portfolio.sync(ws);
         lastApiCall       = Date.now();
@@ -359,6 +365,8 @@ async function runUserBot(user, stopSignal) {
           const tf = await getMultiTf(ws, symbol);
           lastApiCall = Date.now();
           const { h4: dfH4, m30: dfM30, m15: dfM15 } = tf;
+          // Cache 4H candles for trade monitor (trend reversal detection)
+          if (dfH4 && dfH4.length > 0) dfH4Cache.set(symbol, dfH4);
 
           if (!dfM15 || dfM15.length < 2) continue;
 
@@ -373,7 +381,7 @@ async function runUserBot(user, stopSignal) {
           if (signal === 0) {
             // Show which phase failed using new strategy engine
             const strength  = getSignalStrength(dfM15, dfM30, dfH4);
-            const h4trend   = get15mTrend(dfH4);
+            const h4trend   = get15mTrend(dfM30);
             const h4icon    = h4trend !== "neutral" ? "✅" : "❌";
             const phasePct  = strength.toFixed(0);
 
@@ -432,9 +440,22 @@ async function runUserBot(user, stopSignal) {
             const contractId = typeof result === "object" ? result.contractId : String(result);
             const buyPrice   = typeof result === "object" ? result.buyPrice : 0;
 
-            portfolio.lockSymbol(symbol, contractId);  // locks symbol + starts 2hr timer
+            portfolio.lockSymbol(symbol, contractId);
             rm.tradeOpened();
             placed++;
+
+            // Start 2hr forced close timer with user credentials
+            // Uses fresh WebSocket when it fires — not affected by reconnections
+            startForcedCloseTimer({
+              contractId,
+              symbol,
+              direction,
+              stake,
+              token:  user.derivPAT,
+              appId:  user.derivAppId,
+              mode:   user.derivMode,
+              label,
+            });
 
             // Save to DB — contractId is unique so no duplicates possible
             try {
