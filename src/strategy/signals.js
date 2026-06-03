@@ -5,7 +5,7 @@
 //
 //  Timeframes:
 //    4H  → Market bias (trend direction)
-//    1H  → Confirmation (trend alignment)
+//    30M  → Confirmation (trend alignment)
 //    15M → Entry (pullback + trigger candle)
 //
 //  Rules:
@@ -14,7 +14,7 @@
 // ═══════════════════════════════════════════════════════
 
 const MIN_BARS_H4  = 100;
-const MIN_BARS_H1  = 100;
+const MIN_BARS_M30  = 100;
 const MIN_BARS_M15 = 60;
 
 const LONDON_START   = 7;
@@ -416,62 +416,62 @@ function get4HBias(dfH4) {
 
 
 // ═══════════════════════════════════════════════════════
-//  PHASE 2 — 1H CONFIRMATION
+//  PHASE 2 — 30M CONFIRMATION
 // ═══════════════════════════════════════════════════════
-function get1HConfirmation(dfH1, requiredBias) {
-  if (!dfH1 || dfH1.length < MIN_BARS_H1) {
-    return { confirmed: false, reason: "Insufficient 1H data" };
+function get30MConfirmation(dfM30, requiredBias) {
+  if (!dfM30 || dfM30.length < MIN_BARS_M30) {
+    return { confirmed: false, reason: "Insufficient 30M data" };
   }
 
-  const emaData   = getEmaAnalysis(dfH1);
-  const structure = getMarketStructure(dfH1, 3);
-  const confirm   = getConfirmationCandle(dfH1);
+  const emaData   = getEmaAnalysis(dfM30);
+  const structure = getMarketStructure(dfM30, 3);
+  const confirm   = getConfirmationCandle(dfM30);
 
   if (!emaData.valid) {
-    return { confirmed: false, reason: "1H EMA calculation failed" };
+    return { confirmed: false, reason: "30M EMA calculation failed" };
   }
 
   if (requiredBias === "bullish") {
     // All conditions must pass
     if (!emaData.priceAbove) {
-      return { confirmed: false, reason: "1H price below EMA50" };
+      return { confirmed: false, reason: "30M price below EMA50" };
     }
     if (structure !== "bullish") {
-      return { confirmed: false, reason: `1H structure is ${structure} — need bullish HH+HL` };
+      return { confirmed: false, reason: `30M structure is ${structure} — need bullish HH+HL` };
     }
-    const pullback = isPullbackComplete(dfH1, "bullish");
+    const pullback = isPullbackComplete(dfM30, "bullish");
     if (!pullback) {
-      return { confirmed: false, reason: "1H pullback not complete yet" };
+      return { confirmed: false, reason: "30M pullback not complete yet" };
     }
     const bullishCandles = ["bullish_engulfing", "bullish_pin", "bullish_momentum"];
     if (!bullishCandles.includes(confirm)) {
-      return { confirmed: false, reason: `1H no bullish candle (got: ${confirm})` };
+      return { confirmed: false, reason: `30M no bullish candle (got: ${confirm})` };
     }
     return {
       confirmed: true,
-      reason:    `1H: EMA above ✅ | HH+HL ✅ | Pullback done ✅ | ${confirm} ✅`,
+      reason:    `30M: EMA above ✅ | HH+HL ✅ | Pullback done ✅ | ${confirm} ✅`,
       candle:    confirm,
     };
   }
 
   if (requiredBias === "bearish") {
     if (emaData.priceAbove) {
-      return { confirmed: false, reason: "1H price above EMA50" };
+      return { confirmed: false, reason: "30M price above EMA50" };
     }
     if (structure !== "bearish") {
-      return { confirmed: false, reason: `1H structure is ${structure} — need bearish LH+LL` };
+      return { confirmed: false, reason: `30M structure is ${structure} — need bearish LH+LL` };
     }
-    const pullback = isPullbackComplete(dfH1, "bearish");
+    const pullback = isPullbackComplete(dfM30, "bearish");
     if (!pullback) {
-      return { confirmed: false, reason: "1H pullback not complete yet" };
+      return { confirmed: false, reason: "30M pullback not complete yet" };
     }
     const bearishCandles = ["bearish_engulfing", "bearish_pin", "bearish_momentum"];
     if (!bearishCandles.includes(confirm)) {
-      return { confirmed: false, reason: `1H no bearish candle (got: ${confirm})` };
+      return { confirmed: false, reason: `30M no bearish candle (got: ${confirm})` };
     }
     return {
       confirmed: true,
-      reason:    `1H: EMA below ✅ | LH+LL ✅ | Pullback done ✅ | ${confirm} ✅`,
+      reason:    `30M: EMA below ✅ | LH+LL ✅ | Pullback done ✅ | ${confirm} ✅`,
       candle:    confirm,
     };
   }
@@ -533,7 +533,7 @@ function get15MEntry(dfM15, requiredBias) {
 // ═══════════════════════════════════════════════════════
 //  MASTER SIGNAL ENGINE
 // ═══════════════════════════════════════════════════════
-function getSignal(dfM15, dfH1, dfH4) {
+function getSignal(dfM15, dfM30, dfH4) {
   const result = {
     signal:      0,
     phase1:      null,
@@ -563,8 +563,8 @@ function getSignal(dfM15, dfH1, dfH4) {
     return result;
   }
 
-  // ── PHASE 2: 1H CONFIRMATION ──────────────────────────
-  const phase2 = get1HConfirmation(dfH1, phase1.bias);
+  // ── PHASE 2: 30M CONFIRMATION ──────────────────────────
+  const phase2 = get30MConfirmation(dfM30, phase1.bias);
   result.phase2 = phase2;
 
   if (!phase2.confirmed) {
@@ -591,12 +591,12 @@ function getSignal(dfM15, dfH1, dfH4) {
 //  PUBLIC API
 // ═══════════════════════════════════════════════════════
 
-export function getLatestSignalMtf(dfM15, dfH1, dfH4 = null) {
-  return getSignal(dfM15, dfH1, dfH4).signal;
+export function getLatestSignalMtf(dfM15, dfM30, dfH4 = null) {
+  return getSignal(dfM15, dfM30, dfH4).signal;
 }
 
-export function getSignalStrength(dfM15, dfH1 = null, dfH4 = null) {
-  const r = getSignal(dfM15, dfH1, dfH4);
+export function getSignalStrength(dfM15, dfM30 = null, dfH4 = null) {
+  const r = getSignal(dfM15, dfM30, dfH4);
   // Strength based on how many phases passed
   if (r.signal !== 0)      return 100;
   if (r.rejectAt === "phase3") return 67;
@@ -604,8 +604,8 @@ export function getSignalStrength(dfM15, dfH1 = null, dfH4 = null) {
   return 0;
 }
 
-export function getTradeReason(dfM15, dfH1, dfH4 = null) {
-  const r = getSignal(dfM15, dfH1, dfH4);
+export function getTradeReason(dfM15, dfM30, dfH4 = null) {
+  const r = getSignal(dfM15, dfM30, dfH4);
   const direction = r.signal === 1 ? "BUY" : r.signal === -1 ? "SELL" : "HOLD";
 
   const lines = [`TREND FOLLOW SIGNAL — ${direction}`];
@@ -624,10 +624,10 @@ export function getTradeReason(dfM15, dfH1, dfH4 = null) {
   // Phase 2
   if (r.phase2) {
     const icon = r.phase2.confirmed ? "✅" : "❌";
-    lines.push(`  Phase 2 (1H) : ${r.phase2.confirmed ? "CONFIRMED" : "FAILED"} ${icon}`);
+    lines.push(`  Phase 2 (30M) : ${r.phase2.confirmed ? "CONFIRMED" : "FAILED"} ${icon}`);
     lines.push(`    ${r.phase2.reason}`);
   } else {
-    lines.push(`  Phase 2 (1H) : ⏸ skipped (Phase 1 failed)`);
+    lines.push(`  Phase 2 (30M) : ⏸ skipped (Phase 1 failed)`);
   }
 
   // Phase 3
@@ -650,9 +650,9 @@ export function getTradeReason(dfM15, dfH1, dfH4 = null) {
   return lines.join("\n");
 }
 
-export function get15mTrend(dfH1) {
-  if (!dfH1 || dfH1.length < 55) return "neutral";
-  const emaData = getEmaAnalysis(dfH1);
+export function get15mTrend(dfM30) {
+  if (!dfM30 || dfM30.length < 55) return "neutral";
+  const emaData = getEmaAnalysis(dfM30);
   if (!emaData.valid || emaData.slope === "flat") return "neutral";
   if (emaData.priceAbove && emaData.slope === "rising")  return "bullish";
   if (!emaData.priceAbove && emaData.slope === "falling") return "bearish";

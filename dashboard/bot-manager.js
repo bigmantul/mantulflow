@@ -358,7 +358,7 @@ async function runUserBot(user, stopSignal) {
 
           const tf = await getMultiTf(ws, symbol);
           lastApiCall = Date.now();
-          const { h4: dfH4, h1: dfH1, m15: dfM15 } = tf;
+          const { h4: dfH4, m30: dfM30, m15: dfM15 } = tf;
 
           if (!dfM15 || dfM15.length < 2) continue;
 
@@ -368,12 +368,12 @@ async function runUserBot(user, stopSignal) {
             continue;
           }
 
-          const signal = getLatestSignalMtf(dfM15, dfH1, dfH4);
+          const signal = getLatestSignalMtf(dfM15, dfM30, dfH4);
 
           if (signal === 0) {
             // Show which phase failed using new strategy engine
-            const strength  = getSignalStrength(dfM15, dfH1, dfH4);
-            const h4trend   = get15mTrend(dfH1);
+            const strength  = getSignalStrength(dfM15, dfM30, dfH4);
+            const h4trend   = get15mTrend(dfH4);
             const h4icon    = h4trend !== "neutral" ? "✅" : "❌";
             const phasePct  = strength.toFixed(0);
 
@@ -381,10 +381,10 @@ async function runUserBot(user, stopSignal) {
               `[${label}] ${symbol} | 4H: ${h4trend.toUpperCase()} ${h4icon} | ${phasePct}% | HOLD`,
               "info"
             );
-            await log(userId, getTradeReason(dfM15, dfH1, dfH4), "info");
+            await log(userId, getTradeReason(dfM15, dfM30, dfH4), "info");
 
             // Extract reject reason from getTradeReason output
-            const reasonText  = getTradeReason(dfM15, dfH1, dfH4);
+            const reasonText  = getTradeReason(dfM15, dfM30, dfH4);
             const rejectMatch = reasonText.match(/REJECTED at \w+: (.+)/);
             const rejectReason = rejectMatch ? rejectMatch[1].trim() : "";
 
@@ -392,7 +392,7 @@ async function runUserBot(user, stopSignal) {
               symbol,
               status:       "HOLD",
               h4bias:       h4trend,
-              h1trend:      get15mTrend(dfH1),
+              m30trend:      get15mTrend(dfM30),
               strength,
               rejectReason,
             });
@@ -404,7 +404,7 @@ async function runUserBot(user, stopSignal) {
           const baseStake  = rm.calculateStake(balance);
           const volScalar  = getVolatilityScalar(dfM15);
           const stake      = parseFloat(Math.max(baseStake * volScalar, rm.minStake).toFixed(2));
-          const strength   = getSignalStrength(dfM15, dfH1, dfH4);
+          const strength   = getSignalStrength(dfM15, dfM30, dfH4);
           const limitOrder = {
             stop_loss:   parseFloat((stake * freshUser.risk.stopLossPct).toFixed(2)),
             take_profit: parseFloat((stake * freshUser.risk.takeProfitPct).toFixed(2)),
@@ -415,13 +415,13 @@ async function runUserBot(user, stopSignal) {
             symbol,
             status:  label2,
             h4bias:  direction === "MULTUP" ? "bullish" : "bearish",
-            h1trend: direction === "MULTUP" ? "bullish" : "bearish",
+            m30trend: direction === "MULTUP" ? "bullish" : "bearish",
             strength,
           });
 
           const tradeMsg = `[${label}] ${symbol} | ${label2}! | Stake: $${stake.toFixed(2)} | SL=$${limitOrder.stop_loss} TP=$${limitOrder.take_profit} | ⏱️ 2hr failsafe`;
           await log(userId, tradeMsg, "trade");
-          await log(userId, getTradeReason(dfM15, dfH1, dfH4), "trade");
+          await log(userId, getTradeReason(dfM15, dfM30, dfH4), "trade");
 
           const result = await placeTradeWithRetry(ws, symbol, direction, stake, limitOrder);
 

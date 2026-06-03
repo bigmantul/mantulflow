@@ -208,10 +208,10 @@ async function main() {
 
           // Fetch candles
           const tf = await getMultiTf(ws, symbol);
-          const { h4: dfH4, h1: dfH1, m15: dfM15 } = tf;
+          const { h4: dfH4, m30: dfM30, m15: dfM15 } = tf;
           lastApiCall = Date.now();
 
-          const { h4: dfH4, h1: dfH1, m15: dfM15 } = tf;
+          const { h4: dfH4, m30: dfM30, m15: dfM15 } = tf;
 
           if (!dfM15 || dfM15.length < 2) continue;
 
@@ -223,20 +223,20 @@ async function main() {
           }
 
           // SMC signal
-          const signal = getLatestSignalMtf(dfM15, dfH1, dfH4);
+          const signal = getLatestSignalMtf(dfM15, dfM30, dfH4);
 
           if (signal === 0) {
-            const trend    = get15mTrend(dfH1);
-            const strength = getSignalStrength(dfM15, dfH1, dfH4);
-            const h1trend   = get15mTrend(dfH1);  // ✅ correct 1H data
+            const trend    = get15mTrend(dfM30);
+            const strength = getSignalStrength(dfM15, dfM30, dfH4);
+            const m30trend   = get15mTrend(dfM30);  // ✅ correct 30M data
             const h4icon    = trend !== "neutral" ? "✅" : "❌";
-            const h1icon    = h1trend === trend ? "✅" : "❌";
+            const m30icon    = m30trend === trend ? "✅" : "❌";
             const voteCount = Math.round(strength * 7 / 100);
 
             let holdReason;
             if (trend === "neutral")       holdReason = "4H neutral — no direction";
-            else if (h1trend !== trend)    holdReason = `1H: ${h1trend.toUpperCase()} ${h1icon} — disagrees with 4H`;
-            else                           holdReason = `1H: ${h1trend.toUpperCase()} ✅ | ${voteCount}/7 votes — need 4`;
+            else if (m30trend !== trend)    holdReason = `30M: ${m30trend.toUpperCase()} ${m30icon} — disagrees with 4H`;
+            else                           holdReason = `30M: ${m30trend.toUpperCase()} ✅ | ${voteCount}/7 votes — need 4`;
 
             console.log(`${symbol} | 4H: ${trend.toUpperCase()} ${h4icon} | ${holdReason}`);
             cycleResults.push({ symbol, status: "HOLD", trend, strength });
@@ -250,14 +250,14 @@ async function main() {
           const baseStake  = rm.calculateStake(balance);
           const volScalar  = getVolatilityScalar(dfM15);
           const stake      = parseFloat(Math.max(baseStake * volScalar, rm.minStake).toFixed(2));
-          const strength   = getSignalStrength(dfM15, dfH1, dfH4);
+          const strength   = getSignalStrength(dfM15, dfM30, dfH4);
           const limitOrder = sltp.getMultiplierLimitOrder(stake);
           const multiplier = 100;
 
           console.log(
             `\n${symbol} | ${label} | Strength: ${strength.toFixed(0)}% | Stake: $${stake.toFixed(2)} | Expires: 2hr`
           );
-          console.log(getTradeReason(dfM15, dfH1, dfH4));
+          console.log(getTradeReason(dfM15, dfM30, dfH4));
 
           cycleResults.push({ symbol, status: label, strength });
 

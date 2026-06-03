@@ -30,7 +30,7 @@ export function notifyStartup(balance, mode, label, botToken, chatId) {
     `🤖 <b>${label || "Bot"} — Started</b>\n` +
     `Mode     : ${(mode || "demo").toUpperCase()}\n` +
     `Balance  : $${balance.toFixed(2)}\n` +
-    `Strategy : Trend Following — 4H bias | 1H confirm | 15M entry\n` +
+    `Strategy : Trend Following — 4H bias | 30M confirm | 15M entry\n` +
     `Exit     : SL/TP or 2hr forced close`,
     botToken, chatId
   );
@@ -136,7 +136,8 @@ export function notifyCycleScan({ balance, openTrades, maxTrades, session, resul
     } else if (r.status === "BUY" || r.status === "SELL") {
       const icon = r.status === "BUY" ? "🟢" : "🔴";
       const h4   = (r.h4bias  || (r.status === "BUY" ? "bullish" : "bearish")).toUpperCase();
-      lines.push(`${icon} ${sym} | 4H: ${h4} ✅ | P1✅ P2✅ P3✅ — ${r.status}!`);
+      const m30  = (r.m30trend || "neutral").toUpperCase();
+      lines.push(`${icon} ${sym} | 4H: ${h4} ✅ | 30M: ${m30} ✅ | P1✅ P2✅ P3✅ — ${r.status}!`);
     }
   }
 
