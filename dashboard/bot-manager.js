@@ -383,12 +383,18 @@ async function runUserBot(user, stopSignal) {
             );
             await log(userId, getTradeReason(dfM15, dfH1, dfH4), "info");
 
+            // Extract reject reason from getTradeReason output
+            const reasonText  = getTradeReason(dfM15, dfH1, dfH4);
+            const rejectMatch = reasonText.match(/REJECTED at \w+: (.+)/);
+            const rejectReason = rejectMatch ? rejectMatch[1].trim() : "";
+
             cycleResults.push({
               symbol,
-              status:  "HOLD",
-              h4bias:  h4trend,
-              h1trend: get15mTrend(dfH1),
+              status:       "HOLD",
+              h4bias:       h4trend,
+              h1trend:      get15mTrend(dfH1),
               strength,
+              rejectReason,
             });
             continue;
           }
