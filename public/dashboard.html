@@ -3,16 +3,19 @@
 <head>
 <meta charset="UTF-8"/>
 <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
-<title>Dashboard — MANTUL FLOW | Real Deriv Market Data</title>
+<title>MANTUL FLOW — Live Trading Dashboard</title>
 <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
 <style>
   *{margin:0;padding:0;box-sizing:border-box}
-  body{font-family:'Inter',sans-serif;background:#05070f;color:#e2e8f0;min-height:100vh;position:relative;overflow-x:hidden;}
+  body{font-family:'Inter',-apple-system,sans-serif;background:#05070f;color:#e2e8f0;min-height:100vh;position:relative;overflow-x:hidden;}
+  
+  /* Animated Background */
   body::before{content:'';position:fixed;width:500px;height:500px;background:#2563eb;filter:blur(150px);opacity:.12;top:10%;left:-10%;animation:floatOrb 14s ease-in-out infinite;pointer-events:none;z-index:0;}
   body::after{content:'';position:fixed;width:400px;height:400px;background:#06b6d4;filter:blur(150px);opacity:.1;bottom:10%;right:-10%;animation:floatOrb2 16s ease-in-out infinite;pointer-events:none;z-index:0;}
   @keyframes floatOrb{0%,100%{transform:translateY(0)}50%{transform:translateY(-60px)}}
   @keyframes floatOrb2{0%,100%{transform:translateY(0)}50%{transform:translateY(60px)}}
   
+  /* Glassmorphism */
   .card,.stat-card{background:rgba(17,24,39,0.55);backdrop-filter:blur(20px);border:1px solid rgba(255,255,255,0.06);box-shadow:0 8px 32px rgba(0,0,0,0.3);transition:all 0.35s ease;}
   .card:hover,.stat-card:hover{transform:translateY(-4px);border-color:rgba(56,189,248,0.3);}
   
@@ -29,6 +32,7 @@
   .balance-amount{font-size:42px;font-weight:800;background:linear-gradient(135deg,#fff,#38bdf8);-webkit-background-clip:text;background-clip:text;color:transparent;}
   .health-bar{flex:1;height:6px;background:rgba(255,255,255,0.1);border-radius:3px;overflow:hidden;}
   .health-fill{height:100%;background:linear-gradient(90deg,#10b981,#34d399);border-radius:3px;transition:width 0.5s ease;}
+  .refresh-btn{background:rgba(56,189,248,0.15);border:none;border-radius:20px;padding:4px 10px;margin-left:10px;cursor:pointer;font-size:11px;color:#38bdf8;}
   
   .stats-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:16px;margin-bottom:28px;}
   .stat-card{border-radius:20px;padding:20px;}
@@ -55,10 +59,8 @@
   .ai-stat{display:flex;justify-content:space-between;padding:12px 0;border-bottom:1px solid rgba(255,255,255,0.05);}
   .confidence-bar{height:6px;background:rgba(255,255,255,0.1);border-radius:3px;margin-top:8px;overflow:hidden;}
   .confidence-fill{height:100%;background:linear-gradient(90deg,#38bdf8,#818cf8);border-radius:3px;transition:width 0.5s ease;}
-  
   .risk-bar{height:8px;background:rgba(255,255,255,0.1);border-radius:4px;overflow:hidden;margin-top:8px;}
   .risk-fill{height:100%;background:linear-gradient(90deg,#fbbf24,#f97316);border-radius:4px;transition:width 0.5s ease;}
-  
   .badges-row{display:flex;gap:12px;margin-top:16px;flex-wrap:wrap;}
   .perf-badge{background:rgba(255,255,255,0.05);border-radius:40px;padding:8px 16px;font-size:12px;}
   
@@ -82,6 +84,7 @@
   .badge.sell{background:rgba(248,113,113,0.15);color:#f87171;}
   .badge.won{background:rgba(16,185,129,0.15);color:#10b981;}
   .badge.lost{background:rgba(248,113,113,0.15);color:#f87171;}
+  .badge.open{background:rgba(56,189,248,0.15);color:#38bdf8;}
   
   .toast{position:fixed;bottom:30px;right:30px;background:rgba(17,24,39,0.95);backdrop-filter:blur(20px);border:1px solid rgba(56,189,248,0.3);border-radius:16px;padding:14px 24px;z-index:1000;transform:translateX(400px);transition:transform 0.3s ease;}
   .toast.show{transform:translateX(0);}
@@ -90,8 +93,7 @@
   .sync-btn,.save-btn{padding:8px 16px;background:rgba(30,41,59,0.8);color:#94a3b8;border:1px solid rgba(255,255,255,0.05);border-radius:10px;cursor:pointer;margin:4px;}
   .form-group{margin-bottom:12px;}
   .form-group input,.form-group select{width:100%;padding:10px 12px;background:rgba(15,23,42,0.8);border:1px solid rgba(255,255,255,0.08);border-radius:10px;color:#e2e8f0;}
-  .logs-card{display:none;border-radius:24px;padding:24px;margin-bottom:28px;}
-  .logs-container{background:rgba(10,14,26,0.8);border-radius:16px;padding:16px;font-family:monospace;font-size:12px;max-height:400px;overflow-y:auto;}
+  
   .empty{text-align:center;padding:40px;color:#475569;}
   .tabs{display:flex;gap:8px;margin-bottom:16px;flex-wrap:wrap;}
   .filter-tab{padding:6px 14px;border-radius:6px;border:1px solid rgba(255,255,255,0.1);background:transparent;color:#64748b;cursor:pointer;}
@@ -101,18 +103,19 @@
 <body>
 
 <div class="header">
-  <h1>⚡ MANTUL FLOW — REAL DERIV MARKET DATA</h1>
+  <h1>⚡ MANTUL FLOW — REAL MARKET DATA</h1>
   <div><button class="btn-logout" onclick="logout()">Logout</button></div>
 </div>
 
 <div class="main">
+  <!-- Hero Section -->
   <div class="hero-section">
     <div class="hero-card">
       <div class="hero-greeting">WELCOME BACK</div>
       <div class="hero-title" id="heroName">Trader 👋</div>
-      <div class="balance-label">Account Balance <button onclick="refreshBalance()" style="background:rgba(56,189,248,0.2);border:none;border-radius:20px;padding:2px 10px;margin-left:10px;cursor:pointer;">⟳</button></div>
+      <div class="balance-label">Account Balance <button class="refresh-btn" onclick="refreshBalance()">⟳ Refresh</button></div>
       <div class="balance-amount" id="balanceAmount">$--</div>
-      <div class="health-score" style="display:flex;align-items:center;gap:12px;margin-top:16px;">
+      <div style="display:flex;align-items:center;gap:12px;margin-top:16px;">
         <span>Account Health</span>
         <div class="health-bar"><div class="health-fill" id="healthFill" style="width:72%"></div></div>
         <span id="healthPercent">72%</span>
@@ -123,10 +126,12 @@
         <div class="live-dot"></div><span>LIVE DERIV CONNECTION</span>
       </div>
       <div class="ai-stat"><span>Connection Status</span><span id="wsStatus" style="color:#fbbf24">● CONNECTING...</span></div>
+      <div class="ai-stat"><span>Bot Status</span><span id="botStatusDisplay">● Loading...</span></div>
       <div class="ai-stat"><span>Last Price Update</span><span id="lastUpdate">--:--:--</span></div>
     </div>
   </div>
 
+  <!-- Stats Row -->
   <div class="stats-grid">
     <div class="stat-card"><div class="stat-label">Win Rate</div><div class="stat-value blue" id="statWinRate">--%</div></div>
     <div class="stat-card"><div class="stat-label">Total PnL</div><div class="stat-value" id="statTotalPnl">$--</div></div>
@@ -135,21 +140,21 @@
     <div class="stat-card"><div class="stat-label">Open Now</div><div class="stat-value" id="statOpen">--</div></div>
   </div>
 
-  <!-- REAL MARKET PRICES FROM DERIV -->
+  <!-- Live Market Prices from Deriv -->
   <div class="market-row" id="marketTickers">
-    <div style="text-align:center;width:100%">Connecting to Deriv WebSocket for real prices...</div>
+    <div style="text-align:center;width:100%">Connecting to Deriv WebSocket...</div>
   </div>
 
   <div class="two-col">
     <div class="ai-panel card">
-      <div class="ai-header">🤖 AI INTELLIGENCE (REAL DATA)</div>
-      <div class="ai-stat"><span>Scanning Markets</span><span id="scanningMarkets">12</span></div>
+      <div class="ai-header">🤖 AI INTELLIGENCE (FROM BOT)</div>
+      <div class="ai-stat"><span>Scanning Markets</span><span id="scanningMarkets">11</span></div>
       <div class="ai-stat"><span>Trend Matches</span><span id="trendMatches">--</span></div>
       <div class="ai-stat"><span>Potential Entries</span><span id="potentialEntries">--</span></div>
       <div class="ai-stat"><span>Confidence</span><span id="confidenceValue">--%</span></div>
       <div class="confidence-bar"><div class="confidence-fill" id="confidenceFill" style="width:0%"></div></div>
       <div class="risk-meter" style="margin-top:20px;">
-        <div class="risk-header" style="display:flex;justify-content:space-between;"><span>Risk Exposure</span><span id="riskPercent">--%</span></div>
+        <div style="display:flex;justify-content:space-between;"><span>Risk Exposure</span><span id="riskPercent">--%</span></div>
         <div class="risk-bar"><div class="risk-fill" id="riskFill" style="width:0%"></div></div>
       </div>
       <div class="badges-row">
@@ -186,26 +191,39 @@
         <div><div class="live-dot" id="botDot" style="margin-bottom:6px"></div><div id="botLabel">Stopped</div></div>
         <button class="toggle-btn" id="toggleBtn" onclick="toggleBot()" style="padding:10px 24px;border-radius:12px;border:none;font-weight:700;cursor:pointer">Start</button>
       </div>
-      <button class="sync-btn" onclick="syncTrades()">🔄 Sync Trades</button>
-      <button class="sync-btn" onclick="importTrades()">📥 Import Trades</button>
+      <button class="sync-btn" onclick="syncTrades()">🔄 Sync Open Trades</button>
+      <button class="sync-btn" onclick="importTrades()">📥 Import Trade History</button>
       <div class="risk-form" style="margin-top:16px">
         <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:12px">
-          <div class="form-group"><label>Stake %</label><input type="number" id="riskPct" placeholder="10"/></div>
-          <div class="form-group"><label>Max Open</label><input type="number" id="maxOpen" placeholder="3"/></div>
+          <div class="form-group"><label>Stake % of Balance</label><input type="number" id="riskPct" step="1" min="1" max="50" placeholder="10"/></div>
+          <div class="form-group"><label>Max Open Trades</label><input type="number" id="maxOpen" min="1" max="10" placeholder="3"/></div>
         </div>
         <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:12px">
-          <div class="form-group"><label>Stop Loss %</label><input type="number" id="stopLoss" placeholder="80"/></div>
-          <div class="form-group"><label>Take Profit %</label><input type="number" id="takeProfit" placeholder="200"/></div>
+          <div class="form-group"><label>Stop Loss %</label><input type="number" id="stopLoss" step="5" min="10" max="200" placeholder="80"/></div>
+          <div class="form-group"><label>Take Profit %</label><input type="number" id="takeProfit" step="10" min="10" max="1000" placeholder="200"/></div>
         </div>
         <button class="save-btn" onclick="saveRisk()">Save Risk Settings</button>
       </div>
     </div>
-    <div class="activity-card card" style="padding:24px;border-radius:24px">
-      <div class="ai-header">⏱️ ACTIVITY TIMELINE</div>
+    <div class="card" style="padding:24px;border-radius:24px">
+      <div class="ai-header">⏱️ BOT ACTIVITY</div>
       <div id="timelineList"><div class="empty">Bot activity will appear here</div></div>
     </div>
   </div>
 
+  <!-- Account Settings -->
+  <div class="card" style="padding:24px;border-radius:24px;margin-bottom:28px">
+    <div class="ai-header">🔐 DERIV CONNECTION</div>
+    <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(200px,1fr));gap:16px">
+      <div class="form-group"><label>Deriv PAT Token</label><input type="password" id="settingsPAT" placeholder="pat_xxxxxxxx"/></div>
+      <div class="form-group"><label>Deriv App ID</label><input type="text" id="settingsAppId" placeholder="App ID"/></div>
+      <div class="form-group"><label>Trading Mode</label><select id="settingsMode"><option value="demo">Demo</option><option value="real">Real</option></select></div>
+      <div class="form-group"><label>Telegram Chat ID</label><input type="text" id="settingsChatId" placeholder="Chat ID"/></div>
+    </div>
+    <button class="save-btn" onclick="saveSettings()">Update Settings & Reconnect</button>
+  </div>
+
+  <!-- Trade History -->
   <div class="trades-card card">
     <div class="ai-header">📊 TRADE HISTORY</div>
     <div class="tabs">
@@ -222,7 +240,7 @@
 
 <script>
 // ============================================
-// REAL DERIV WEBSOCKET FOR ALL 11 PAIRS
+// REAL DERIV WEBSOCKET FOR LIVE PRICES
 // ============================================
 
 const DERIV_SYMBOLS = {
@@ -244,6 +262,9 @@ let realMarketPrices = {};
 let previousPrices = {};
 let patToken = null;
 let appId = null;
+let botActive = false;
+let currentTradeFilter = "all";
+let equityChart = null;
 
 function showToast(msg, type) {
   const toast = document.getElementById('toast');
@@ -252,17 +273,40 @@ function showToast(msg, type) {
   setTimeout(() => toast.classList.remove('show'), 3000);
 }
 
+// API calls to your backend
+const token = localStorage.getItem("token");
+if (!token) window.location.href = "/";
+
+const API = async (path, method = "GET", body = null) => {
+  const opts = { method, headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" } };
+  if (body) opts.body = JSON.stringify(body);
+  const res = await fetch("/api" + path, opts);
+  const data = await res.json();
+  if (res.status === 401) { localStorage.clear(); window.location.href = "/"; }
+  return data;
+};
+
+// ============================================
+// DERIV WEBSOCKET CONNECTION
+// ============================================
+
 async function getDerivCredentials() {
   try {
     const user = await API("/user/me");
     patToken = user.derivPAT;
     appId = user.derivAppId || '33kDvVzcElBmdV0wfzTy1';
+    botActive = user.botActive;
+    updateBotUI(botActive);
+    document.getElementById('botStatusDisplay').innerHTML = botActive ? '🟢 RUNNING' : '⚪ STOPPED';
+    document.getElementById('botStatusDisplay').style.color = botActive ? '#10b981' : '#94a3b8';
+    
     if (patToken && patToken !== '') {
       connectDerivWebSocket();
     } else {
-      document.getElementById('wsStatus').innerHTML = '⚠️ No PAT Token in settings';
+      document.getElementById('wsStatus').innerHTML = '⚠️ No PAT Token';
       document.getElementById('wsStatus').style.color = '#f87171';
     }
+    return user;
   } catch(e) {
     console.error('Failed to get credentials:', e);
   }
@@ -283,18 +327,16 @@ function connectDerivWebSocket() {
   derivWs.onmessage = (event) => {
     const data = JSON.parse(event.data);
     
-    // Handle authorization
     if (data.msg_type === 'authorize') {
       console.log('✅ Authorized to Deriv');
       // Subscribe to all symbols
       for (const [name, symbol] of Object.entries(DERIV_SYMBOLS)) {
         derivWs.send(JSON.stringify({ ticks: symbol, subscribe: 1 }));
       }
-      // Also get account balance
+      // Get account balance
       derivWs.send(JSON.stringify({ balance: 1 }));
     }
     
-    // Handle balance response
     if (data.balance) {
       const balance = data.balance.balance;
       document.getElementById('balanceAmount').textContent = `$${balance.toFixed(2)}`;
@@ -303,7 +345,6 @@ function connectDerivWebSocket() {
       document.getElementById('healthPercent').textContent = `${health}%`;
     }
     
-    // Handle real price ticks
     if (data.msg_type === 'tick' && data.tick) {
       const symbol = data.tick.symbol;
       const price = data.tick.quote;
@@ -323,21 +364,19 @@ function connectDerivWebSocket() {
     
     if (data.error) {
       console.error('Deriv error:', data.error);
-      document.getElementById('wsStatus').innerHTML = '● ERROR: ' + data.error.message;
+      document.getElementById('wsStatus').innerHTML = '● ERROR';
       document.getElementById('wsStatus').style.color = '#f87171';
     }
   };
   
-  derivWs.onerror = (error) => {
-    console.error('WebSocket error:', error);
-    document.getElementById('wsStatus').innerHTML = '● CONNECTION ERROR';
+  derivWs.onerror = () => {
+    document.getElementById('wsStatus').innerHTML = '● ERROR';
     document.getElementById('wsStatus').style.color = '#f87171';
   };
   
   derivWs.onclose = () => {
     document.getElementById('wsStatus').innerHTML = '● DISCONNECTED';
     document.getElementById('wsStatus').style.color = '#f87171';
-    // Reconnect after 5 seconds
     setTimeout(connectDerivWebSocket, 5000);
   };
 }
@@ -376,7 +415,6 @@ function updateHeatmapAndSignals() {
   
   if (!heatmapContainer) return;
   
-  // Calculate heatmap percentages based on real price momentum
   const pairs = Object.keys(DERIV_SYMBOLS);
   const heatmapData = [];
   const signals = [];
@@ -384,7 +422,6 @@ function updateHeatmapAndSignals() {
   for (const pair of pairs) {
     const priceData = realMarketPrices[pair];
     if (priceData) {
-      // Calculate strength based on price change and momentum
       let strength = 50 + (priceData.change * 2);
       strength = Math.min(95, Math.max(5, strength));
       
@@ -401,7 +438,6 @@ function updateHeatmapAndSignals() {
     }
   }
   
-  // Update heatmap
   heatmapContainer.innerHTML = heatmapData.map(h => `
     <div class="heatmap-item">
       <span>${h.pair}</span>
@@ -409,7 +445,6 @@ function updateHeatmapAndSignals() {
     </div>
   `).join('');
   
-  // Update signals
   const topSignals = signals.sort((a,b) => Math.abs(b.confidence - 50) - Math.abs(a.confidence - 50)).slice(0, 5);
   signalsContainer.innerHTML = topSignals.map(s => `
     <div class="signal-item">
@@ -420,7 +455,6 @@ function updateHeatmapAndSignals() {
     </div>
   `).join('');
   
-  // Update gauge confidence
   const avgConfidence = Math.round(signals.reduce((sum, s) => sum + s.confidence, 0) / signals.length);
   document.getElementById('gaugeConfidence').textContent = avgConfidence || 50;
   document.getElementById('confidenceValue').textContent = (avgConfidence || 50) + '%';
@@ -428,59 +462,155 @@ function updateHeatmapAndSignals() {
 }
 
 // ============================================
-// API FUNCTIONS (Your existing backend calls)
+// DASHBOARD DATA FROM YOUR BACKEND
 // ============================================
 
-const token = localStorage.getItem("token");
-if (!token) window.location.href = "/";
-
-const API = async (path, method = "GET", body = null) => {
-  const opts = { method, headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" } };
-  if (body) opts.body = JSON.stringify(body);
-  const res = await fetch("/api" + path, opts);
-  const data = await res.json();
-  if (res.status === 401) { localStorage.clear(); window.location.href = "/"; }
-  return data;
-};
-
-let botActive = false;
-let currentTradeFilter = "all";
-
 async function init() {
-  const user = await API("/user/me");
+  const user = await getDerivCredentials();
   document.getElementById("heroName").innerHTML = user.name.split(' ')[0] + ' 👋';
-  botActive = user.botActive;
-  updateBotUI(botActive);
   
-  // Get Deriv credentials and connect WebSocket
-  await getDerivCredentials();
-  
+  // Load risk settings from DB
   const r = user.risk;
   document.getElementById("riskPct").value = Math.round(r.riskPct * 100);
   document.getElementById("maxOpen").value = r.maxOpenTrades;
   document.getElementById("stopLoss").value = Math.round(r.stopLossPct * 100);
   document.getElementById("takeProfit").value = Math.round(r.takeProfitPct * 100);
   
+  document.getElementById("settingsPAT").value = user.derivPAT || '';
+  document.getElementById("settingsAppId").value = user.derivAppId || '';
+  document.getElementById("settingsMode").value = user.derivMode || 'demo';
+  document.getElementById("settingsChatId").value = user.telegramChatId || '';
+  
   await loadStats();
   await loadTrades("all");
+  await loadBotActivity();
   initChart();
+  
+  setInterval(async () => {
+    await loadStats();
+    await loadTrades(currentTradeFilter);
+    await loadBotActivity();
+  }, 30000);
 }
 
-let equityChart = null;
+async function loadStats() {
+  const s = await API("/trades/stats");
+  document.getElementById("statWinRate").textContent = (s.winRate || 0) + "%";
+  const pnlEl = document.getElementById("statTotalPnl");
+  pnlEl.textContent = (s.totalPnl >= 0 ? "+" : "") + "$" + (s.totalPnl || 0).toFixed(2);
+  pnlEl.className = "stat-value " + (s.totalPnl >= 0 ? "green" : "red");
+  document.getElementById("statTodayPnl").textContent = (s.todayPnl >= 0 ? "+" : "") + "$" + (s.todayPnl || 0).toFixed(2);
+  document.getElementById("statTotal").textContent = s.total || 0;
+  document.getElementById("statOpen").textContent = s.open || 0;
+  
+  // Update AI panel with real trade data
+  const winRate = parseFloat(s.winRate) || 0;
+  const trendMatches = Math.min(11, Math.max(1, Math.floor(winRate / 10)));
+  const potentialEntries = Math.min(5, Math.max(0, Math.floor((100 - winRate) / 20)));
+  document.getElementById('trendMatches').textContent = trendMatches;
+  document.getElementById('potentialEntries').textContent = potentialEntries;
+  
+  const riskExposure = Math.min(95, Math.floor(((s.open || 0) / 5) * 100));
+  document.getElementById('riskPercent').textContent = riskExposure + '%';
+  document.getElementById('riskFill').style.width = riskExposure + '%';
+  
+  // Calculate best trade, win streak, monthly return from trade history
+  const trades = await API("/trades?limit=200");
+  if (trades.trades && trades.trades.length > 0) {
+    const bestTrade = Math.max(...trades.trades.map(t => t.pnl || 0), 0);
+    document.getElementById('bestTrade').innerHTML = `+$${bestTrade.toFixed(2)}`;
+    
+    let streak = 0;
+    for (const trade of trades.trades.reverse()) {
+      if (trade.pnl > 0) streak++;
+      else if (trade.pnl < 0) break;
+    }
+    document.getElementById('winStreak').textContent = streak;
+    
+    const totalPnl = trades.trades.reduce((sum, t) => sum + (t.pnl || 0), 0);
+    const monthlyReturn = ((totalPnl / 7559.91) * 100).toFixed(1);
+    document.getElementById('monthlyReturn').innerHTML = (monthlyReturn >= 0 ? '+' : '') + monthlyReturn + '%';
+  }
+  
+  await updateEquityChart();
+}
+
+async function loadBotActivity() {
+  try {
+    const logs = await API("/logs?limit=10");
+    const container = document.getElementById('timelineList');
+    if (logs && logs.length > 0) {
+      container.innerHTML = logs.slice(0, 8).map(l => `
+        <div style="display:flex;gap:12px;padding:8px 0;border-bottom:1px solid rgba(255,255,255,0.05)">
+          <span style="font-size:11px;color:#4a5568;min-width:60px">${new Date(l.createdAt).toLocaleTimeString()}</span>
+          <span style="font-size:12px;color:#94a3b8">${l.message.substring(0, 80)}</span>
+        </div>
+      `).join('');
+    } else {
+      container.innerHTML = '<div class="empty">No bot activity yet</div>';
+    }
+  } catch(e) {
+    console.error('Failed to load bot activity:', e);
+  }
+}
+
+async function loadTrades(status, btnEl) {
+  currentTradeFilter = status;
+  if (btnEl) {
+    document.querySelectorAll(".filter-tab").forEach(b => b.classList.remove("active"));
+    btnEl.classList.add("active");
+  }
+  const url = status === "all" ? "/trades?limit=50" : `/trades?status=${status}&limit=50`;
+  const data = await API(url);
+  const table = document.getElementById("tradesTable");
+  if (!data.trades || data.trades.length === 0) {
+    table.innerHTML = '<div class="empty">No trades yet</div>'; 
+    return;
+  }
+  const rows = data.trades.map(t => {
+    const dir = t.direction === "MULTUP" ? "BUY" : "SELL";
+    const pnl = t.pnl !== 0 ? (t.pnl > 0 ? `+$${t.pnl.toFixed(2)}` : `-$${Math.abs(t.pnl).toFixed(2)}`) : "—";
+    const date = new Date(t.openedAt).toLocaleString();
+    return `<tr>
+      <td style="font-family:monospace">${t.symbol}</td>
+      <td><span class="badge ${dir === 'BUY' ? 'buy' : 'sell'}">${dir}</span></td>
+      <td>$${t.stake?.toFixed(2) || '0'}</td>
+      <td>${pnl}</td>
+      <td><span class="badge ${t.status}">${t.status}</span></td>
+      <td style="color:#475569;font-size:11px">${date}</td>
+    </tr>`;
+  }).join("");
+  table.innerHTML = `<table style="width:100%"><thead><tr><th>Symbol</th><th>Dir</th><th>Stake</th><th>PnL</th><th>Status</th><th>Opened</th></tr></thead><tbody>${rows}</tbody></table>`;
+}
 
 async function initChart() {
   const ctx = document.getElementById('equityChart').getContext('2d');
   equityChart = new Chart(ctx, {
     type: 'line',
-    data: { labels: [], datasets: [{ label: 'Account Balance', data: [], borderColor: '#38bdf8', tension: 0.4, fill: false }] },
-    options: { responsive: true, maintainAspectRatio: true, plugins: { legend: { labels: { color: '#94a3b8' } } } }
+    data: { 
+      labels: [], 
+      datasets: [{ 
+        label: 'Account Balance', 
+        data: [], 
+        borderColor: '#38bdf8', 
+        backgroundColor: 'rgba(56,189,248,0.05)',
+        tension: 0.4, 
+        fill: true 
+      }] 
+    },
+    options: { 
+      responsive: true, 
+      maintainAspectRatio: true,
+      plugins: { legend: { labels: { color: '#94a3b8' } } },
+      scales: { y: { grid: { color: 'rgba(255,255,255,0.05)' }, ticks: { color: '#94a3b8' } }, x: { ticks: { color: '#94a3b8' } } }
+    }
   });
   await updateEquityChart();
 }
 
 async function updateEquityChart() {
   try {
-    const trades = await API("/trades?limit=100");
+    const trades = await API("/trades?limit=200");
     let runningBalance = 7559.91;
     const balanceOverTime = [{ date: new Date(), balance: runningBalance }];
     
@@ -497,7 +627,7 @@ async function updateEquityChart() {
     for (let i = 6; i >= 0; i--) {
       const date = new Date();
       date.setDate(date.getDate() - i);
-      last7Days.push(date.toLocaleDateString());
+      last7Days.push(date.toLocaleDateString('en-US', { month: 'short', day: 'numeric' }));
       const closest = balanceOverTime.filter(b => b.date <= date).pop();
       last7Balances.push(closest ? closest.balance : 7559.91);
     }
@@ -510,49 +640,9 @@ async function updateEquityChart() {
   } catch(e) { console.error('Chart error:', e); }
 }
 
-async function loadStats() {
-  const s = await API("/trades/stats");
-  document.getElementById("statWinRate").textContent = s.winRate + "%";
-  const pnlEl = document.getElementById("statTotalPnl");
-  pnlEl.textContent = (s.totalPnl >= 0 ? "+" : "") + "$" + s.totalPnl;
-  pnlEl.className = "stat-value " + (s.totalPnl >= 0 ? "green" : "red");
-  document.getElementById("statTodayPnl").textContent = (s.todayPnl >= 0 ? "+" : "") + "$" + s.todayPnl;
-  document.getElementById("statTotal").textContent = s.total;
-  document.getElementById("statOpen").textContent = s.open;
-  
-  // Update AI panel with real trade data
-  const winRate = parseFloat(s.winRate) || 0;
-  const trendMatches = Math.min(12, Math.max(1, Math.floor(winRate / 10)));
-  const potentialEntries = Math.min(5, Math.max(0, Math.floor((100 - winRate) / 20)));
-  document.getElementById('trendMatches').textContent = trendMatches;
-  document.getElementById('potentialEntries').textContent = potentialEntries;
-  
-  const riskExposure = Math.min(95, Math.floor((s.open / 5) * 100));
-  document.getElementById('riskPercent').textContent = riskExposure + '%';
-  document.getElementById('riskFill').style.width = riskExposure + '%';
-  
-  await updateEquityChart();
-}
-
-async function loadTrades(status, btnEl) {
-  currentTradeFilter = status;
-  if (btnEl) {
-    document.querySelectorAll(".filter-tab").forEach(b => b.classList.remove("active"));
-    btnEl.classList.add("active");
-  }
-  const url = status === "all" ? "/trades?limit=30" : `/trades?status=${status}&limit=30`;
-  const data = await API(url);
-  const table = document.getElementById("tradesTable");
-  if (!data.trades || data.trades.length === 0) {
-    table.innerHTML = '<div class="empty">No trades yet</div>'; return;
-  }
-  const rows = data.trades.map(t => {
-    const dir = t.direction === "MULTUP" ? "BUY" : "SELL";
-    const pnl = t.pnl !== 0 ? (t.pnl > 0 ? `+$${t.pnl.toFixed(2)}` : `-$${Math.abs(t.pnl).toFixed(2)}`) : "—";
-    return `<tr><td>${t.symbol}</td><td><span class="badge ${dir === 'BUY' ? 'buy' : 'sell'}">${dir}</span></td><td>$${t.stake.toFixed(2)}</td><td>${pnl}</td><td><span class="badge ${t.status}">${t.status}</span></td></tr>`;
-  }).join("");
-  table.innerHTML = `<table style="width:100%"><thead><tr><th>Symbol</th><th>Direction</th><th>Stake</th><th>PnL</th><th>Status</th></tr></thead><tbody>${rows}</tbody></table>`;
-}
+// ============================================
+// BOT CONTROL FUNCTIONS
+// ============================================
 
 function updateBotUI(active) {
   const dot = document.getElementById("botDot");
@@ -570,22 +660,25 @@ async function toggleBot() {
   const res = await API("/user/bot", "PUT", { active: newState });
   botActive = res.botActive;
   updateBotUI(botActive);
+  document.getElementById('botStatusDisplay').innerHTML = botActive ? '🟢 RUNNING' : '⚪ STOPPED';
+  document.getElementById('botStatusDisplay').style.color = botActive ? '#10b981' : '#94a3b8';
   showToast(`Bot ${botActive ? 'started' : 'stopped'}`, 'success');
   await loadStats();
 }
 
 async function syncTrades() {
   const data = await API("/user/sync-trades", "POST");
-  showToast(data.message || "Trades synced!", 'success');
+  showToast(data.message || "Open trades synced!", 'success');
   await loadStats();
   await loadTrades(currentTradeFilter);
 }
 
 async function importTrades() {
   const data = await API("/user/import-trades", "POST");
-  showToast(data.message || "Trades imported!", 'success');
+  showToast(data.message || "Trade history imported!", 'success');
   await loadStats();
   await loadTrades(currentTradeFilter);
+  await updateEquityChart();
 }
 
 async function saveRisk() {
@@ -597,6 +690,20 @@ async function saveRisk() {
   };
   await API("/user/risk", "PUT", data);
   showToast("Risk settings saved!", 'success');
+}
+
+async function saveSettings() {
+  const data = {
+    derivPAT: document.getElementById("settingsPAT").value.trim(),
+    derivAppId: document.getElementById("settingsAppId").value.trim(),
+    derivMode: document.getElementById("settingsMode").value,
+    telegramChatId: document.getElementById("settingsChatId").value.trim(),
+  };
+  await API("/user/settings", "PUT", data);
+  showToast("Settings saved! Reconnecting to Deriv...", 'success');
+  // Reconnect WebSocket with new credentials
+  if (derivWs) derivWs.close();
+  await getDerivCredentials();
 }
 
 async function refreshBalance() {
@@ -611,7 +718,7 @@ async function refreshBalance() {
 
 function logout() { localStorage.clear(); window.location.href = "/"; }
 
-setInterval(async () => { await loadStats(); await loadTrades(currentTradeFilter); }, 30000);
+// Start everything
 init();
 </script>
 </body>
