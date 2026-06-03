@@ -30,7 +30,7 @@ export function notifyStartup(balance, mode, label, botToken, chatId) {
     `🤖 <b>${label || "Bot"} — Started</b>\n` +
     `Mode    : ${(mode || "demo").toUpperCase()}\n` +
     `Balance : $${balance.toFixed(2)}\n` +
-    `Strategy: LOADING 4H/1H/15m | Min 5/7 votes`,
+    `Strategy: SMC — 4H/1H/15m | Min 5/7 votes`,
     botToken, chatId
   );
 }
@@ -114,17 +114,9 @@ export function notifyCycleScan({ balance, openTrades, maxTrades, session, resul
 
     } else if (r.status === "HOLD") {
       const h4     = ((r.h4bias || r.trend || "neutral")).toUpperCase();
-      const h1     = ((r.h1trend || "neutral")).toUpperCase();
       const h4icon = h4 !== "NEUTRAL" ? "✅" : "❌";
-      const h1icon = h1 === h4 ? "✅" : "❌";
-      const votes  = r.strength != null ? Math.round(r.strength * 7 / 100) : 0;
-
-      let reason;
-      if (h4 === "NEUTRAL")  reason = "4H neutral";
-      else if (h1 !== h4)    reason = `1H: ${h1} ${h1icon} disagrees`;
-      else                   reason = `1H: ${h1} ✅ | ${votes}/7 votes`;
-
-      lines.push(`⏸ ${sym} | 4H: ${h4} ${h4icon} | ${reason}`);
+      const pct    = r.strength != null ? r.strength.toFixed(0) : "0";
+      lines.push(`⏸ ${sym} | 4H: ${h4} ${h4icon} | ${pct}% | HOLD`);
 
     } else if (r.status === "BUY" || r.status === "SELL") {
       const icon   = r.status === "BUY" ? "🟢" : "🔴";

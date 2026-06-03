@@ -1,21 +1,19 @@
 // ═══════════════════════════════════════════════════════
 //  src/strategy/signals.js
 //
-//  SMC Strategy Engine
+//  Multi-Timeframe Trend Following Strategy
 //
-//  Timeframe stack:
-//    4H  → HTF bias (direction — bullish/bearish/neutral)
-//    1H  → Trend filter (confirms HTF direction)
-//    15m → Entry signal (BOS, sweep, OB, EMA, RSI, Volume)
-//          + Confirmation candle
+//  Timeframes:
+//    4H  → Market bias (trend direction)
+//    1H  → Confirmation (trend alignment)
+//    15M → Entry (pullback + trigger candle)
 //
-//  RULES:
-//  1. 4H bias must NOT be neutral → no trade
-//  2. 1H trend must AGREE with 4H bias → no trade if disagrees
-//  3. Min 5 out of 7 votes on 15m in that direction
+//  Rules:
+//    ALL THREE must align — any mismatch = NO TRADE
+//    2hr forced close is handled by trader.js
 // ═══════════════════════════════════════════════════════
 
-const MIN_BARS_H4  = 50;
+const MIN_BARS_H4  = 100;
 const MIN_BARS_H1  = 100;
 const MIN_BARS_M15 = 60;
 
@@ -49,10 +47,6 @@ export function isMarketOpen(symbol) {
   return !(isSaturday || isSundayBeforeOpen || isFridayAfterClose);
 }
 
-
-// ═══════════════════════════════════════════════════════
-//  SESSION
-// ═══════════════════════════════════════════════════════
 export function sessionName() {
   const hour    = new Date().getUTCHours();
   const london  = hour >= LONDON_START   && hour < LONDON_END;
@@ -69,8 +63,9 @@ export function sessionName() {
 // ═══════════════════════════════════════════════════════
 function ema(values, period) {
   const result = new Array(values.length).fill(null);
-  const k      = 2 / (period + 1);
-  const start  = period - 1;
+  if (values.length < period) return result;
+  const k     = 2 / (period + 1);
+  const start = period - 1;
   result[start] = values.slice(0, period).reduce((a, b) => a + b, 0) / period;
   for (let i = start + 1; i < values.length; i++) {
     result[i] = values[i] * k + result[i - 1] * (1 - k);
@@ -78,49 +73,26 @@ function ema(values, period) {
   return result;
 }
 
-function rsi(values, period = 14) {
-  const result = new Array(values.length).fill(null);
-  if (values.length < period + 1) return result;
-  let gains = 0, losses = 0;
-  for (let i = 1; i <= period; i++) {
-    const diff = values[i] - values[i - 1];
-    if (diff >= 0) gains  += diff;
-    else           losses -= diff;
-  }
-  let avgGain = gains / period;
-  let avgLoss = losses / period;
-  result[period] = 100 - 100 / (1 + avgGain / (avgLoss || 1e-10));
-  for (let i = period + 1; i < values.length; i++) {
-    const diff = values[i] - values[i - 1];
-    avgGain = (avgGain * (period - 1) + (diff > 0 ? diff : 0)) / period;
-    avgLoss = (avgLoss * (period - 1) + (diff < 0 ? -diff : 0)) / period;
-    result[i] = 100 - 100 / (1 + avgGain / (avgLoss || 1e-10));
-  }
-  return result;
-}
-
 function atr(df, period = 14) {
-  const trValues = [];
+  const tr = [];
   for (let i = 1; i < df.length; i++) {
-    trValues.push(Math.max(
+    tr.push(Math.max(
       df[i].high - df[i].low,
       Math.abs(df[i].high - df[i - 1].close),
       Math.abs(df[i].low  - df[i - 1].close)
     ));
   }
-  const atrVals = new Array(trValues.length).fill(null);
+  const vals = new Array(tr.length).fill(null);
   let sum = 0;
-  for (let i = 0; i < period; i++) sum += trValues[i];
-  atrVals[period - 1] = sum / period;
-  for (let i = period; i < trValues.length; i++) {
-    atrVals[i] = (atrVals[i - 1] * (period - 1) + trValues[i]) / period;
+  for (let i = 0; i < period; i++) sum += tr[i];
+  vals[period - 1] = sum / period;
+  for (let i = period; i < tr.length; i++) {
+    vals[i] = (vals[i - 1] * (period - 1) + tr[i]) / period;
   }
-  return atrVals;
+  return vals;
 }
 
-function clip(value, min, max) {
-  return Math.max(min, Math.min(max, value));
-}
+function clip(v, min, max) { return Math.max(min, Math.min(max, v)); }
 
 
 // ═══════════════════════════════════════════════════════
@@ -138,19 +110,16 @@ export function getAtrPct(df, period = 14) {
 export function marketIsTradeable(df) {
   if (df.length < 20) return false;
   const pct = getAtrPct(df);
-  if (pct < 0.00005) return false;
-  if (pct > 0.10)    return false;
-  return true;
+  return pct >= 0.00005 && pct <= 0.10;
 }
 
 export function getVolatilityScalar(df) {
-  const scalar = 0.003 / Math.max(getAtrPct(df), 0.0001);
-  return parseFloat(clip(scalar, 0.25, 1.0).toFixed(4));
+  return parseFloat(clip(0.003 / Math.max(getAtrPct(df), 0.0001), 0.25, 1.0).toFixed(4));
 }
 
 
 // ═══════════════════════════════════════════════════════
-//  SWING POINTS
+//  SWING POINT DETECTION
 // ═══════════════════════════════════════════════════════
 function getSwingPoints(df, lookback = 5) {
   const highs = [], lows = [];
@@ -162,15 +131,12 @@ function getSwingPoints(df, lookback = 5) {
   return { highs, lows };
 }
 
-
-// ═══════════════════════════════════════════════════════
-//  LAYER 1 — HTF BIAS (4H)
-//  Direction filter — neutral = no trade
-// ═══════════════════════════════════════════════════════
-function getHtfBias(dfH4) {
-  if (!dfH4 || dfH4.length < MIN_BARS_H4) return "neutral";
-
-  const { highs, lows } = getSwingPoints(dfH4, 2);
+/**
+ * Detect market structure:
+ * Returns "bullish" (HH+HL), "bearish" (LH+LL), or "neutral"
+ */
+function getMarketStructure(df, lookback = 3) {
+  const { highs, lows } = getSwingPoints(df, lookback);
   if (highs.length < 2 || lows.length < 2) return "neutral";
 
   const hh = highs[highs.length - 1][1] > highs[highs.length - 2][1];
@@ -180,299 +146,515 @@ function getHtfBias(dfH4) {
 
   if (hh && hl) return "bullish";
   if (lh && ll) return "bearish";
-  if (hh || hl) return "bullish";
-  if (lh || ll) return "bearish";
   return "neutral";
 }
 
-
-// ═══════════════════════════════════════════════════════
-//  LAYER 2 — TREND FILTER (1H)
-//  Must agree with 4H bias
-//  Uses EMA20 vs EMA50 on 1H
-// ═══════════════════════════════════════════════════════
-function getH1Trend(dfH1) {
-  if (!dfH1 || dfH1.length < 50) return "neutral";
-  const closes = dfH1.map(c => c.close);
-  const e20    = ema(closes, 20)[dfH1.length - 2];
-  const e50    = ema(closes, 50)[dfH1.length - 2];
-  const price  = closes[dfH1.length - 2];
-  if (price > e20 && e20 > e50) return "bullish";
-  if (price < e20 && e20 < e50) return "bearish";
-  return "neutral";
-}
-
-
-// ═══════════════════════════════════════════════════════
-//  VOTE 1 — BOS on 15m
-// ═══════════════════════════════════════════════════════
-function detectBos(df) {
-  if (df.length < 30) return "none";
+/**
+ * Check if latest swing high/low has been broken
+ * Returns "bullish_break", "bearish_break", or "none"
+ */
+function getStructureBreak(df) {
   const { highs, lows } = getSwingPoints(df, 5);
   if (!highs.length || !lows.length) return "none";
-  const close = df[df.length - 2].close;
-  if (close > highs[highs.length - 1][1]) return "bullish";
-  if (close < lows[lows.length - 1][1])   return "bearish";
+  const close    = df[df.length - 2].close;
+  const prevHigh = highs[highs.length - 1][1];
+  const prevLow  = lows[lows.length - 1][1];
+  if (close > prevHigh) return "bullish_break";
+  if (close < prevLow)  return "bearish_break";
   return "none";
 }
 
 
 // ═══════════════════════════════════════════════════════
-//  VOTE 2 — LIQUIDITY SWEEP on 15m
+//  EMA ANALYSIS
 // ═══════════════════════════════════════════════════════
-function detectLiquiditySweep(df) {
-  if (df.length < 20) return "none";
-  const { highs, lows } = getSwingPoints(df, 5);
-  if (!highs.length || !lows.length) return "none";
-  const candle = df[df.length - 2];
-  if (candle.low  < lows[lows.length - 1][1]  && candle.close > lows[lows.length - 1][1])   return "bullish_sweep";
-  if (candle.high > highs[highs.length - 1][1] && candle.close < highs[highs.length - 1][1]) return "bearish_sweep";
-  return "none";
+function getEmaAnalysis(df) {
+  if (df.length < 55) return { priceAbove: false, slope: "flat", valid: false };
+
+  const closes  = df.map(c => c.close);
+  const ema50   = ema(closes, 50);
+  const len     = df.length;
+  const e50Now  = ema50[len - 2];
+  const e50Prev = ema50[len - 6]; // 5 bars ago for slope
+
+  if (e50Now === null || e50Prev === null) return { priceAbove: false, slope: "flat", valid: false };
+
+  const price      = closes[len - 2];
+  const priceAbove = price > e50Now;
+  const slopeDiff  = e50Now - e50Prev;
+  const pricePct   = Math.abs(slopeDiff) / e50Now;
+
+  let slope;
+  if (pricePct < 0.0001) slope = "flat";    // EMA is flat — no trade
+  else if (slopeDiff > 0) slope = "rising";
+  else                    slope = "falling";
+
+  return { priceAbove, slope, e50: e50Now, valid: true };
 }
 
 
 // ═══════════════════════════════════════════════════════
-//  VOTE 3 — ORDER BLOCK on 15m
+//  CANDLE QUALITY FILTER
+//  Reject: body < 50% range, doji, spinning top, inside bar
+//  Accept: strong body, close near high/low
 // ═══════════════════════════════════════════════════════
-function findOrderBlocks(df, atrVal) {
-  const obs = [];
-  if (df.length < 30) return obs;
-  for (let i = 5; i < df.length - 5; i++) {
-    const c        = df[i];
-    const nextMove = df[i + 3].close - df[i].close;
-    if (c.close < c.open && nextMove >  atrVal * 1.5)
-      obs.push({ type: "bullish", high: c.high, low: c.low, mid: (c.high + c.low) / 2, index: i, valid: true });
-    if (c.close > c.open && nextMove < -atrVal * 1.5)
-      obs.push({ type: "bearish", high: c.high, low: c.low, mid: (c.high + c.low) / 2, index: i, valid: true });
+function getCandleQuality(candle, prevCandle = null) {
+  const body   = Math.abs(candle.close - candle.open);
+  const range  = candle.high - candle.low;
+  const wickHi = candle.high - Math.max(candle.open, candle.close);
+  const wickLo = Math.min(candle.open, candle.close) - candle.low;
+
+  if (range === 0) return { valid: false, type: "doji" };
+
+  const bodyRatio = body / range;
+
+  // Doji — body too small
+  if (bodyRatio < 0.1) return { valid: false, type: "doji" };
+
+  // Spinning top — body < 30% with large wicks on both sides
+  if (bodyRatio < 0.3 && wickHi > body && wickLo > body)
+    return { valid: false, type: "spinning_top" };
+
+  // Inside bar — entire range within previous candle
+  if (prevCandle && candle.high <= prevCandle.high && candle.low >= prevCandle.low)
+    return { valid: false, type: "inside_bar" };
+
+  // Body must be >= 50% of range
+  if (bodyRatio < 0.5) return { valid: false, type: "weak_body" };
+
+  const bullish = candle.close > candle.open;
+
+  // Close must be near high (bullish) or near low (bearish)
+  if (bullish) {
+    const closeNearHigh = (candle.high - candle.close) / range < 0.3;
+    if (!closeNearHigh) return { valid: false, type: "weak_close" };
+    return { valid: true, direction: "bullish", type: "strong" };
+  } else {
+    const closeNearLow = (candle.close - candle.low) / range < 0.3;
+    if (!closeNearLow) return { valid: false, type: "weak_close" };
+    return { valid: true, direction: "bearish", type: "strong" };
   }
-  return obs;
-}
-
-function getNearestValidOb(df, direction, atrVal) {
-  const price      = df[df.length - 2].close;
-  const candidates = findOrderBlocks(df, atrVal).filter(ob => {
-    if (ob.type !== direction || !ob.valid) return false;
-    if (direction === "bullish") {
-      if (price < ob.low - 1.5 * atrVal) return false;
-      const dist = price - ob.low;
-      return dist >= -0.2 * atrVal && dist <= 0.7 * atrVal;
-    } else {
-      if (price > ob.high + 1.5 * atrVal) return false;
-      const dist = ob.high - price;
-      return dist >= -0.2 * atrVal && dist <= 0.7 * atrVal;
-    }
-  });
-  if (!candidates.length) return null;
-  return candidates.reduce((a, b) => a.index > b.index ? a : b);
 }
 
 
 // ═══════════════════════════════════════════════════════
-//  VOTE 4 — CONFIRMATION CANDLE on 15m
+//  CONFIRMATION CANDLE PATTERNS
+//  Bullish engulfing, pin bar, momentum candle
+//  Bearish engulfing, pin bar, momentum candle
 // ═══════════════════════════════════════════════════════
-function getConfirmationCandle(dfM15) {
-  if (dfM15.length < 5) return "none";
-  const c1     = dfM15[dfM15.length - 3];
-  const c2     = dfM15[dfM15.length - 2];
-  const body2  = Math.abs(c2.close - c2.open);
+function getConfirmationCandle(df) {
+  if (df.length < 3) return "none";
+
+  const c1    = df[df.length - 3];  // previous candle
+  const c2    = df[df.length - 2];  // current closed candle
+  const body2 = Math.abs(c2.close - c2.open);
   const range2 = c2.high - c2.low;
   const wickLo = Math.min(c2.open, c2.close) - c2.low;
   const wickHi = c2.high - Math.max(c2.open, c2.close);
-  if (c1.close < c1.open && c2.close > c2.open && c2.close > c1.open && c2.open < c1.close) return "bullish";
-  if (c1.close > c1.open && c2.close < c2.open && c2.close < c1.open && c2.open > c1.close) return "bearish";
-  if (wickLo > body2 * 2 && c2.close > c2.open) return "bullish";
-  if (wickHi > body2 * 2 && c2.close < c2.open) return "bearish";
-  if (range2 > 0 && body2 > range2 * 0.7) return c2.close > c2.open ? "bullish" : "bearish";
+
+  if (range2 === 0) return "none";
+
+  // Check candle quality first
+  const quality = getCandleQuality(c2, c1);
+  if (!quality.valid) return "none";
+
+  // Bullish engulfing
+  if (c1.close < c1.open &&
+      c2.close > c2.open &&
+      c2.close > c1.open &&
+      c2.open  < c1.close) return "bullish_engulfing";
+
+  // Bearish engulfing
+  if (c1.close > c1.open &&
+      c2.close < c2.open &&
+      c2.close < c1.open &&
+      c2.open  > c1.close) return "bearish_engulfing";
+
+  // Bullish pin bar (hammer)
+  if (wickLo > body2 * 2 &&
+      wickHi < body2 &&
+      c2.close > c2.open) return "bullish_pin";
+
+  // Bearish pin bar (shooting star)
+  if (wickHi > body2 * 2 &&
+      wickLo < body2 &&
+      c2.close < c2.open) return "bearish_pin";
+
+  // Strong bullish momentum candle
+  if (c2.close > c2.open && body2 / range2 >= 0.7) return "bullish_momentum";
+
+  // Strong bearish momentum candle
+  if (c2.close < c2.open && body2 / range2 >= 0.7) return "bearish_momentum";
+
   return "none";
 }
 
 
 // ═══════════════════════════════════════════════════════
-//  VOTE 5 — EMA BIAS on 15m
+//  PULLBACK DETECTION
+//  After a trend move, price retraces before next entry
 // ═══════════════════════════════════════════════════════
-function getEmaBias(df) {
-  if (df.length < 50) return "neutral";
-  const closes = df.map(c => c.close);
-  const e20    = ema(closes, 20)[df.length - 2];
-  const e50    = ema(closes, 50)[df.length - 2];
-  const price  = closes[df.length - 2];
-  if (price > e20 && e20 > e50) return "bullish";
-  if (price < e20 && e20 < e50) return "bearish";
-  return "neutral";
-}
+function isPullbackComplete(df, direction) {
+  if (df.length < 10) return false;
 
+  const recent = df.slice(-10);
+  const closes = recent.map(c => c.close);
 
-// ═══════════════════════════════════════════════════════
-//  VOTE 6 — RSI on 15m
-// ═══════════════════════════════════════════════════════
-function getRsiBias(df) {
-  if (df.length < 20) return "neutral";
-  const rsiVal = rsi(df.map(c => c.close), 14)[df.length - 2];
-  if (rsiVal > 55) return "bullish";
-  if (rsiVal < 45) return "bearish";
-  return "neutral";
-}
-
-
-// ═══════════════════════════════════════════════════════
-//  VOTE 7 — VOLUME on 15m
-// ═══════════════════════════════════════════════════════
-function getVolumeBias(df) {
-  if (df.length < 20) return false;
-  const candle   = df[df.length - 2];
-  if (candle.volume != null) {
-    const avgVol = df.slice(-21, -1).reduce((s, c) => s + (c.volume || 0), 0) / 20;
-    return candle.volume > avgVol * 1.1;
+  if (direction === "bullish") {
+    // In uptrend: look for at least 2-3 lower closes followed by bounce
+    const low   = Math.min(...closes.slice(0, 8));
+    const last2 = closes.slice(-2);
+    return last2[1] > last2[0] && last2[0] < closes[5]; // bouncing up from pullback
   }
-  const bodySize = Math.abs(candle.close - candle.open);
-  const avgBody  = df.slice(-21, -1).reduce((s, c) => s + Math.abs(c.close - c.open), 0) / 20;
-  return bodySize > avgBody * 1.1;
+
+  if (direction === "bearish") {
+    // In downtrend: look for at least 2-3 higher closes followed by drop
+    const high  = Math.max(...closes.slice(0, 8));
+    const last2 = closes.slice(-2);
+    return last2[1] < last2[0] && last2[0] > closes[5]; // dropping from pullback
+  }
+
+  return false;
+}
+
+/**
+ * Check if 15M has formed a higher low (bullish) or lower high (bearish)
+ */
+function hasReversePoint(df, direction) {
+  const { highs, lows } = getSwingPoints(df, 3);
+
+  if (direction === "bullish") {
+    // Need a higher low — latest low > previous low
+    if (lows.length < 2) return false;
+    return lows[lows.length - 1][1] > lows[lows.length - 2][1];
+  }
+
+  if (direction === "bearish") {
+    // Need a lower high — latest high < previous high
+    if (highs.length < 2) return false;
+    return highs[highs.length - 1][1] < highs[highs.length - 2][1];
+  }
+
+  return false;
+}
+
+/**
+ * Check if 15M has broken a swing high (buy) or swing low (sell)
+ */
+function hasBreakout(df, direction) {
+  const { highs, lows } = getSwingPoints(df, 3);
+  const close = df[df.length - 2].close;
+
+  if (direction === "bullish") {
+    if (!highs.length) return false;
+    return close > highs[highs.length - 1][1];
+  }
+  if (direction === "bearish") {
+    if (!lows.length) return false;
+    return close < lows[lows.length - 1][1];
+  }
+  return false;
+}
+
+
+// ═══════════════════════════════════════════════════════
+//  PHASE 1 — 4H BIAS
+// ═══════════════════════════════════════════════════════
+function get4HBias(dfH4) {
+  if (!dfH4 || dfH4.length < MIN_BARS_H4) {
+    return { bias: "neutral", reason: "Insufficient 4H data" };
+  }
+
+  const emaData   = getEmaAnalysis(dfH4);
+  const structure = getMarketStructure(dfH4, 3);
+  const bosBreak  = getStructureBreak(dfH4);
+
+  // EMA flat = no trade
+  if (!emaData.valid || emaData.slope === "flat") {
+    return { bias: "neutral", reason: "4H EMA is flat — ranging market" };
+  }
+
+  // Market structure unclear
+  if (structure === "neutral") {
+    return { bias: "neutral", reason: "4H market structure unclear" };
+  }
+
+  // Check bullish conditions
+  if (emaData.priceAbove &&
+      emaData.slope === "rising" &&
+      structure === "bullish" &&
+      bosBreak === "bullish_break") {
+    return {
+      bias:      "bullish",
+      reason:    "Price above EMA50 | HH+HL structure | BOS bullish break | EMA rising",
+      emaSlope:  emaData.slope,
+      structure,
+      bosBreak,
+    };
+  }
+
+  // Check bearish conditions
+  if (!emaData.priceAbove &&
+      emaData.slope === "falling" &&
+      structure === "bearish" &&
+      bosBreak === "bearish_break") {
+    return {
+      bias:      "bearish",
+      reason:    "Price below EMA50 | LH+LL structure | BOS bearish break | EMA falling",
+      emaSlope:  emaData.slope,
+      structure,
+      bosBreak,
+    };
+  }
+
+  // Partial alignment — not enough
+  return {
+    bias:   "neutral",
+    reason: `4H partial: EMA ${emaData.slope} | Structure ${structure} | Break ${bosBreak} — all 4 conditions needed`,
+  };
+}
+
+
+// ═══════════════════════════════════════════════════════
+//  PHASE 2 — 1H CONFIRMATION
+// ═══════════════════════════════════════════════════════
+function get1HConfirmation(dfH1, requiredBias) {
+  if (!dfH1 || dfH1.length < MIN_BARS_H1) {
+    return { confirmed: false, reason: "Insufficient 1H data" };
+  }
+
+  const emaData   = getEmaAnalysis(dfH1);
+  const structure = getMarketStructure(dfH1, 3);
+  const confirm   = getConfirmationCandle(dfH1);
+
+  if (!emaData.valid) {
+    return { confirmed: false, reason: "1H EMA calculation failed" };
+  }
+
+  if (requiredBias === "bullish") {
+    // All conditions must pass
+    if (!emaData.priceAbove) {
+      return { confirmed: false, reason: "1H price below EMA50" };
+    }
+    if (structure !== "bullish") {
+      return { confirmed: false, reason: `1H structure is ${structure} — need bullish HH+HL` };
+    }
+    const pullback = isPullbackComplete(dfH1, "bullish");
+    if (!pullback) {
+      return { confirmed: false, reason: "1H pullback not complete yet" };
+    }
+    const bullishCandles = ["bullish_engulfing", "bullish_pin", "bullish_momentum"];
+    if (!bullishCandles.includes(confirm)) {
+      return { confirmed: false, reason: `1H no bullish candle (got: ${confirm})` };
+    }
+    return {
+      confirmed: true,
+      reason:    `1H: EMA above ✅ | HH+HL ✅ | Pullback done ✅ | ${confirm} ✅`,
+      candle:    confirm,
+    };
+  }
+
+  if (requiredBias === "bearish") {
+    if (emaData.priceAbove) {
+      return { confirmed: false, reason: "1H price above EMA50" };
+    }
+    if (structure !== "bearish") {
+      return { confirmed: false, reason: `1H structure is ${structure} — need bearish LH+LL` };
+    }
+    const pullback = isPullbackComplete(dfH1, "bearish");
+    if (!pullback) {
+      return { confirmed: false, reason: "1H pullback not complete yet" };
+    }
+    const bearishCandles = ["bearish_engulfing", "bearish_pin", "bearish_momentum"];
+    if (!bearishCandles.includes(confirm)) {
+      return { confirmed: false, reason: `1H no bearish candle (got: ${confirm})` };
+    }
+    return {
+      confirmed: true,
+      reason:    `1H: EMA below ✅ | LH+LL ✅ | Pullback done ✅ | ${confirm} ✅`,
+      candle:    confirm,
+    };
+  }
+
+  return { confirmed: false, reason: "Unknown bias" };
+}
+
+
+// ═══════════════════════════════════════════════════════
+//  PHASE 3 — 15M ENTRY
+// ═══════════════════════════════════════════════════════
+function get15MEntry(dfM15, requiredBias) {
+  if (!dfM15 || dfM15.length < MIN_BARS_M15) {
+    return { valid: false, reason: "Insufficient 15M data" };
+  }
+
+  const triggerCandle = getConfirmationCandle(dfM15);
+  const reversePoint  = hasReversePoint(dfM15, requiredBias);
+  const breakout      = hasBreakout(dfM15, requiredBias);
+
+  if (requiredBias === "bullish") {
+    // Must have pullback forming higher low
+    if (!reversePoint) {
+      return { valid: false, reason: "15M no higher low formed yet" };
+    }
+    // Must have bullish trigger candle OR breakout of swing high
+    const bullishTriggers = ["bullish_engulfing", "bullish_pin", "bullish_momentum"];
+    if (!bullishTriggers.includes(triggerCandle) && !breakout) {
+      return { valid: false, reason: `15M no trigger (candle: ${triggerCandle}, breakout: ${breakout})` };
+    }
+    const entryType = breakout ? "swing_high_breakout" : triggerCandle;
+    return {
+      valid:  true,
+      reason: `15M: Higher low ✅ | Entry: ${entryType} ✅`,
+      entry:  entryType,
+    };
+  }
+
+  if (requiredBias === "bearish") {
+    if (!reversePoint) {
+      return { valid: false, reason: "15M no lower high formed yet" };
+    }
+    const bearishTriggers = ["bearish_engulfing", "bearish_pin", "bearish_momentum"];
+    if (!bearishTriggers.includes(triggerCandle) && !breakout) {
+      return { valid: false, reason: `15M no trigger (candle: ${triggerCandle}, breakout: ${breakout})` };
+    }
+    const entryType = breakout ? "swing_low_breakout" : triggerCandle;
+    return {
+      valid:  true,
+      reason: `15M: Lower high ✅ | Entry: ${entryType} ✅`,
+      entry:  entryType,
+    };
+  }
+
+  return { valid: false, reason: "Unknown bias" };
 }
 
 
 // ═══════════════════════════════════════════════════════
 //  MASTER SIGNAL ENGINE
 // ═══════════════════════════════════════════════════════
-function getSmcSignal(dfM15, dfH1, dfH4) {
-  const votes = {
-    htfBias: "neutral", h1Trend: "neutral",
-    bos: "none", sweep: "none", ob: null,
-    confirm: "none", ema: "neutral",
-    rsi: "neutral", volume: false,
-    session: sessionName(),
-    buyVotes: 0, sellVotes: 0,
+function getSignal(dfM15, dfH1, dfH4) {
+  const result = {
+    signal:      0,
+    phase1:      null,
+    phase2:      null,
+    phase3:      null,
+    rejectAt:    null,
     rejectReason: null,
+    session:     sessionName(),
   };
 
-  // ── HARD BLOCKS ───────────────────────────────────────
-  if (!dfM15 || dfM15.length < MIN_BARS_M15) { votes.rejectReason = "Insufficient 15m data";  return [0, votes]; }
-  if (!dfH1  || dfH1.length  < MIN_BARS_H1)  { votes.rejectReason = "Insufficient 1H data";   return [0, votes]; }
-  if (!marketIsTradeable(dfM15))              { votes.rejectReason = "Poor market conditions"; return [0, votes]; }
-
-  // ── LAYER 1: 4H BIAS ──────────────────────────────────
-  const htfBias = getHtfBias(dfH4);
-  votes.htfBias = htfBias;
-
-  if (htfBias === "neutral") {
-    votes.rejectReason = "4H bias neutral — no clear direction";
-    return [0, votes];
+  // Market quality check
+  if (!dfM15 || dfM15.length < MIN_BARS_M15) {
+    result.rejectAt = "data"; result.rejectReason = "Insufficient 15M data";
+    return result;
+  }
+  if (!marketIsTradeable(dfM15)) {
+    result.rejectAt = "market"; result.rejectReason = "Poor market conditions";
+    return result;
   }
 
-  // ── LAYER 2: 1H TREND FILTER ──────────────────────────
-  const h1Trend = getH1Trend(dfH1);
-  votes.h1Trend = h1Trend;
+  // ── PHASE 1: 4H BIAS ──────────────────────────────────
+  const phase1 = get4HBias(dfH4);
+  result.phase1 = phase1;
 
-  // 1H must not OPPOSE 4H — neutral is allowed, only opposite blocks
-  // e.g. 4H bullish + 1H bearish = skip
-  // e.g. 4H bullish + 1H neutral = allowed (pullback phase)
-  // e.g. 4H bullish + 1H bullish = best case
-  if ((htfBias === "bullish" && h1Trend === "bearish") ||
-      (htfBias === "bearish" && h1Trend === "bullish")) {
-    votes.rejectReason = `1H trend (${h1Trend}) OPPOSES 4H bias (${htfBias}) — skipping`;
-    return [0, votes];
+  if (phase1.bias === "neutral") {
+    result.rejectAt = "phase1"; result.rejectReason = phase1.reason;
+    return result;
   }
 
-  // ── LAYER 3: 15m VOTE COUNTING ────────────────────────
-  const atrM15  = getAtr(dfM15);
-  const bos     = detectBos(dfM15);
-  const sweep   = detectLiquiditySweep(dfM15);
-  const emaBias = getEmaBias(dfM15);
-  const rsiBias = getRsiBias(dfM15);
-  const confirm = getConfirmationCandle(dfM15);
-  const volume  = getVolumeBias(dfM15);
+  // ── PHASE 2: 1H CONFIRMATION ──────────────────────────
+  const phase2 = get1HConfirmation(dfH1, phase1.bias);
+  result.phase2 = phase2;
 
-  votes.bos     = bos;
-  votes.sweep   = sweep;
-  votes.ema     = emaBias;
-  votes.rsi     = rsiBias;
-  votes.confirm = confirm;
-  votes.volume  = volume;
-
-  if (htfBias === "bullish") {
-    let score = 0;
-    if (bos === "bullish")         score += 1;  // Vote 1
-    if (sweep === "bullish_sweep") score += 1;  // Vote 2
-    const bullOb = getNearestValidOb(dfM15, "bullish", atrM15);
-    if (bullOb) { score += 1; votes.ob = bullOb; }  // Vote 3
-    if (confirm === "bullish")     score += 1;  // Vote 4
-    if (emaBias === "bullish")     score += 1;  // Vote 5
-    if (rsiBias === "bullish")     score += 1;  // Vote 6
-    if (volume)                    score += 1;  // Vote 7
-
-    votes.buyVotes = score;
-    if (score >= 5) return [1, votes];
-    votes.rejectReason = `${score}/7 bullish votes on 15m (need 5)`;
-    return [0, votes];
+  if (!phase2.confirmed) {
+    result.rejectAt = "phase2"; result.rejectReason = phase2.reason;
+    return result;
   }
 
-  if (htfBias === "bearish") {
-    let score = 0;
-    if (bos === "bearish")          score += 1;
-    if (sweep === "bearish_sweep")  score += 1;
-    const bearOb = getNearestValidOb(dfM15, "bearish", atrM15);
-    if (bearOb) { score += 1; votes.ob = bearOb; }
-    if (confirm === "bearish")      score += 1;
-    if (emaBias === "bearish")      score += 1;
-    if (rsiBias === "bearish")      score += 1;
-    if (volume)                     score += 1;
+  // ── PHASE 3: 15M ENTRY ────────────────────────────────
+  const phase3 = get15MEntry(dfM15, phase1.bias);
+  result.phase3 = phase3;
 
-    votes.sellVotes = score;
-    if (score >= 5) return [-1, votes];
-    votes.rejectReason = `${score}/7 bearish votes on 15m (need 5)`;
-    return [0, votes];
+  if (!phase3.valid) {
+    result.rejectAt = "phase3"; result.rejectReason = phase3.reason;
+    return result;
   }
 
-  return [0, votes];
+  // ALL THREE ALIGNED — fire signal
+  result.signal = phase1.bias === "bullish" ? 1 : -1;
+  return result;
 }
 
 
 // ═══════════════════════════════════════════════════════
 //  PUBLIC API
 // ═══════════════════════════════════════════════════════
+
 export function getLatestSignalMtf(dfM15, dfH1, dfH4 = null) {
-  const [signal] = getSmcSignal(dfM15, dfH1, dfH4);
-  return signal;
+  return getSignal(dfM15, dfH1, dfH4).signal;
 }
 
 export function getSignalStrength(dfM15, dfH1 = null, dfH4 = null) {
-  const [, votes] = getSmcSignal(dfM15, dfH1, dfH4);
-  const best = Math.max(votes.buyVotes, votes.sellVotes);
-  return parseFloat(((best / 7) * 100).toFixed(1));
+  const r = getSignal(dfM15, dfH1, dfH4);
+  // Strength based on how many phases passed
+  if (r.signal !== 0)      return 100;
+  if (r.rejectAt === "phase3") return 67;
+  if (r.rejectAt === "phase2") return 33;
+  return 0;
 }
 
 export function getTradeReason(dfM15, dfH1, dfH4 = null) {
-  const [signal, v] = getSmcSignal(dfM15, dfH1, dfH4);
-  const direction   = signal === 1 ? "BUY" : signal === -1 ? "SELL" : "HOLD";
-  const score       = Math.max(v.buyVotes, v.sellVotes);
+  const r = getSignal(dfM15, dfH1, dfH4);
+  const direction = r.signal === 1 ? "BUY" : r.signal === -1 ? "SELL" : "HOLD";
 
-  const lines = [`SMC TRADE REASON — ${direction}`];
-  lines.push(`  Session   : ${v.session}`);
-  lines.push(`  4H Bias   : ${v.htfBias.toUpperCase()} ${v.htfBias !== "neutral" ? "✅" : "❌"}`);
-
-  if (v.rejectReason) {
-    lines.push(`  ⛔ ${v.rejectReason}`);
-    return lines.join("\n");
-  }
-
-  lines.push(`  1H Trend  : ${v.h1Trend.toUpperCase()} ✅ (agrees with 4H)`);
+  const lines = [`TREND FOLLOW SIGNAL — ${direction}`];
+  lines.push(`  Session  : ${r.session}`);
   lines.push(`  ─────────────────────────`);
-  lines.push(`  [1] BOS (15m)    : ${v.bos} ${v.bos !== "none" ? "✅" : "❌"}`);
-  lines.push(`  [2] Sweep (15m)  : ${v.sweep} ${v.sweep !== "none" ? "✅" : "❌"}`);
-  if (v.ob) {
-    lines.push(`  [3] OB (15m)     : ${v.ob.type.toUpperCase()} @ ${v.ob.low.toFixed(5)}–${v.ob.high.toFixed(5)} ✅`);
+
+  // Phase 1
+  if (r.phase1) {
+    const icon = r.phase1.bias !== "neutral" ? "✅" : "❌";
+    lines.push(`  Phase 1 (4H) : ${r.phase1.bias.toUpperCase()} ${icon}`);
+    lines.push(`    ${r.phase1.reason}`);
   } else {
-    lines.push(`  [3] OB (15m)     : ❌ none in zone`);
+    lines.push(`  Phase 1 (4H) : ❌ no data`);
   }
-  lines.push(`  [4] Confirm (15m): ${v.confirm} ${v.confirm !== "none" ? "✅" : "❌"}`);
-  lines.push(`  [5] EMA (15m)    : ${v.ema} ${v.ema !== "neutral" ? "✅" : "❌"}`);
-  lines.push(`  [6] RSI (15m)    : ${v.rsi} ${v.rsi !== "neutral" ? "✅" : "❌"}`);
-  lines.push(`  [7] Volume (15m) : ${v.volume ? "✅ above avg" : "❌ below avg"}`);
+
+  // Phase 2
+  if (r.phase2) {
+    const icon = r.phase2.confirmed ? "✅" : "❌";
+    lines.push(`  Phase 2 (1H) : ${r.phase2.confirmed ? "CONFIRMED" : "FAILED"} ${icon}`);
+    lines.push(`    ${r.phase2.reason}`);
+  } else {
+    lines.push(`  Phase 2 (1H) : ⏸ skipped (Phase 1 failed)`);
+  }
+
+  // Phase 3
+  if (r.phase3) {
+    const icon = r.phase3.valid ? "✅" : "❌";
+    lines.push(`  Phase 3 (15M): ${r.phase3.valid ? "ENTRY VALID" : "NO ENTRY"} ${icon}`);
+    lines.push(`    ${r.phase3.reason}`);
+  } else {
+    lines.push(`  Phase 3 (15M): ⏸ skipped (Phase 2 failed)`);
+  }
+
   lines.push(`  ─────────────────────────`);
-  lines.push(`  Score     : ${score}/7 — ${score >= 5 ? "✅ TRADE FIRES" : "❌ need 5"}`);
+  if (r.signal !== 0) {
+    lines.push(`  ✅ ALL 3 PHASES ALIGNED — TRADE FIRES`);
+    lines.push(`  ⏱️  Will force-close in 2 hours if SL/TP not hit`);
+  } else {
+    lines.push(`  ❌ REJECTED at ${r.rejectAt?.toUpperCase() || "unknown"}: ${r.rejectReason}`);
+  }
 
   return lines.join("\n");
 }
 
 export function get15mTrend(dfH1) {
-  return getH1Trend(dfH1);
+  if (!dfH1 || dfH1.length < 55) return "neutral";
+  const emaData = getEmaAnalysis(dfH1);
+  if (!emaData.valid || emaData.slope === "flat") return "neutral";
+  if (emaData.priceAbove && emaData.slope === "rising")  return "bullish";
+  if (!emaData.priceAbove && emaData.slope === "falling") return "bearish";
+  return "neutral";
 }
