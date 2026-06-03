@@ -28,9 +28,10 @@ async function sendMessage(text, botToken, chatId) {
 export function notifyStartup(balance, mode, label, botToken, chatId) {
   return sendMessage(
     `🤖 <b>${label || "Bot"} — Started</b>\n` +
-    `Mode    : ${(mode || "demo").toUpperCase()}\n` +
-    `Balance : $${balance.toFixed(2)}\n` +
-    `Strategy: SMC — 4H/1H/15m | Min 5/7 votes`,
+    `Mode     : ${(mode || "demo").toUpperCase()}\n` +
+    `Balance  : $${balance.toFixed(2)}\n` +
+    `Strategy : Trend Following — 4H bias | 1H confirm | 15M entry\n` +
+    `Exit     : SL/TP or 2hr forced close`,
     botToken, chatId
   );
 }
@@ -38,16 +39,15 @@ export function notifyStartup(balance, mode, label, botToken, chatId) {
 // ── TRADE OPENED ──────────────────────────────────────
 export function notifyTradeOpened({ symbol, direction, stake, multiplier, limitOrder, strength, contractId, label, botToken, chatId }) {
   const icon   = direction === "MULTUP" ? "🟢 BUY" : "🔴 SELL";
-  const votes  = strength != null ? Math.round(strength * 7 / 100) : "?";
-  const slText = limitOrder ? `\nSL        : $${limitOrder.stop_loss}` : "";
-  const tpText = limitOrder ? `\nTP        : $${limitOrder.take_profit}` : "";
+  const slText = limitOrder ? `\nSL       : $${limitOrder.stop_loss}` : "";
+  const tpText = limitOrder ? `\nTP       : $${limitOrder.take_profit}` : "";
   return sendMessage(
     `${icon} <b>${label || "Bot"} — ${symbol}</b>\n` +
-    `Contract  : ${contractId}\n` +
-    `Stake     : $${stake.toFixed(2)} x${multiplier}\n` +
-    `Strength  : ${strength != null ? strength.toFixed(0) : "?"}% (${votes}/7 votes)` +
+    `Contract : ${contractId}\n` +
+    `Stake    : $${stake.toFixed(2)} x${multiplier}\n` +
+    `Phases   : P1 ✅ P2 ✅ P3 ✅ — All aligned` +
     slText + tpText +
-    `\nFailsafe  : ⏱️ Force closes in 2hrs`,
+    `\nFailsafe : ⏱️ Force closes in 2hrs`,
     botToken, chatId
   );
 }
@@ -71,7 +71,7 @@ export function notifyReconnecting(error, label, botToken, chatId) {
 // ── MAX TRADES ────────────────────────────────────────
 export function notifyMaxTrades(current, max, label, botToken, chatId) {
   return sendMessage(
-    `🔒 <b>${label || "Bot"} — Max trades reached</b>\nOpen: ${current}/${max} — waiting`,
+    `🔒 <b>${label || "Bot"} — Max trades reached</b>\nOpen: ${current}/${max} — waiting for a trade to close`,
     botToken, chatId
   );
 }
@@ -113,17 +113,30 @@ export function notifyCycleScan({ balance, openTrades, maxTrades, session, resul
       lines.push(`⛔ ${sym} | FILTERED — poor volatility`);
 
     } else if (r.status === "HOLD") {
-      const h4     = ((r.h4bias || r.trend || "neutral")).toUpperCase();
+      const h4    = (r.h4bias || r.trend || "neutral").toUpperCase();
       const h4icon = h4 !== "NEUTRAL" ? "✅" : "❌";
-      const pct    = r.strength != null ? r.strength.toFixed(0) : "0";
-      lines.push(`⏸ ${sym} | 4H: ${h4} ${h4icon} | ${pct}% | HOLD`);
+      const pct   = parseFloat(r.strength ?? 0);
+
+      // Phase info based on strength percentage
+      let phaseInfo;
+      if (pct === 0)        phaseInfo = "P1 ❌";
+      else if (pct <= 33)   phaseInfo = "P1 ✅ | P2 ❌";
+      else if (pct <= 67)   phaseInfo = "P1 ✅ | P2 ✅ | P3 ❌";
+      else                  phaseInfo = "P1 ✅ | P2 ✅ | P3 ✅";
+
+      // Reject reason (truncated to keep message short)
+      const reason = r.rejectReason
+        ? r.rejectReason.length > 50
+          ? r.rejectReason.slice(0, 50) + "..."
+          : r.rejectReason
+        : "";
+
+      lines.push(`⏸ ${sym} | 4H: ${h4} ${h4icon} | ${phaseInfo}${reason ? ` — ${reason}` : ""}`);
 
     } else if (r.status === "BUY" || r.status === "SELL") {
-      const icon   = r.status === "BUY" ? "🟢" : "🔴";
-      const votes  = r.strength != null ? Math.round(r.strength * 7 / 100) : 0;
-      const h4     = (r.h4bias  || (r.status === "BUY" ? "bullish" : "bearish")).toUpperCase();
-      const h1     = (r.h1trend || (r.status === "BUY" ? "bullish" : "bearish")).toUpperCase();
-      lines.push(`${icon} ${sym} | 4H: ${h4} ✅ | 1H: ${h1} ✅ | ${votes}/7 — ${r.status}!`);
+      const icon = r.status === "BUY" ? "🟢" : "🔴";
+      const h4   = (r.h4bias  || (r.status === "BUY" ? "bullish" : "bearish")).toUpperCase();
+      lines.push(`${icon} ${sym} | 4H: ${h4} ✅ | P1✅ P2✅ P3✅ — ${r.status}!`);
     }
   }
 
