@@ -125,7 +125,7 @@
     justify-content: center;
   }
 
-  /* Left Panel - Live Metrics (Scrollable) */
+  /* Left Panel - Live Metrics */
   .metrics-panel {
     flex: 1.2;
     min-width: 280px;
@@ -167,6 +167,8 @@
     margin-bottom: 24px;
     padding-bottom: 16px;
     border-bottom: 1px solid rgba(56, 189, 248, 0.15);
+    flex-wrap: wrap;
+    gap: 12px;
   }
 
   .metrics-header-left {
@@ -262,6 +264,57 @@
     padding: 40px;
     color: #475569;
     font-size: 12px;
+  }
+
+  /* Credentials Bar */
+  .creds-bar {
+    background: rgba(6, 182, 212, 0.08);
+    border: 1px solid rgba(6, 182, 212, 0.2);
+    border-radius: 16px;
+    padding: 12px;
+    margin-bottom: 20px;
+  }
+
+  .creds-bar input {
+    width: 100%;
+    padding: 8px 12px;
+    background: rgba(8, 12, 22, 0.9);
+    border: 1px solid rgba(56, 189, 248, 0.3);
+    border-radius: 10px;
+    color: white;
+    font-size: 11px;
+    margin-bottom: 8px;
+    font-family: monospace;
+  }
+
+  .creds-bar input:last-child {
+    margin-bottom: 0;
+  }
+
+  .creds-bar label {
+    font-size: 9px;
+    color: #38bdf8;
+    margin-bottom: 4px;
+    display: block;
+  }
+
+  .connect-btn {
+    width: 100%;
+    padding: 8px;
+    background: linear-gradient(135deg, #1e40af, #1d4ed8);
+    border: none;
+    border-radius: 10px;
+    color: white;
+    font-size: 11px;
+    font-weight: 600;
+    cursor: pointer;
+    margin-top: 8px;
+    transition: all 0.2s;
+  }
+
+  .connect-btn:hover {
+    transform: translateY(-1px);
+    box-shadow: 0 4px 12px rgba(30, 64, 175, 0.4);
   }
 
   /* Right Panel */
@@ -595,7 +648,6 @@
     letter-spacing: 2px;
   }
 
-  /* Connection status */
   .connection-status {
     font-size: 10px;
     display: flex;
@@ -603,13 +655,9 @@
     gap: 6px;
   }
 
-  .status-connected {
-    color: #10b981;
-  }
-
-  .status-disconnected {
-    color: #f87171;
-  }
+  .status-connected { color: #10b981; }
+  .status-connecting { color: #eab308; }
+  .status-disconnected { color: #f87171; }
 
   /* Animations */
   @keyframes fadeInUp {
@@ -654,7 +702,7 @@
 <div class="orb orb-4"></div>
 
 <div class="container">
-  <!-- Left Panel - Live Metrics with Real Deriv Data -->
+  <!-- Left Panel - Live Market Data -->
   <div class="metrics-panel" id="metricsPanel">
     <div class="metrics-header">
       <div class="metrics-header-left">
@@ -662,13 +710,31 @@
         <h3>LIVE MARKET DATA</h3>
       </div>
       <div class="connection-status" id="connectionStatus">
-        <span>🔌 Connecting...</span>
+        <span class="status-connecting">● DEMO MODE</span>
       </div>
     </div>
+
+    <!-- Demo Market Data (Static preview) -->
     <div id="metricsContent">
-      <div class="loading-metrics">
-        <div class="spinner" style="width: 30px; height: 30px; margin: 0 auto 16px;"></div>
-        Connecting to Deriv WebSocket...
+      <div class="category-title">Forex</div>
+      <div class="metric-item"><span class="metric-label">EUR/USD</span><div class="metric-value-container"><span class="metric-value">1.08942</span><span class="metric-change up">▲ 0.12%</span></div></div>
+      <div class="metric-item"><span class="metric-label">GBP/USD</span><div class="metric-value-container"><span class="metric-value">1.26415</span><span class="metric-change down">▼ 0.08%</span></div></div>
+      <div class="metric-item"><span class="metric-label">USD/JPY</span><div class="metric-value-container"><span class="metric-value">148.322</span><span class="metric-change up">▲ 0.23%</span></div></div>
+      <div class="metric-item"><span class="metric-label">USD/CHF</span><div class="metric-value-container"><span class="metric-value">0.89371</span><span class="metric-change down">▼ 0.05%</span></div></div>
+      <div class="metric-item"><span class="metric-label">AUD/USD</span><div class="metric-value-container"><span class="metric-value">0.66213</span><span class="metric-change up">▲ 0.18%</span></div></div>
+      <div class="metric-item"><span class="metric-label">USD/CAD</span><div class="metric-value-container"><span class="metric-value">1.35782</span><span class="metric-change up">▲ 0.07%</span></div></div>
+      <div class="metric-item"><span class="metric-label">NZD/USD</span><div class="metric-value-container"><span class="metric-value">0.61423</span><span class="metric-change up">▲ 0.09%</span></div></div>
+      
+      <div class="category-title">Metals</div>
+      <div class="metric-item"><span class="metric-label">XAU/USD</span><div class="metric-value-container"><span class="metric-value">2,385.20</span><span class="metric-change up">▲ 0.45%</span></div></div>
+      <div class="metric-item"><span class="metric-label">XAG/USD</span><div class="metric-value-container"><span class="metric-value">28.672</span><span class="metric-change up">▲ 0.32%</span></div></div>
+      
+      <div class="category-title">Crypto</div>
+      <div class="metric-item"><span class="metric-label">BTC/USD</span><div class="metric-value-container"><span class="metric-value">68,342</span><span class="metric-change up">▲ 2.41%</span></div></div>
+      <div class="metric-item"><span class="metric-label">ETH/USD</span><div class="metric-value-container"><span class="metric-value">3,821</span><span class="metric-change up">▲ 1.18%</span></div></div>
+      
+      <div style="font-size: 10px; color: #475569; text-align: center; margin-top: 16px; padding-top: 12px; border-top: 1px solid rgba(56,189,248,0.1);">
+        📡 Demo data — Login to connect live market feed
       </div>
     </div>
   </div>
@@ -772,231 +838,6 @@
 </div>
 
 <script>
-  // ============================================
-  // DERIV WEBSOCKET REAL-TIME MARKET DATA
-  // ============================================
-  
-  // Define all your trading pairs with their Deriv symbols
-  const TRADING_PAIRS = {
-    // Forex
-    "EUR/USD": { symbol: "frxEURUSD", category: "Forex" },
-    "GBP/USD": { symbol: "frxGBPUSD", category: "Forex" },
-    "USD/JPY": { symbol: "frxUSDJPY", category: "Forex" },
-    "USD/CHF": { symbol: "frxUSDCHF", category: "Forex" },
-    "AUD/USD": { symbol: "frxAUDUSD", category: "Forex" },
-    "USD/CAD": { symbol: "frxUSDCAD", category: "Forex" },
-    "NZD/USD": { symbol: "frxNZDUSD", category: "Forex" },
-    // Metals
-    "XAU/USD": { symbol: "frxXAUUSD", category: "Metals" },
-    "XAG/USD": { symbol: "frxXAGUSD", category: "Metals" },
-    // Crypto
-    "BTC/USD": { symbol: "cryBTCUSD", category: "Crypto" },
-    "ETH/USD": { symbol: "cryETHUSD", category: "Crypto" }
-  };
-
-  let derivWs = null;
-  let marketPrices = {};
-  let lastUpdateTime = null;
-  let reconnectAttempts = 0;
-  let previousPrices = {};
-
-  // Initialize Deriv WebSocket connection
-  function initDerivWebSocket(appId = '33kDvVzcElBmdV0wfzTy1') {
-    if (derivWs && derivWs.readyState === WebSocket.OPEN) {
-      console.log('WebSocket already connected');
-      return;
-    }
-
-    const wsUrl = `wss://ws.binaryws.com/websockets/v3?app_id=${appId}`;
-    derivWs = new WebSocket(wsUrl);
-
-    derivWs.onopen = () => {
-      console.log('✅ Deriv WebSocket connected');
-      updateConnectionStatus(true);
-      reconnectAttempts = 0;
-      
-      // Authorize if PAT token is available (from env/session)
-      const patToken = localStorage.getItem('deriv_pat_token') || 
-                       document.getElementById('signupPAT')?.value || 
-                       'YOUR_PAT_TOKEN_HERE';
-      
-      if (patToken && patToken !== 'YOUR_PAT_TOKEN_HERE') {
-        derivWs.send(JSON.stringify({ 
-          authorize: patToken 
-        }));
-      }
-      
-      // Subscribe to all trading pairs
-      subscribeToAllPairs();
-    };
-
-    derivWs.onmessage = (event) => {
-      try {
-        const data = JSON.parse(event.data);
-        
-        // Handle price ticks
-        if (data.msg_type === 'tick') {
-          const symbol = data.tick?.symbol || data.echo_req?.ticks;
-          if (symbol && data.tick?.quote) {
-            const price = parseFloat(data.tick.quote);
-            const pairName = getPairNameBySymbol(symbol);
-            if (pairName) {
-              // Calculate change %
-              const prevPrice = previousPrices[pairName] || price;
-              const change = ((price - prevPrice) / prevPrice) * 100;
-              previousPrices[pairName] = price;
-              
-              marketPrices[pairName] = {
-                price: price,
-                change: change,
-                timestamp: Date.now()
-              };
-              lastUpdateTime = new Date();
-              updateMetricsDisplay();
-            }
-          }
-        }
-        
-        // Handle authorization response
-        if (data.msg_type === 'authorize') {
-          console.log('✅ Deriv authorized:', data.authorize?.loginid);
-        }
-        
-      } catch (e) {
-        console.error('Error parsing WebSocket message:', e);
-      }
-    };
-
-    derivWs.onerror = (error) => {
-      console.error('❌ Deriv WebSocket error:', error);
-      updateConnectionStatus(false);
-    };
-
-    derivWs.onclose = () => {
-      console.log('🔌 Deriv WebSocket disconnected');
-      updateConnectionStatus(false);
-      
-      // Auto-reconnect with exponential backoff
-      const delay = Math.min(5000 * Math.pow(1.5, reconnectAttempts), 30000);
-      reconnectAttempts++;
-      setTimeout(() => {
-        console.log(`🔄 Reconnecting to Deriv... (attempt ${reconnectAttempts})`);
-        initDerivWebSocket();
-      }, delay);
-    };
-  }
-
-  function updateConnectionStatus(connected) {
-    const statusEl = document.getElementById('connectionStatus');
-    if (statusEl) {
-      if (connected) {
-        statusEl.innerHTML = '<span class="status-connected">● LIVE</span>';
-      } else {
-        statusEl.innerHTML = '<span class="status-disconnected">○ RECONNECTING...</span>';
-      }
-    }
-  }
-
-  function subscribeToAllPairs() {
-    if (!derivWs || derivWs.readyState !== WebSocket.OPEN) return;
-    
-    Object.values(TRADING_PAIRS).forEach(pair => {
-      const subscribeMsg = {
-        ticks: pair.symbol,
-        subscribe: 1
-      };
-      derivWs.send(JSON.stringify(subscribeMsg));
-      console.log(`📡 Subscribed to: ${pair.symbol}`);
-    });
-  }
-
-  function getPairNameBySymbol(symbol) {
-    for (const [name, data] of Object.entries(TRADING_PAIRS)) {
-      if (data.symbol === symbol) return name;
-    }
-    return null;
-  }
-
-  function formatPrice(price, symbol) {
-    if (!price) return '--.--';
-    // Crypto uses smaller decimals
-    if (symbol.includes('BTC') || symbol.includes('ETH')) {
-      return price.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 });
-    }
-    // Metals (XAU/XAG)
-    if (symbol.includes('XAU')) {
-      return price.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 });
-    }
-    if (symbol.includes('XAG')) {
-      return price.toLocaleString(undefined, { minimumFractionDigits: 3, maximumFractionDigits: 3 });
-    }
-    // Forex
-    return price.toLocaleString(undefined, { minimumFractionDigits: 5, maximumFractionDigits: 5 });
-  }
-
-  function updateMetricsDisplay() {
-    const container = document.getElementById('metricsContent');
-    if (!container) return;
-
-    if (Object.keys(marketPrices).length === 0) {
-      container.innerHTML = `
-        <div class="loading-metrics">
-          <div class="spinner" style="width: 30px; height: 30px; margin: 0 auto 16px;"></div>
-          Waiting for market data...
-        </div>`;
-      return;
-    }
-
-    const categories = ['Forex', 'Metals', 'Crypto'];
-    let html = '';
-    
-    // Add last update time
-    if (lastUpdateTime) {
-      html += `<div class="last-update" style="text-align: right; margin-bottom: 12px;">Updated: ${lastUpdateTime.toLocaleTimeString()}</div>`;
-    }
-
-    categories.forEach(category => {
-      const pairsInCategory = Object.entries(TRADING_PAIRS).filter(([_, data]) => data.category === category);
-      if (pairsInCategory.length === 0) return;
-      
-      html += `<div class="category-title">${category}</div>`;
-      
-      pairsInCategory.forEach(([pairName]) => {
-        const data = marketPrices[pairName];
-        const price = data?.price || null;
-        const change = data?.change || 0;
-        const changeClass = change >= 0 ? 'up' : 'down';
-        const changeSymbol = change >= 0 ? '▲' : '▼';
-        
-        html += `
-          <div class="metric-item">
-            <span class="metric-label">${pairName}</span>
-            <div class="metric-value-container">
-              <span class="metric-value">${formatPrice(price, pairName)}</span>
-              ${price ? `<span class="metric-change ${changeClass}">${changeSymbol} ${Math.abs(change).toFixed(2)}%</span>` : '<span class="metric-change">--</span>'}
-            </div>
-          </div>
-        `;
-      });
-    });
-    
-    container.innerHTML = html;
-  }
-
-  // Start WebSocket connection
-  initDerivWebSocket();
-
-  // Refresh display every 500ms
-  setInterval(() => {
-    if (Object.keys(marketPrices).length > 0) {
-      updateMetricsDisplay();
-    }
-  }, 500);
-
-  // ============================================
-  // AUTH & UI LOGIC
-  // ============================================
-
   // Create particles
   function createParticles() {
     for (let i = 0; i < 60; i++) {
@@ -1006,4 +847,128 @@
       particle.style.width = size + 'px';
       particle.style.height = size + 'px';
       particle.style.left = Math.random() * 100 + '%';
-      particle.style.top = Math.random() * 100 + '%';}}
+      particle.style.top = Math.random() * 100 + '%';
+      particle.style.animationDuration = Math.random() * 12 + 10 + 's';
+      particle.style.animationDelay = Math.random() * 10 + 's';
+      document.body.appendChild(particle);
+    }
+  }
+  createParticles();
+
+  // Check if already logged in
+  if (localStorage.getItem("token")) {
+    window.location.href = "/dashboard.html";
+  }
+
+  function showLoading(show, btnId) {
+    const overlay = document.getElementById('loadingOverlay');
+    if (show) {
+      overlay.style.display = 'flex';
+      if (btnId) {
+        const btn = document.getElementById(btnId);
+        btn.classList.add('loading');
+        btn.disabled = true;
+      }
+    } else {
+      overlay.style.display = 'none';
+      if (btnId) {
+        const btn = document.getElementById(btnId);
+        btn.classList.remove('loading');
+        btn.disabled = false;
+      }
+    }
+  }
+
+  function showTab(tab) {
+    document.getElementById("loginForm").style.display = tab === "login" ? "block" : "none";
+    document.getElementById("signupForm").style.display = tab === "signup" ? "block" : "none";
+    document.querySelectorAll(".tab").forEach((t, i) => {
+      if ((tab === "login" && i === 0) || (tab === "signup" && i === 1)) {
+        t.classList.add("active");
+      } else {
+        t.classList.remove("active");
+      }
+    });
+  }
+
+  async function login() {
+    const email = document.getElementById("loginEmail").value.trim();
+    const password = document.getElementById("loginPassword").value;
+    const errEl = document.getElementById("loginError");
+    errEl.style.display = "none";
+
+    if (!email || !password) {
+      errEl.textContent = "❌ Please enter email and password";
+      errEl.style.display = "block";
+      return;
+    }
+
+    showLoading(true, 'loginBtn');
+
+    try {
+      const res = await fetch("/api/auth/login", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ email, password }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || "Login failed");
+      
+      localStorage.setItem("token", data.token);
+      localStorage.setItem("user", JSON.stringify(data.user));
+      
+      // Redirect to your dashboard
+      window.location.href = "/dashboard.html";
+    } catch (err) {
+      showLoading(false, 'loginBtn');
+      errEl.textContent = err.message;
+      errEl.style.display = "block";
+    }
+  }
+
+  async function signup() {
+    const name = document.getElementById("signupName").value.trim();
+    const email = document.getElementById("signupEmail").value.trim();
+    const password = document.getElementById("signupPassword").value;
+    const derivPAT = document.getElementById("signupPAT").value.trim();
+    const derivAppId = document.getElementById("signupAppId").value.trim();
+    const derivMode = document.getElementById("signupMode").value;
+    const chatId = document.getElementById("signupChatId").value.trim();
+    const errEl = document.getElementById("signupError");
+    errEl.style.display = "none";
+
+    if (!name || !email || !password || !derivPAT || !derivAppId) {
+      errEl.textContent = "❌ All required fields must be filled";
+      errEl.style.display = "block";
+      return;
+    }
+    if (password.length < 6) {
+      errEl.textContent = "❌ Password must be at least 6 characters";
+      errEl.style.display = "block";
+      return;
+    }
+
+    showLoading(true, 'signupBtn');
+
+    try {
+      const res = await fetch("/api/auth/signup", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ name, email, password, derivPAT, derivAppId, derivMode, telegramChatId: chatId }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || "Signup failed");
+      
+      localStorage.setItem("token", data.token);
+      localStorage.setItem("user", JSON.stringify(data.user));
+      
+      window.location.href = "/dashboard.html";
+    } catch (err) {
+      showLoading(false, 'signupBtn');
+      errEl.textContent = err.message;
+      errEl.style.display = "block";
+    }
+  }
+</script>
+</body>
+</html>
