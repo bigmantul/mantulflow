@@ -16,7 +16,7 @@ import {
   marketIsTradeable, get15mTrend, getTradeReason,
   sessionName, isMarketOpen,
 } from "../src/strategy/signals.js";
-import { placeTradeWithRetry, startForcedCloseTimer, cancelForcedCloseTimer } from "../src/trading/trader.js";
+import { placeTradeWithRetry, startForcedCloseTimer, cancelForcedCloseTimer, closeTrade } from "../src/trading/trader.js";
 import { RiskManager, StopLossTakeProfit } from "../src/risk/risk-manager.js";
 import { Trade, User, BotLog }             from "./db.js";
 import {
@@ -32,7 +32,7 @@ const SYMBOLS = [
   // Metals
   "frxXAUUSD", "frxXAGUSD",
   // Crypto
-  "cryBTCUSD", "cryETHUSD", "cryLTCUSD", "cryBCHUSD",
+  "cryBTCUSD", "cryETHUSD",
 ];
 const POLL_SECS          = 15;
 const MAX_IDLE_SECS      = 30;
@@ -137,6 +137,81 @@ async function syncTradeStatuses(ws, userId, label) {
 // ── PORTFOLIO TRACKER ─────────────────────────────────
 // Now uses DB as source of truth for locked symbols
 // so locks persist across reconnects
+async function monitorOpenTrades(ws, userId, label, portfolio, dfH4Cache) {
+  try {
+    const openTrades = await Trade.find({ userId, status: "open" });
+    if (!openTrades.length) return;
+
+    for (const trade of openTrades) {
+      try {
+        const detail   = await sendMessage(ws, {
+          proposal_open_contract: 1,
+          contract_id: parseInt(trade.contractId),
+        }, "proposal_open_contract");
+
+        const contract = detail?.proposal_open_contract;
+        if (!contract || contract.status !== "open") continue;
+
+        const currentPnl = parseFloat(contract.profit ?? 0);
+        const stake      = trade.stake;
+        const takeProfit = trade.takeProfit;
+        const direction  = trade.direction;
+
+        // Update live PnL
+        await Trade.findByIdAndUpdate(trade._id, { pnl: currentPnl });
+
+        // ── EXIT 1: TREND REVERSAL ──────────────────────
+        const h4Candles = dfH4Cache.get(trade.symbol);
+        if (h4Candles && h4Candles.length >= 50) {
+          const { get15mTrend } = await import("../src/strategy/signals.js");
+          const currentBias = get15mTrend(h4Candles);
+          const tradeBias   = direction === "MULTUP" ? "bullish" : "bearish";
+          const biasFlipped = currentBias !== "neutral" && currentBias !== tradeBias;
+
+          if (biasFlipped) {
+            await log(userId, `[${label}] ${trade.symbol} | 🔄 EXIT: 4H reversed to ${currentBias.toUpperCase()} — closing ${direction}`, "trade");
+            const soldFor = await closeTrade(ws, trade.contractId);
+            if (soldFor !== null) {
+              const finalPnl = soldFor - stake;
+              await Trade.findByIdAndUpdate(trade._id, {
+                status:   finalPnl >= 0 ? "won" : "lost",
+                pnl:      finalPnl,
+                closedAt: new Date(),
+              });
+              portfolio.unlockSymbol(trade.symbol);
+              await log(userId, `[${label}] ${trade.symbol} | Closed $${soldFor.toFixed(2)} | PnL: $${finalPnl.toFixed(2)}`, "trade");
+            }
+            continue;
+          }
+        }
+
+        // ── EXIT 2: TRAILING STOP ────────────────────────
+        if (takeProfit && currentPnl >= takeProfit * 0.5) {
+          const breakevenSL = stake;
+          await log(userId, `[${label}] ${trade.symbol} | 📈 Profit $${currentPnl.toFixed(2)} >= 50% TP — moving SL to breakeven $${breakevenSL}`, "trade");
+          try {
+            await sendMessage(ws, {
+              contract_update: 1,
+              contract_id:     parseInt(trade.contractId),
+              limit_order:     { stop_loss: breakevenSL },
+            }, "contract_update");
+            await Trade.findByIdAndUpdate(trade._id, { stopLoss: breakevenSL });
+          } catch (updateErr) {
+            console.log(`[${label}] Could not update SL: ${updateErr.message}`);
+          }
+        }
+
+      } catch (tradeErr) {
+        if (!tradeErr.message.includes("closed") && !tradeErr.message.includes("expired")) {
+          console.error(`[${label}] Monitor error for ${trade.contractId}:`, tradeErr.message);
+        }
+      }
+    }
+  } catch (e) {
+    console.error(`[${label}] Trade monitor error:`, e.message);
+  }
+}
+
 function createPortfolio(userId) {
   let activeSymbols = new Set();
   let openCount     = 0;
