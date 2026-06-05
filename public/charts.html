@@ -1,0 +1,70 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Live Technical Monitors Matrix — MANTUL FLOW</title>
+<style>
+  *{margin:0;padding:0;box-sizing:border-box;}
+  body{font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;background:#05070f;color:#fff;padding:24px;}
+  .matrix-header{margin-bottom:24px;display:flex;justify-content:space-between;align-items:center;border-bottom:1px solid rgba(56,189,248,0.2);padding-bottom:16px;}
+  .matrix-header h1{font-size:22px;font-weight:800;background:linear-gradient(135deg,#38bdf8,#818cf8);-webkit-background-clip:text;background-clip:text;color:transparent;}
+  .matrix-grid-layout {display:grid;grid-template-columns:repeat(auto-fit,minmax(480px,1fr));gap:24px;}
+  .chart-canvas-card{height:420px;background:rgba(17,24,39,0.6);border:1px solid rgba(255,255,255,0.05);border-radius:20px;overflow:hidden;}
+</style>
+</head>
+<body>
+
+<div class="matrix-header">
+  <h1>⚡ MANTUL FLOW CONSOLE — LIVE 11-PAIR ALGO TRADING CORE TECHNICAL SCANNERS</h1>
+  <span style="font-size:12px;color:#64748b;font-weight:bold;">Real-Time multi-timeframe streams via TradingView WebSocket Engine</span>
+</div>
+
+<div class="matrix-grid-layout" id="matrixContainer"></div>
+
+<script>
+const SYSTEM_ASSETS_MAP = [
+  {id: "EURUSD", feed: "FX:EURUSD"},
+  {id: "GBPUSD", feed: "FX:GBPUSD"},
+  {id: "USDJPY", feed: "FX:USDJPY"},
+  {id: "USDCHF", feed: "FX:USDCHF"},
+  {id: "AUDUSD", feed: "FX:AUDUSD"},
+  {id: "USDCAD", feed: "FX:USDCAD"},
+  {id: "NZDUSD", feed: "FX:NZDUSD"},
+  {id: "XAUUSD", feed: "OANDA:XAUUSD"},
+  {id: "XAGUSD", feed: "OANDA:XAGUSD"},
+  {id: "BTCUSD", feed: "BINANCE:BTCUSDT"},
+  {id: "ETHUSD", feed: "BINANCE:ETHUSDT"}
+];
+
+const workspaceGrid = document.getElementById("matrixContainer");
+
+SYSTEM_ASSETS_MAP.forEach(pairContext => {
+  const panelCard = document.createElement("div");
+  panelCard.className = "chart-canvas-card";
+  panelCard.id = `chart-panel-${pairContext.id}`;
+  workspaceGrid.appendChild(panelCard);
+
+  const libraryElementScript = document.createElement("script");
+  libraryElementScript.src = "https://s3.tradingview.com/tv.js";
+  libraryElementScript.async = true;
+  libraryElementScript.onload = () => {
+    new TradingView.widget({
+      "autosize": true,
+      "symbol": pairContext.feed,
+      "interval": "15",
+      "timezone": "Etc/UTC",
+      "theme": "dark",
+      "style": "1",
+      "locale": "en",
+      "enable_publishing": false,
+      "hide_side_toolbar": false,
+      "allow_symbol_change": false,
+      "container_id": `chart-panel-${pairContext.id}`
+    });
+  };
+  document.head.appendChild(libraryElementScript);
+});
+</script>
+</body>
+</html>
