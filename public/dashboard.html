@@ -1,971 +1,1097 @@
 <!DOCTYPE html>
+
 <html lang="en">
+
 <head>
+
 <meta charset="UTF-8"/>
+
 <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
-<title>Dashboard — MANTUL FLOW | AI-Powered Smart Money Trading Platform</title>
-<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
+
+<title>Dashboard — MANTUL'S UNIFIED TRADING BOT FOR DERIV</title>
+
 <style>
+
   *{margin:0;padding:0;box-sizing:border-box}
-  
-  body{
-    font-family:'Inter',-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;
-    background:#05070f;
-    color:#e2e8f0;
-    min-height:100vh;
-    position:relative;
-    overflow-x:hidden;
-  }
 
-  /* Animated Background Orbs */
-  body::before{
-    content:'';
-    position:fixed;
-    width:500px;
-    height:500px;
-    background:#2563eb;
-    filter:blur(150px);
-    opacity:.12;
-    top:10%;
-    left:-10%;
-    animation:floatOrb 14s ease-in-out infinite;
-    pointer-events:none;
-    z-index:0;
-  }
-  body::after{
-    content:'';
-    position:fixed;
-    width:400px;
-    height:400px;
-    background:#06b6d4;
-    filter:blur(150px);
-    opacity:.1;
-    bottom:10%;
-    right:-10%;
-    animation:floatOrb2 16s ease-in-out infinite;
-    pointer-events:none;
-    z-index:0;
-  }
-  @keyframes floatOrb{
-    0%,100%{transform:translateY(0) translateX(0);}
-    50%{transform:translateY(-60px) translateX(40px);}
-  }
-  @keyframes floatOrb2{
-    0%,100%{transform:translateY(0) translateX(0);}
-    50%{transform:translateY(60px) translateX(-40px);}
-  }
+  body{font-family:'Segoe UI',sans-serif;background:#0a0e1a;color:#e2e8f0;min-height:100vh}
 
-  /* Glassmorphism Card Base */
-  .card, .stat-card, .metrics-panel, .hero-card, .signal-card, .heatmap-card, .activity-card, .gauge-card, .performance-card{
-    background:rgba(17,24,39,0.55);
-    backdrop-filter:blur(20px);
-    border:1px solid rgba(255,255,255,0.06);
-    box-shadow:0 8px 32px rgba(0,0,0,0.3);
-    transition:all 0.35s cubic-bezier(0.2,0.9,0.4,1.1);
-  }
+  .header{background:#111827;border-bottom:1px solid #1e293b;padding:16px 24px;display:flex;align-items:center;justify-content:space-between}
 
-  .card:hover, .stat-card:hover, .metrics-panel:hover{
-    transform:translateY(-4px);
-    box-shadow:0 20px 40px rgba(0,0,0,0.4);
-    border-color:rgba(56,189,248,0.3);
-  }
+  .header h1{font-size:18px;font-weight:700;color:#38bdf8}
 
-  .header{
-    background:rgba(17,24,39,0.7);
-    backdrop-filter:blur(20px);
-    border-bottom:1px solid rgba(56,189,248,0.15);
-    padding:16px 24px;
-    display:flex;
-    align-items:center;
-    justify-content:space-between;
-    position:sticky;
-    top:0;
-    z-index:100;
-  }
-  .header h1{font-size:18px;font-weight:700;background:linear-gradient(135deg,#38bdf8,#818cf8);-webkit-background-clip:text;background-clip:text;color:transparent;}
-  .header-right{display:flex;align-items:center;gap:16px;}
-  .user-name{font-size:14px;color:#94a3b8;}
-  .btn-logout{padding:6px 14px;background:rgba(255,255,255,0.05);border:1px solid rgba(56,189,248,0.3);border-radius:8px;color:#94a3b8;cursor:pointer;font-size:13px;transition:0.2s;}
-  .btn-logout:hover{background:rgba(248,113,113,0.2);border-color:#f87171;color:#f87171;}
+  .header-right{display:flex;align-items:center;gap:16px}
 
-  .main{max-width:1400px;margin:0 auto;padding:24px;position:relative;z-index:1;}
+  .user-name{font-size:14px;color:#94a3b8}
 
-  /* Hero Section */
-  .hero-section{
-    display:grid;
-    grid-template-columns:1fr 1.5fr;
-    gap:20px;
-    margin-bottom:28px;
-  }
-  @media(max-width:900px){.hero-section{grid-template-columns:1fr;}}
-  
-  .hero-card{
-    background:linear-gradient(135deg,rgba(30,64,175,0.3),rgba(6,182,212,0.2));
-    border-radius:28px;
-    padding:28px;
-    position:relative;
-    overflow:hidden;
-  }
-  .hero-card::before{
-    content:'';
-    position:absolute;
-    top:-50%;
-    right:-30%;
-    width:300px;
-    height:300px;
-    background:radial-gradient(circle,rgba(56,189,248,0.3),transparent);
-    border-radius:50%;
-    pointer-events:none;
-  }
-  .hero-greeting{font-size:13px;color:#38bdf8;letter-spacing:1px;margin-bottom:8px;}
-  .hero-title{font-size:28px;font-weight:800;margin-bottom:8px;}
-  .hero-sub{font-size:13px;color:#94a3b8;margin-bottom:24px;}
-  .balance-label{font-size:12px;color:#7f8ea3;margin-bottom:4px;}
-  .balance-amount{font-size:42px;font-weight:800;background:linear-gradient(135deg,#fff,#38bdf8);-webkit-background-clip:text;background-clip:text;color:transparent;}
-  .health-score{display:flex;align-items:center;gap:12px;margin-top:16px;}
-  .health-bar{flex:1;height:6px;background:rgba(255,255,255,0.1);border-radius:3px;overflow:hidden;}
-  .health-fill{width:0%;height:100%;background:linear-gradient(90deg,#10b981,#34d399);border-radius:3px;transition:width 0.5s ease;}
-  .refresh-balance{background:rgba(56,189,248,0.15);border:none;border-radius:30px;padding:4px 12px;margin-left:12px;cursor:pointer;font-size:11px;color:#38bdf8;transition:0.2s;}
-  .refresh-balance:hover{background:rgba(56,189,248,0.3);}
+  .btn-logout{padding:6px 14px;background:transparent;border:1px solid #334155;border-radius:6px;color:#94a3b8;cursor:pointer;font-size:13px}
 
-  .session-card{border-radius:28px;padding:28px;}
-  .session-status{display:flex;align-items:center;gap:12px;margin-bottom:20px;flex-wrap:wrap;}
-  .live-badge{display:flex;align-items:center;gap:6px;background:rgba(16,185,129,0.15);padding:6px 12px;border-radius:40px;font-size:11px;color:#10b981;}
-  .live-badge.stopped{background:rgba(248,113,113,0.15);color:#f87171;}
-  .live-dot{width:8px;height:8px;background:#10b981;border-radius:50%;animation:pulse 1.5s infinite;}
-  .live-dot.stopped{background:#f87171;animation:none;}
-  @keyframes pulse{0%,100%{opacity:1;}50%{opacity:0.4;}}
+  .main{max-width:1100px;margin:0 auto;padding:24px}
 
-  /* Stats Grid */
-  .stats-grid{
-    display:grid;
-    grid-template-columns:repeat(auto-fit,minmax(180px,1fr));
-    gap:16px;
-    margin-bottom:28px;
-  }
-  .stat-card{
-    background:rgba(17,24,39,0.55);
-    backdrop-filter:blur(20px);
-    border-radius:20px;
-    padding:20px;
-    transition:0.35s;
-  }
-  .stat-card:hover{transform:translateY(-6px);}
-  .stat-label{font-size:11px;color:#7f8ea3;text-transform:uppercase;letter-spacing:0.6px;margin-bottom:6px;}
-  .stat-value{font-size:28px;font-weight:700;}
-  .stat-value.green{color:#34d399;}
-  .stat-value.red{color:#f87171;}
-  .stat-value.blue{color:#38bdf8;}
-  .stat-value.yellow{color:#fbbf24;}
+  .grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(200px,1fr));gap:16px;margin-bottom:24px}
 
-  /* Live Market Prices Row */
-  .market-row{
-    display:flex;
-    flex-wrap:wrap;
-    gap:12px;
-    margin-bottom:28px;
-    padding:16px;
-    background:rgba(17,24,39,0.4);
-    backdrop-filter:blur(12px);
-    border-radius:24px;
-    border:1px solid rgba(56,189,248,0.1);
-  }
-  .market-ticker-box{
-    flex:1;
-    min-width: 220px;
-    height: 120px;
-    background:rgba(0,0,0,0.2);
-    border-radius:16px;
-    overflow:hidden;
-  }
+  .stat-card{background:#111827;border:1px solid #1e293b;border-radius:12px;padding:20px}
 
-  /* Two Column Layout */
-  .two-col{
-    display:grid;
-    grid-template-columns:1fr 1fr;
-    gap:20px;
-    margin-bottom:28px;
-  }
-  @media(max-width:900px){.two-col{grid-template-columns:1fr;}}
+  .stat-label{font-size:12px;color:#64748b;text-transform:uppercase;letter-spacing:.6px}
 
-  /* AI Intelligence Panel */
-  .ai-panel{border-radius:24px;padding:24px;}
-  .ai-header{font-size:12px;color:#38bdf8;text-transform:uppercase;margin-bottom:20px;letter-spacing:1px;}
-  .ai-stat{display:flex;justify-content:space-between;padding:12px 0;border-bottom:1px solid rgba(255,255,255,0.05);}
-  .ai-label{color:#94a3b8;font-size:13px;}
-  .ai-value{font-weight:700;color:#38bdf8;}
-  .confidence-bar{height:6px;background:rgba(255,255,255,0.1);border-radius:3px;margin-top:8px;overflow:hidden;}
-  .confidence-fill{height:100%;width:0%;background:linear-gradient(90deg,#38bdf8,#818cf8);border-radius:3px;transition:width 0.5s ease;}
+  .stat-value{font-size:28px;font-weight:700;margin-top:4px}
 
-  /* Risk Meter */
-  .risk-meter{margin-top:20px;}
-  .risk-header{display:flex;justify-content:space-between;margin-bottom:8px;font-size:12px;}
-  .risk-bar{height:8px;background:rgba(255,255,255,0.1);border-radius:4px;overflow:hidden;}
-  .risk-fill{height:100%;width:0%;background:linear-gradient(90deg,#fbbf24,#f97316);border-radius:4px;transition:width 0.5s ease;}
+  .stat-value.green{color:#34d399}
 
-  /* Performance Badges */
-  .badges-row{
-    display:flex;
-    gap:12px;
-    margin-top:16px;
-    flex-wrap:wrap;
-  }
-  .perf-badge{
-    background:rgba(255,255,255,0.05);
-    border-radius:40px;
-    padding:8px 16px;
-    display:flex;
-    align-items:center;
-    gap:8px;
-    font-size:12px;
-  }
+  .stat-value.red{color:#f87171}
 
-  /* Chart Container */
-  .chart-container{height:280px;position:relative;}
+  .stat-value.blue{color:#38bdf8}
 
-  /* Signals + Heatmap Grid */
-  .signals-heatmap{
-    display:grid;
-    grid-template-columns:1fr 1fr;
-    gap:20px;
-    margin-bottom:28px;
-  }
-  @media(max-width:700px){.signals-heatmap{grid-template-columns:1fr;}}
-  
-  .signal-card,.heatmap-card{border-radius:24px;padding:24px;}
-  .signal-item{
-    display:flex;
-    justify-content:space-between;
-    align-items:center;
-    padding:12px 0;
-    border-bottom:1px solid rgba(255,255,255,0.05);
-  }
-  .signal-dir{font-weight:700;}
-  .signal-dir.buy{color:#10b981;}
-  .signal-dir.sell{color:#f87171;}
-  .heatmap-item{
-    display:flex;
-    justify-content:space-between;
-    align-items:center;
-    padding:10px 0;
-  }
-  .heatmap-percent{font-weight:700;}
-  .heatmap-percent.high{color:#10b981;}
-  .heatmap-percent.medium{color:#fbbf24;}
-  .heatmap-percent.low{color:#f87171;}
+  .stat-value.yellow{color:#fbbf24}
 
-  /* Trade History Table */
-  .trades-card{border-radius:24px;padding:24px;margin-bottom:28px;overflow-x:auto;}
-  table{width:100%;border-collapse:collapse;font-size:13px;}
-  th{text-align:left;padding:12px;color:#7f8ea3;border-bottom:1px solid rgba(255,255,255,0.05);}
-  td{padding:12px;border-bottom:1px solid rgba(255,255,255,0.03);}
-  .badge{padding:4px 10px;border-radius:20px;font-size:11px;font-weight:600;}
-  .badge.buy{background:rgba(16,185,129,0.15);color:#10b981;}
-  .badge.sell{background:rgba(248,113,113,0.15);color:#f87171;}
-  .badge.won{background:rgba(16,185,129,0.15);color:#10b981;}
-  .badge.lost{background:rgba(248,113,113,0.15);color:#f87171;}
-  .badge.open{background:rgba(56,189,248,0.15);color:#38bdf8;}
+  .row{display:grid;grid-template-columns:1fr 1fr;gap:16px;margin-bottom:24px}
 
-  /* Activity Timeline */
-  .activity-card{border-radius:24px;padding:24px;}
-  .timeline-item{
-    display:flex;
-    gap:12px;
-    padding:12px 0;
-    border-left:2px solid rgba(56,189,248,0.3);
-    margin-left:12px;
-    padding-left:20px;
-  }
-  .timeline-time{font-size:11px;color:#64748b;min-width:55px;}
-  .timeline-text{font-size:12px;color:#94a3b8;}
-  .timeline-text.trade{color:#34d399;}
-  .timeline-text.error{color:#f87171;}
-  .timeline-text.warn{color:#fbbf24;}
-  .timeline-text.info{color:#38bdf8;}
+  @media(max-width:700px){.row{grid-template-columns:1fr}}
 
-  /* Bot Logs Card */
-  .logs-card{border-radius:24px;padding:24px;margin-bottom:28px;}
-  .logs-container{background:rgba(10,14,26,0.8);border-radius:16px;padding:16px;font-family:monospace;font-size:12px;max-height:400px;overflow-y:auto;line-height:1.8;}
-  
-  .empty{text-align:center;padding:40px;color:#475569;}
-  .tabs{display:flex;gap:8px;margin-bottom:16px;flex-wrap:wrap;}
-  .filter-tab{padding:6px 14px;border-radius:6px;border:1px solid rgba(255,255,255,0.1);background:transparent;color:#64748b;font-size:13px;cursor:pointer;transition:0.2s;}
-  .filter-tab.active{background:rgba(56,189,248,0.15);border-color:#38bdf8;color:#e2e8f0;}
-  .sync-btn,.save-btn{padding:8px 16px;background:rgba(30,41,59,0.8);color:#94a3b8;border:1px solid rgba(255,255,255,0.05);border-radius:10px;font-size:13px;font-weight:600;cursor:pointer;transition:0.2s;margin:4px;}
-  .sync-btn:hover,.save-btn:hover{background:#334155;color:#e2e8f0;}
-  .form-group{margin-bottom:12px;}
-  .form-group label{display:block;font-size:11px;color:#7f8ea3;margin-bottom:5px;}
-  .form-group input,.form-group select{width:100%;padding:10px 12px;background:rgba(15,23,42,0.8);border:1px solid rgba(255,255,255,0.08);border-radius:10px;color:#e2e8f0;font-size:13px;outline:none;}
-  .form-group input:focus{border-color:#38bdf8;}
-  .toggle-btn{padding:10px 24px;border-radius:12px;border:none;font-weight:700;cursor:pointer;transition:0.2s;}
-  .toggle-btn.start{background:#10b981;color:#fff;}
-  .toggle-btn.stop{background:#f87171;color:#fff;}
+  .card{background:#111827;border:1px solid #1e293b;border-radius:12px;padding:24px}
+
+  .card-title{font-size:14px;font-weight:600;color:#94a3b8;text-transform:uppercase;letter-spacing:.6px;margin-bottom:20px}
+
+  .bot-toggle{display:flex;align-items:center;justify-content:space-between;padding:16px;background:#0f172a;border-radius:10px;margin-bottom:16px}
+
+  .bot-status{display:flex;align-items:center;gap:10px}
+
+  .dot{width:10px;height:10px;border-radius:50%;background:#334155}
+
+  .dot.active{background:#34d399;box-shadow:0 0 8px #34d399}
+
+  .bot-label{font-weight:600}
+
+  .bot-sub{font-size:12px;color:#64748b;margin-top:2px}
+
+  .toggle-btn{padding:8px 20px;border-radius:8px;border:none;font-size:14px;font-weight:600;cursor:pointer;transition:.2s}
+
+  .toggle-btn.start{background:#166534;color:#86efac}
+
+  .toggle-btn.start:hover{background:#15803d}
+
+  .toggle-btn.stop{background:#7f1d1d;color:#fca5a5}
+
+  .toggle-btn.stop:hover{background:#991b1b}
+
+  .risk-form .form-row{display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:12px}
+
+  .form-group{margin-bottom:0}
+
+  label{display:block;font-size:12px;color:#64748b;margin-bottom:5px}
+
+  input,select{width:100%;padding:8px 12px;background:#0f172a;border:1px solid #1e293b;border-radius:7px;color:#e2e8f0;font-size:13px;outline:none}
+
+  input:focus,select:focus{border-color:#38bdf8}
+
+  .sync-btn{padding:8px 16px;background:#1e293b;color:#94a3b8;border:none;border-radius:8px;font-size:13px;font-weight:600;cursor:pointer;width:100%;margin-top:8px;transition:.2s}
+
+  .sync-btn:hover{background:#334155;color:#e2e8f0}
+
+  .save-btn:hover{background:#1d4ed8}
+
+  .success-msg{color:#34d399;font-size:13px;margin-top:8px;display:none}
+
+  .refresh-btn{padding:5px 12px;background:#1e293b;color:#94a3b8;border:none;border-radius:6px;font-size:12px;cursor:pointer}
+
+  .refresh-btn:hover{background:#334155}
+
+  @keyframes pulse{0%,100%{opacity:1}50%{opacity:.4}}
+
+  table{width:100%;border-collapse:collapse;font-size:13px}
+
+  th{text-align:left;padding:10px 12px;color:#64748b;border-bottom:1px solid #1e293b;font-weight:500}
+
+  td{padding:10px 12px;border-bottom:1px solid #0f172a}
+
+  .badge{padding:3px 8px;border-radius:20px;font-size:11px;font-weight:600}
+
+  .badge.open{background:#1e3a5f;color:#38bdf8}
+
+  .badge.won{background:#14532d;color:#86efac}
+
+  .badge.lost{background:#450a0a;color:#fca5a5}
+
+  .badge.buy{background:#14532d;color:#86efac}
+
+  .badge.sell{background:#450a0a;color:#fca5a5}
+
+  .empty{text-align:center;padding:40px;color:#475569}
+
+  .tabs{display:flex;gap:8px;margin-bottom:16px}
+
+  .filter-tab{padding:6px 14px;border-radius:6px;border:1px solid #1e293b;background:transparent;color:#64748b;font-size:13px;cursor:pointer}
+
+  .filter-tab.active{background:#1e293b;color:#e2e8f0}
+
 </style>
+
 </head>
+
 <body>
 
+
+
 <div class="header">
-  <h1>⚡ MANTUL FLOW — AI-POWERED SMART MONEY TRADING</h1>
+
+  <h1>⚡ MANTUL'S UNIFIED TRADING BOT FOR DERIV</h1>
+
   <div class="header-right">
-    <span class="user-name" id="headerName">Loading authentication...</span>
+
+    <span class="user-name" id="headerName"></span>
+
     <button class="btn-logout" onclick="logout()">Logout</button>
+
   </div>
+
 </div>
+
+
 
 <div class="main">
-  <div class="hero-section">
-    <div class="hero-card">
-      <div class="hero-greeting">WELCOME BACK</div>
-      <div class="hero-title" id="heroName">... 👋</div>
-      <div class="hero-sub">AI-Powered Smart Money Trading System</div>
-      <div class="balance-label">
-        Account Balance
-        <button class="refresh-balance" onclick="refreshBalance()">⟳ Refresh</button>
-      </div>
-      <div class="balance-amount" id="balanceAmount">$0.00</div>
-      <div class="health-score">
-        <span style="font-size:12px">Account Health</span>
-        <div class="health-bar"><div class="health-fill" id="healthFill"></div></div>
-        <span style="font-size:12px;color:#34d399" id="healthPercent">--%</span>
-      </div>
+
+
+
+  <!-- STATS ROW -->
+
+  <div class="grid" id="statsGrid">
+
+    <div class="stat-card">
+
+      <div class="stat-label">Win Rate</div>
+
+      <div class="stat-value blue" id="statWinRate">--%</div>
+
     </div>
-    <div class="session-card card">
-      <div class="session-status">
-        <div class="live-badge" id="botBadge"><div class="live-dot" id="botPulse"></div> <span id="badgeState">SCANNING SESSION</span></div>
-        <span style="font-size:11px;color:#475569" id="sessionTime"></span>
-      </div>
-      <div class="ai-stat"><span class="ai-label">Current Session</span><span class="ai-value" id="currentSession">Calculating...</span></div>
-      <div class="ai-stat"><span class="ai-label">Market Status</span><span class="ai-value" id="marketStatus">Processing...</span></div>
-      <div class="ai-stat"><span class="ai-label">Volatility</span><span class="ai-value" id="volatility">Calculating...</span></div>
+
+    <div class="stat-card">
+
+      <div class="stat-label">Total PnL</div>
+
+      <div class="stat-value" id="statTotalPnl">$--</div>
+
     </div>
+
+    <div class="stat-card">
+
+      <div class="stat-label">Today PnL</div>
+
+      <div class="stat-value" id="statTodayPnl">$--</div>
+
+    </div>
+
+    <div class="stat-card">
+
+      <div class="stat-label">Total Trades</div>
+
+      <div class="stat-value yellow" id="statTotal">--</div>
+
+    </div>
+
+    <div class="stat-card">
+
+      <div class="stat-label">Open Now</div>
+
+      <div class="stat-value blue" id="statOpen">--</div>
+
+    </div>
+
   </div>
 
-  <div class="stats-grid" id="statsGrid">
-    <div class="stat-card"><div class="stat-label">Win Rate</div><div class="stat-value blue" id="statWinRate">--%</div></div>
-    <div class="stat-card"><div class="stat-label">Total PnL</div><div class="stat-value" id="statTotalPnl">$--</div></div>
-    <div class="stat-card"><div class="stat-label">Today PnL</div><div class="stat-value" id="statTodayPnl">$--</div></div>
-    <div class="stat-card"><div class="stat-label">Total Trades</div><div class="stat-value yellow" id="statTotal">--</div></div>
-    <div class="stat-card"><div class="stat-label">Open Now</div><div class="stat-value blue" id="statOpen">--</div></div>
-  </div>
 
-  <div class="market-row" id="marketTickers">
-    <div class="loading-metrics" style="text-align:center;width:100%">Initializing dynamic charting matrices...</div>
-  </div>
 
-  <div class="two-col">
-    <div class="ai-panel card">
-      <div class="ai-header">🤖 AI INTELLIGENCE PANEL</div>
-      <div class="ai-stat"><span class="ai-label">Scanning Markets</span><span class="ai-value" id="scanningMarkets">--</span></div>
-      <div class="ai-stat"><span class="ai-label">Trend Matches</span><span class="ai-value" id="trendMatches">--</span></div>
-      <div class="ai-stat"><span class="ai-label">Potential Entries</span><span class="ai-value" id="potentialEntries">--</span></div>
-      <div class="ai-stat"><span class="ai-label">Confidence</span><span class="ai-value" id="confidenceValue">--%</span></div>
-      <div class="confidence-bar"><div class="confidence-fill" id="confidenceFill"></div></div>
-      
-      <div class="risk-meter">
-        <div class="risk-header"><span>Risk Exposure</span><span id="riskPercentText">--%</span></div>
-        <div class="risk-bar"><div class="risk-fill" id="riskFill"></div></div>
-        <div style="font-size:11px;color:#fbbf24;margin-top:6px" id="riskLevel">Loading metrics...</div>
-      </div>
+  <div class="row">
 
-      <div class="badges-row">
-        <div class="perf-badge">🏆 Best Trade: <strong id="bestTrade">$--</strong></div>
-        <div class="perf-badge">🔥 Win Streak: <strong id="winStreak">--</strong></div>
-        <div class="perf-badge">📈 Monthly Return: <strong id="monthlyReturn">--%</strong></div>
-      </div>
-    </div>
 
-    <div class="card" style="padding:24px;border-radius:24px">
-      <div class="ai-header">📈 EQUITY CURVE / PERFORMANCE</div>
-      <div class="chart-container">
-        <canvas id="equityChart" style="width:100%;height:250px"></canvas>
-      </div>
-      <div style="display:flex;justify-content:center;gap:24px;margin-top:16px;font-size:12px;color:#64748b">
-        <div><span style="color:#38bdf8">●</span> Real Account PnL Variance Curve</div>
-      </div>
-    </div>
-  </div>
 
-  <div class="signals-heatmap">
-    <div class="signal-card card">
-      <div class="ai-header">🎯 RECENT AI SIGNALS</div>
-      <div id="signalsList">
-        <div class="empty">Calculating real-time market entries...</div>
-      </div>
-    </div>
-    <div class="heatmap-card card">
-      <div class="ai-header">🔥 TRADING HEATMAP</div>
-      <div id="heatmapList">
-        <div class="empty">Processing directional vectors...</div>
-      </div>
-      <div class="gauge-container">
-        <div class="gauge-value" id="gaugeConfidence">--</div>
-        <div class="gauge-label">Market Confidence (%)</div>
-        <div class="confidence-bar" style="margin-top:8px"><div class="confidence-fill" id="gaugeFill"></div></div>
-      </div>
-    </div>
-  </div>
+    <!-- BOT CONTROL + RISK -->
 
-  <div class="two-col">
-    <div class="card" style="padding:24px;border-radius:24px">
-      <div class="ai-header">⚙️ BOT CONTROL & RISK</div>
-      <div class="bot-toggle" style="display:flex;justify-content:space-between;align-items:center;padding:16px;background:rgba(0,0,0,0.2);border-radius:16px;margin-bottom:16px">
-        <div>
-          <div id="botControlTitle" style="font-weight:700;font-size:14px;color:#fff">Checking Status...</div>
-          <div style="font-size:11px;color:#7f8ea3" id="botControlSub">Synchronizing cluster state...</div>
+    <div>
+
+      <div class="card" style="margin-bottom:16px">
+
+        <div class="card-title">Bot Control</div>
+
+        <div class="bot-toggle">
+
+          <div class="bot-status">
+
+            <div class="dot" id="botDot"></div>
+
+            <div>
+
+              <div class="bot-label" id="botLabel">Stopped</div>
+
+              <div class="bot-sub" id="botSub">Click Start to begin trading</div>
+
+            </div>
+
+          </div>
+
+          <button class="toggle-btn start" id="toggleBtn" onclick="toggleBot()">Start</button>
+
         </div>
-        <button class="toggle-btn" id="toggleBtn" onclick="toggleExecutionDaemon()">Start</button>
+
+        <button class="sync-btn" id="syncBtn" onclick="syncTrades()">🔄 Sync Trades with Deriv</button>
+
+        <button class="sync-btn" style="margin-top:6px;color:#38bdf8" onclick="toggleLogs()">📋 View Bot Logs (72hrs)</button>
+
+        <button class="sync-btn" id="importBtn" style="margin-top:6px;color:#fbbf24" onclick="importTrades()">📥 Import All Trades from Deriv</button>
+
+        <div class="success-msg" id="syncMsg"></div>
+
+        <div class="success-msg" id="importMsg"></div>
+
       </div>
-      <button class="sync-btn" onclick="triggerActionSync('/api/trades/sync')" style="width:100%;margin-bottom:8px">🔄 Sync Trades with Deriv</button>
-      <button class="sync-btn" onclick="triggerActionSync('/api/trades/import')" style="width:100%;margin-bottom:8px">📥 Import All Trades from Deriv</button>
-      <button class="sync-btn" onclick="toggleLogsPane()" style="width:100%;margin-bottom:16px">📋 Toggle Real-Time Engine Logs</button>
-      
-      <div class="risk-form">
-        <div class="form-row" style="display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:12px">
-          <div class="form-group"><label>Stake Allocation Ratio</label><input type="number" id="riskPct" step="0.01" min="0.01" max="1.00"/></div>
-          <div class="form-group"><label>Max Parallel Positions</label><input type="number" id="maxOpen" min="1" max="20"/></div>
+
+
+
+      <div class="card">
+
+        <div class="card-title">Risk Settings</div>
+
+        <div class="risk-form">
+
+          <div class="form-row">
+
+            <div class="form-group">
+
+              <label>Stake % of Balance</label>
+
+              <input type="number" id="riskPct" step="1" min="1" max="50" placeholder="10"/>
+
+            </div>
+
+            <div class="form-group">
+
+              <label>Max Open Trades</label>
+
+              <input type="number" id="maxOpen" min="1" max="10" placeholder="3"/>
+
+            </div>
+
+          </div>
+
+          <div class="form-row">
+
+            <div class="form-group">
+
+              <label>Daily Loss Limit %</label>
+
+              <input type="number" id="dailyLoss" step="1" min="5" max="100" placeholder="30"/>
+
+            </div>
+
+            <div class="form-group">
+
+              <label>Max Loss Streak</label>
+
+              <input type="number" id="lossStreak" min="1" max="10" placeholder="3"/>
+
+            </div>
+
+          </div>
+
+          <div class="form-row">
+
+            <div class="form-group">
+
+              <label>Stop Loss %</label>
+
+              <input type="number" id="stopLoss" step="5" min="10" max="200" placeholder="80"/>
+
+            </div>
+
+            <div class="form-group">
+
+              <label>Take Profit %</label>
+
+              <input type="number" id="takeProfit" step="10" min="10" max="1000" placeholder="200"/>
+
+            </div>
+
+          </div>
+
+          <button class="save-btn" onclick="saveRisk()">Save Settings</button>
+
+          <div class="success-msg" id="riskSuccess">✅ Settings saved!</div>
+
         </div>
-        <div class="form-row" style="display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:12px">
-          <div class="form-group"><label>Stop Loss Multiplier</label><input type="number" id="stopLoss" step="0.05"/></div>
-          <div class="form-group"><label>Take Profit Multiplier</label><input type="number" id="takeProfit" step="0.05"/></div>
-        </div>
-        <button class="save-btn" onclick="commitRiskProtocol()" style="width:100%">Save Risk Settings</button>
+
       </div>
+
     </div>
 
-    <div class="activity-card card">
-      <div class="ai-header">⏱️ SYSTEM EVENT TIMELINE</div>
-      <div id="timelineList">
-        <div class="empty">Awaiting inbound payload array stream...</div>
+
+
+    <!-- SETTINGS -->
+
+    <div class="card">
+
+      <div class="card-title">Account Settings</div>
+
+      <div class="form-group" style="margin-bottom:12px">
+
+        <label>Deriv PAT Token</label>
+
+        <input type="password" id="settingsPAT" placeholder="pat_xxxxxxxxxxxxxxxx"/>
+
       </div>
+
+      <div class="form-group" style="margin-bottom:12px">
+
+        <label>Deriv App ID</label>
+
+        <input type="text" id="settingsAppId" placeholder="33kDvVzcElBmdV0wfzTy1"/>
+
+      </div>
+
+      <div class="form-group" style="margin-bottom:12px">
+
+        <label>Trading Mode</label>
+
+        <select id="settingsMode">
+
+          <option value="demo">Demo</option>
+
+          <option value="real">Real</option>
+
+        </select>
+
+      </div>
+
+      <div class="form-group" style="margin-bottom:12px">
+
+        <label>Telegram Chat ID</label>
+
+        <input type="text" id="settingsChatId" placeholder="Get from @userinfobot"/>
+
+      </div>
+
+      <button class="save-btn" onclick="saveSettings()">Update Settings</button>
+
+      <div class="success-msg" id="settingsSuccess">✅ Settings updated!</div>
+
     </div>
+
+
+
   </div>
 
-  <div class="logs-card card" id="logsCard" style="display:none;">
-    <div class="ai-header" style="display:flex;justify-content:space-between;align-items:center">
-      📋 ENGINE LOGS STACK VIEW
+
+
+  <!-- BOT LOGS -->
+
+  <div class="card" id="logsCard" style="display:none">
+
+    <div class="card-title" style="display:flex;justify-content:space-between;align-items:center">
+
+      Bot Logs (last 72 hours)
+
       <div style="display:flex;gap:8px">
-        <button class="refresh-btn" onclick="refreshInterfaceFeed()" style="padding:5px 12px;background:#1e293b;border:none;border-radius:6px;color:#94a3b8;cursor:pointer">↻ Force Refresh</button>
-        <button class="refresh-btn" onclick="toggleLogsPane()" style="padding:5px 12px;background:#1e293b;border:none;border-radius:6px;color:#94a3b8;cursor:pointer">✕ Close</button>
+
+        <select id="logLevel" onchange="loadLogs()" style="padding:5px 10px;background:#0f172a;border:1px solid #1e293b;border-radius:6px;color:#e2e8f0;font-size:12px">
+
+          <option value="">All</option>
+
+          <option value="trade">Trades only</option>
+
+          <option value="error">Errors only</option>
+
+          <option value="warn">Warnings only</option>
+
+        </select>
+
+        <button class="refresh-btn" onclick="loadLogs()">↻ Refresh</button>
+
+        <button class="refresh-btn" onclick="toggleLogs()">✕ Close</button>
+
       </div>
+
     </div>
-    <div class="logs-container" id="logsContainer">
-      <div style="color:#475569">Listening to log data stream array...</div>
+
+    <div id="logsContainer" style="background:#0a0e1a;border-radius:8px;padding:16px;font-family:monospace;font-size:12px;max-height:400px;overflow-y:auto;line-height:1.8">
+
+      <div style="color:#475569">Loading logs...</div>
+
     </div>
+
   </div>
 
-  <div class="card" style="padding:24px;border-radius:24px;margin-bottom:28px">
-    <div class="ai-header">🔐 ACCOUNT ENVIRONMENT CONFIGURATION</div>
-    <div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(200px,1fr));gap:16px">
-      <div class="form-group"><label>Deriv Private Access Token (PAT)</label><input type="password" id="settingsPAT" placeholder="••••••••••••••••"/></div>
-      <div class="form-group"><label>Deriv Application ID</label><input type="text" id="settingsAppId"/></div>
-      <div class="form-group"><label>Cluster Mode Environment</label><select id="settingsMode"><option value="demo">Demo Testing Instance</option><option value="real">Real Asset Production Environment</option></select></div>
-      <div class="form-group"><label>Telegram Metrics Chat ID</label><input type="text" id="settingsChatId"/></div>
-    </div>
-    <button class="save-btn" onclick="commitAccountSettings()" style="margin-top:16px">Update Settings</button>
-  </div>
 
-  <div class="trades-card card">
-    <div class="ai-header">📊 MASTER HISTORICAL REGISTRY</div>
+
+  <!-- TRADE HISTORY -->
+
+  <div class="card">
+
+    <div class="card-title">Trade History</div>
+
     <div class="tabs">
-      <button class="filter-tab active" id="tab-all" onclick="updateTimeframeSelection('all', this)">All History Records</button>
-      <button class="filter-tab" id="tab-today" onclick="updateTimeframeSelection('today', this)">Today</button>
-      <button class="filter-tab" id="tab-yesterday" onclick="updateTimeframeSelection('yesterday', this)">Yesterday</button>
-      <button class="filter-tab" id="tab-7days" onclick="updateTimeframeSelection('7days', this)">Last 7 Days</button>
-      <button class="filter-tab" id="tab-30days" onclick="updateTimeframeSelection('30days', this)">Last 30 Days</button>
-      <button class="filter-tab" id="tab-90days" onclick="updateTimeframeSelection('90days', this)">Last 90 Days</button>
+
+      <button class="filter-tab active" onclick="loadTrades('all', this)">All</button>
+
+      <button class="filter-tab" onclick="loadTrades('open', this)">Open</button>
+
+      <button class="filter-tab" onclick="loadTrades('won', this)">Won</button>
+
+      <button class="filter-tab" onclick="loadTrades('lost', this)">Lost</button>
+
     </div>
-    <div id="tradesTable"><div class="empty">Parsing backend historic objects...</div></div>
+
+    <div id="tradesTable">
+
+      <div class="empty">Loading trades...</div>
+
+    </div>
+
   </div>
+
+
+
 </div>
 
+
+
 <script>
-let timeframeFilter = "all";
-let lineChartTracker = null;
-let currentProfileContext = null;
-let masterTradesCacheArray = []; 
+
+const token = localStorage.getItem("token");
+
+if (!token) window.location.href = "/";
+
+
+
+const API = async (path, method = "GET", body = null) => {
+
+  const opts = { method, headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" } };
+
+  if (body) opts.body = JSON.stringify(body);
+
+  const res  = await fetch("/api" + path, opts);
+
+  const data = await res.json();
+
+  if (res.status === 401) { localStorage.clear(); window.location.href = "/"; }
+
+  return data;
+
+};
+
+
+
+let botActive = false;
+
+
+
+async function init() {
+
+  const user = await API("/user/me");
+
+  document.getElementById("headerName").textContent = user.name;
+
+  botActive = user.botActive;
+
+  updateBotUI(botActive);
+
+
+
+  // Fill risk form
+
+  const r = user.risk;
+
+  document.getElementById("riskPct").value   = Math.round(r.riskPct * 100);
+
+  document.getElementById("maxOpen").value   = r.maxOpenTrades;
+
+  document.getElementById("dailyLoss").value = Math.round(r.maxDailyLossPct * 100);
+
+  document.getElementById("lossStreak").value = r.maxConsecutiveLosses;
+
+  document.getElementById("stopLoss").value   = Math.round(r.stopLossPct * 100);
+
+  document.getElementById("takeProfit").value = Math.round(r.takeProfitPct * 100);
+
+
+
+  await loadStats();
+
+  await loadTrades("all");
+
+}
+
+
+
+async function loadStats() {
+
+  const s = await API("/trades/stats");
+
+  const pnlEl   = document.getElementById("statTotalPnl");
+
+  const todayEl = document.getElementById("statTodayPnl");
+
+  document.getElementById("statWinRate").textContent = s.winRate + "%";
+
+  pnlEl.textContent   = (s.totalPnl >= 0 ? "+" : "") + "$" + s.totalPnl;
+
+  pnlEl.className     = "stat-value " + (s.totalPnl >= 0 ? "green" : "red");
+
+  todayEl.textContent = (s.todayPnl >= 0 ? "+" : "") + "$" + s.todayPnl;
+
+  todayEl.className   = "stat-value " + (s.todayPnl >= 0 ? "green" : "red");
+
+  document.getElementById("statTotal").textContent = s.total;
+
+  document.getElementById("statOpen").textContent  = s.open;
+
+}
+
+
+
+async function loadTrades(status, btnEl) {
+
+  currentTradeFilter = status || "all";
+
+  if (btnEl) {
+
+    document.querySelectorAll(".filter-tab").forEach(b => b.classList.remove("active"));
+
+    btnEl.classList.add("active");
+
+  }
+
+  const url   = status === "all" ? "/trades?limit=30" : `/trades?status=${status}&limit=30`;
+
+  const data  = await API(url);
+
+  const table = document.getElementById("tradesTable");
+
+
+
+  if (!data.trades || data.trades.length === 0) {
+
+    table.innerHTML = '<div class="empty">No trades yet</div>'; return;
+
+  }
+
+
+
+  const rows = data.trades.map(t => {
+
+    const dir     = t.direction === "MULTUP" ? "BUY" : "SELL";
+
+    const dirClass = dir === "BUY" ? "buy" : "sell";
+
+    const pnl     = t.pnl !== 0 ? (t.pnl > 0 ? `<span style="color:#34d399">+$${t.pnl.toFixed(2)}</span>` : `<span style="color:#f87171">-$${Math.abs(t.pnl).toFixed(2)}</span>`) : "—";
+
+    const date    = new Date(t.openedAt).toLocaleString();
+
+    return `<tr>
+
+      <td>${t.symbol}</td>
+
+      <td><span class="badge ${dirClass}">${dir}</span></td>
+
+      <td>$${t.stake.toFixed(2)}</td>
+
+      <td>x${t.multiplier}</td>
+
+      <td>${t.strength ? t.strength.toFixed(0) + "%" : "—"}</td>
+
+      <td>${pnl}</td>
+
+      <td><span class="badge ${t.status}">${t.status}</span></td>
+
+      <td style="color:#475569">${date}</td>
+
+    </tr>`;
+
+  }).join("");
+
+
+
+  table.innerHTML = `<table>
+
+    <thead><tr><th>Symbol</th><th>Dir</th><th>Stake</th><th>Mult</th><th>Strength</th><th>PnL</th><th>Status</th><th>Opened</th></tr></thead>
+
+    <tbody>${rows}</tbody>
+
+  </table>`;
+
+}
+
+
+
+function updateBotUI(active) {
+
+  const dot = document.getElementById("botDot");
+
+  const lbl = document.getElementById("botLabel");
+
+  const sub = document.getElementById("botSub");
+
+  const btn = document.getElementById("toggleBtn");
+
+  dot.className  = "dot" + (active ? " active" : "");
+
+  lbl.textContent = active ? "Running" : "Stopped";
+
+  sub.textContent = active ? "Bot is scanning markets every 15s" : "Click Start to begin trading";
+
+  btn.className  = "toggle-btn " + (active ? "stop" : "start");
+
+  btn.textContent = active ? "Stop" : "Start";
+
+}
+
+
+
 let logsVisible = false;
 
-const MONITOR_ASSETS = [
-  "frxEURUSD", "frxGBPUSD", "frxUSDJPY", "frxUSDCHF", "frxAUDUSD", 
-  "frxUSDCAD", "frxNZDUSD", "frxXAUUSD", "frxXAGUSD", "cryBTCUSD", "cryETHUSD"
-];
+let currentTradeFilter = "all";
+
+
+
+function toggleLogs() {
+
+  logsVisible = !logsVisible;
+
+  document.getElementById("logsCard").style.display = logsVisible ? "block" : "none";
+
+  if (logsVisible) loadLogs();
+
+}
+
+
+
+async function loadLogs() {
+
+  const level     = document.getElementById("logLevel").value;
+
+  const container = document.getElementById("logsContainer");
+
+  const url       = "/api/logs" + (level ? `?level=${level}&limit=300` : "?limit=300");
+
+
+
+  container.innerHTML = '<span style="color:#475569">Loading...</span>';
+
+
+
+  try {
+
+    const res = await fetch(url, {
+
+      headers: { Authorization: `Bearer ${token}` }
+
+    });
+
+
+
+    const contentType = res.headers.get("content-type") || "";
+
+    if (!contentType.includes("application/json")) {
+
+      const text = await res.text();
+
+      container.innerHTML = `<span style="color:#f87171">Server error: ${text.slice(0, 300)}</span>`;
+
+      return;
+
+    }
+
+
+
+    if (res.status === 401) { localStorage.clear(); window.location.href = "/"; return; }
+
+
+
+    const logs = await res.json();
+
+
+
+    if (!logs || !Array.isArray(logs) || !logs.length) {
+
+      container.innerHTML = '<span style="color:#475569">No logs yet. Start your bot to see activity here.</span>';
+
+      return;
+
+    }
+
+
+
+    const levelColors = { trade: "#34d399", error: "#f87171", warn: "#fbbf24", info: "#94a3b8" };
+
+
+
+    container.innerHTML = logs.map(l => {
+
+      const time  = new Date(l.createdAt).toLocaleTimeString();
+
+      const date  = new Date(l.createdAt).toLocaleDateString();
+
+      const color = levelColors[l.level] || "#94a3b8";
+
+      return `<div style="color:${color};margin-bottom:2px"><span style="color:#334155">[${date} ${time}]</span> ${escapeHtml(l.message)}</div>`;
+
+    }).join("");
+
+
+
+    container.scrollTop = container.scrollHeight;
+
+  } catch (e) {
+
+    container.innerHTML = `<span style="color:#f87171">Error: ${e.message}</span>`;
+
+  }
+
+}
+
+
+
+function escapeHtml(text) {
+
+  return text
+
+    .replace(/&/g, "&amp;")
+
+    .replace(/</g, "&lt;")
+
+    .replace(/>/g, "&gt;");
+
+}
+
+
+
+async function importTrades() {
+
+  const btn = document.getElementById("importBtn");
+
+  const msg = document.getElementById("importMsg");
+
+  btn.disabled    = true;
+
+  btn.textContent = "⏳ Importing from Deriv...";
+
+  msg.style.display = "none";
+
+
+
+  try {
+
+    const res  = await fetch("/api/import/trades", {
+
+      method: "POST",
+
+      headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
+
+    });
+
+    const data = await res.json();
+
+
+
+    if (data.error) {
+
+      msg.style.color   = "#f87171";
+
+      msg.textContent   = "❌ " + data.error;
+
+    } else {
+
+      msg.style.color   = "#34d399";
+
+      msg.textContent   = `✅ Imported ${data.imported} trade(s) | Updated ${data.updated} | Skipped ${data.skipped}`;
+
+      await loadStats();
+
+      await loadTrades("all");
+
+    }
+
+    msg.style.display = "block";
+
+    setTimeout(() => msg.style.display = "none", 6000);
+
+  } catch (e) {
+
+    msg.style.color   = "#f87171";
+
+    msg.textContent   = "❌ " + e.message;
+
+    msg.style.display = "block";
+
+  }
+
+
+
+  btn.disabled    = false;
+
+  btn.textContent = "📥 Import All Trades from Deriv";
+
+}
+
+
+
+async function importTrades() {
+
+  const btn = document.getElementById("importBtn");
+
+  const msg = document.getElementById("importMsg");
+
+  btn.disabled    = true;
+
+  btn.textContent = "⏳ Importing from Deriv...";
+
+  msg.style.display = "none";
+
+
+
+  try {
+
+    const res  = await fetch("/api/user/import-trades", {
+
+      method:  "POST",
+
+      headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
+
+    });
+
+
+
+    const contentType = res.headers.get("content-type") || "";
+
+    if (!contentType.includes("application/json")) {
+
+      const text = await res.text();
+
+      msg.style.color   = "#f87171";
+
+      msg.textContent   = "❌ Server error: " + text.slice(0, 200);
+
+      msg.style.display = "block";
+
+      return;
+
+    }
+
+
+
+    const data = await res.json();
+
+
+
+    if (data.error) {
+
+      msg.style.color   = "#f87171";
+
+      msg.textContent   = "❌ " + data.error;
+
+    } else {
+
+      msg.style.color   = "#34d399";
+
+      msg.textContent   = "✅ " + data.message;
+
+      await loadStats();
+
+      await loadTrades("all");
+
+    }
+
+    msg.style.display = "block";
+
+    setTimeout(() => msg.style.display = "none", 6000);
+
+  } catch (e) {
+
+    msg.style.color   = "#f87171";
+
+    msg.textContent   = "❌ " + e.message;
+
+    msg.style.display = "block";
+
+  }
+
+
+
+  btn.disabled    = false;
+
+  btn.textContent = "📥 Import All Trades from Deriv";
+
+}
+
+
+
+async function syncTrades() {
+
+  const btn = document.getElementById("syncBtn");
+
+  const msg = document.getElementById("syncMsg");
+
+  btn.disabled    = true;
+
+  btn.textContent = "⏳ Syncing...";
+
+  msg.style.display = "none";
+
+
+
+  try {
+
+    const data = await API("/user/sync-trades", "POST");
+
+    if (data.error) {
+
+      msg.style.color   = "#f87171";
+
+      msg.textContent   = "❌ " + data.error;
+
+    } else {
+
+      msg.style.color   = "#34d399";
+
+      msg.textContent   = `✅ ${data.message}`;
+
+      await loadStats();
+
+      await loadTrades("all");
+
+    }
+
+    msg.style.display = "block";
+
+    setTimeout(() => msg.style.display = "none", 4000);
+
+  } catch (e) {
+
+    msg.style.color   = "#f87171";
+
+    msg.textContent   = "❌ Network error";
+
+    msg.style.display = "block";
+
+  }
+
+
+
+  btn.disabled    = false;
+
+  btn.textContent = "🔄 Sync Trades with Deriv";
+
+}
+
+
+
+async function toggleBot() {
+
+  const newState = !botActive;
+
+  const btn = document.getElementById("toggleBtn");
+
+  btn.disabled = true;
+
+  btn.textContent = "Please wait...";
+
+  const res = await API("/user/bot", "PUT", { active: newState });
+
+  botActive = res.botActive;
+
+  updateBotUI(botActive);
+
+  btn.disabled = false;
+
+  await loadStats();
+
+}
+
+
+
+async function saveRisk() {
+
+  const data = {
+
+    riskPct:              parseFloat(document.getElementById("riskPct").value) / 100,
+
+    maxOpenTrades:        parseInt(document.getElementById("maxOpen").value),
+
+    maxDailyLossPct:      parseFloat(document.getElementById("dailyLoss").value) / 100,
+
+    maxConsecutiveLosses: parseInt(document.getElementById("lossStreak").value),
+
+    stopLossPct:          parseFloat(document.getElementById("stopLoss").value) / 100,
+
+    takeProfitPct:        parseFloat(document.getElementById("takeProfit").value) / 100,
+
+  };
+
+  await API("/user/risk", "PUT", data);
+
+  const msg = document.getElementById("riskSuccess");
+
+  msg.style.display = "block";
+
+  setTimeout(() => msg.style.display = "none", 3000);
+
+}
+
+
+
+async function saveSettings() {
+
+  const data = {
+
+    derivPAT:       document.getElementById("settingsPAT").value.trim(),
+
+    derivAppId:     document.getElementById("settingsAppId").value.trim(),
+
+    derivMode:      document.getElementById("settingsMode").value,
+
+    telegramChatId: document.getElementById("settingsChatId").value.trim(),
+
+  };
+
+  await API("/user/settings", "PUT", data);
+
+  const msg = document.getElementById("settingsSuccess");
+
+  msg.style.display = "block";
+
+  setTimeout(() => msg.style.display = "none", 3000);
+
+}
+
+
 
 function logout() {
-  localStorage.removeItem("token");
-  window.location.href = "/login.html";
+
+  localStorage.clear();
+
+  window.location.href = "/";
+
 }
 
-async function requestGateway(url, method="GET", payload=null) {
-  const securityToken = localStorage.getItem("token");
-  if(!securityToken) {
-    document.getElementById("headerName").textContent = "AUTH TOKEN MISSING — REDIRECTING...";
-    setTimeout(() => { window.location.href = "/login.html"; }, 2000);
-    return null;
-  }
-  const setup = {
-    method,
-    headers: {
-      "Content-Type": "application/json",
-      "Authorization": `Bearer ${securityToken}`
-    }
-  };
-  if(payload) setup.body = JSON.stringify(payload);
-  const response = await fetch(url, setup);
-  if(response.status === 401 || response.status === 403) {
-    window.location.href = "/login.html";
-    return null;
-  }
-  return response.json();
-}
 
-async function runDashboardSystemLoop() {
-  renderVisualTradingTickers();
-  await refreshInterfaceFeed();
-  setInterval(refreshInterfaceFeed, 6000);
-  
-  // Clean session clock cycle loop
-  setInterval(() => {
-    document.getElementById("sessionTime").textContent = new Date().toUTCString();
-  }, 1000);
-}
 
-function renderVisualTradingTickers() {
-  const container = document.getElementById("marketTickers");
-  container.innerHTML = "";
-  MONITOR_ASSETS.forEach(pair => {
-    let cleanTvSymbol = pair.substring(3);
-    if(cleanTvSymbol === "BTCUSD") cleanTvSymbol = "BINANCE:BTCUSDT";
-    if(cleanTvSymbol === "ETHUSD") cleanTvSymbol = "BINANCE:ETHUSDT";
-    
-    const div = document.createElement("div");
-    div.className = "market-ticker-box";
-    div.id = `tv-widget-${pair}`;
-    container.appendChild(div);
+// Auto-refresh stats every 30s
 
-    const script = document.createElement("script");
-    script.src = "https://s3.tradingview.com/tv.js";
-    script.async = true;
-    script.onload = () => {
-      if(typeof TradingView !== 'undefined') {
-        new TradingView.MediumWidget({
-          "symbols": [[pair, cleanTvSymbol]],
-          "chartOnly": false,
-          "width": "100%",
-          "height": "100%",
-          "locale": "en",
-          "colorTheme": "dark",
-          "gridLineColor": "rgba(42, 46, 57, 0)",
-          "trendLineColor": "#2962FF",
-          "fontColor": "#787B86",
-          "underLineColor": "rgba(41, 98, 255, 0.3)",
-          "underLineBottomColor": "rgba(41, 98, 255, 0)",
-          "isTransparent": true,
-          "autosize": true,
-          "container_id": `tv-widget-${pair}`
-        });
-      }
-    };
-    document.head.appendChild(script);
-  });
-}
+// Auto-refresh everything every 15 seconds
 
-async function refreshBalance() {
-  await refreshInterfaceFeed();
-  alert("Account balance snapshot parsed successfully.");
-}
+setInterval(async () => {
 
-async function refreshInterfaceFeed() {
-  try {
-    const profile = await requestGateway("/api/user/me");
-    if(!profile) return;
-    currentProfileContext = profile;
+  await loadStats();
 
-    const historyResponse = await requestGateway("/api/trades?timeframe=all");
-    const processLogs = await requestGateway("/api/logs");
+  await loadTrades(currentTradeFilter);
 
-    document.getElementById("headerName").textContent = `${profile.name} (${profile.derivMode?.toUpperCase() || 'DEMO'})`;
-    document.getElementById("heroName").textContent = profile.name;
+  if (logsVisible) await loadLogs();
 
-    // Dynamically update form inputs only when the user isn't typing
-    if(document.activeElement.tagName !== "INPUT" && document.activeElement.tagName !== "SELECT"){
-      document.getElementById("riskPct").value = profile.risk?.riskPct || 0.10;
-      document.getElementById("maxOpen").value = profile.risk?.maxOpenTrades || 3;
-      document.getElementById("stopLoss").value = profile.risk?.stopLossPct || 0.80;
-      document.getElementById("takeProfit").value = profile.risk?.takeProfitPct || 2.0;
-      document.getElementById("settingsAppId").value = profile.derivAppId || "";
-      document.getElementById("settingsMode").value = profile.derivMode || "demo";
-      document.getElementById("settingsChatId").value = profile.telegramChatId || "";
-    }
+}, 15000);
 
-    // Bot Daemon Executive States Update
-    const badge = document.getElementById("botBadge");
-    const pulse = document.getElementById("botPulse");
-    const stateLabel = document.getElementById("badgeState");
-    const toggleButton = document.getElementById("toggleBtn");
 
-    if(profile.botActive) {
-      badge.className = "live-badge"; pulse.className = "live-dot";
-      stateLabel.textContent = "CORE OPERATIONS LIVE RUNNING";
-      toggleButton.textContent = "Stop Bot"; toggleButton.className = "toggle-btn stop";
-      document.getElementById("botControlTitle").textContent = "Execution Core Daemon Online";
-      document.getElementById("botControlSub").textContent = "Scanning active market matrices";
-    } else {
-      badge.className = "live-badge stopped"; pulse.className = "live-dot stopped";
-      stateLabel.textContent = "DAEMON THREAD PAUSED";
-      toggleButton.textContent = "Start Bot"; toggleButton.className = "toggle-btn start";
-      document.getElementById("botControlTitle").textContent = "Core Engine Instance Suspended";
-      document.getElementById("botControlSub").textContent = "Thread context idling safely";
-    }
 
-    // Dynamic Live Calculations derived from authentic DB changes
-    masterTradesCacheArray = historyResponse.trades || historyResponse || [];
-    
-    // Process display calculations directly from database state array
-    processAndRenderCachedData();
-    drawRealTimeSystemLogs(processLogs);
+init();
 
-  } catch (error) {
-    console.error("Visual sync framework execution error:", error);
-  }
-}
-
-function processAndRenderCachedData() {
-  const now = new Date();
-  
-  // Realized metrics extracted safely from master trades matrix array
-  const totalCountAllTime = masterTradesCacheArray.length;
-  const totalWinsAllTime = masterTradesCacheArray.filter(t => t.status === "won").length;
-  const calculatedWinRatioPercent = totalCountAllTime > 0 ? Math.round((totalWinsAllTime / totalCountAllTime) * 100) : 0;
-  
-  const totalRealizedPnLAllTime = masterTradesCacheArray.reduce((acc, current) => acc + (current.pnl || 0), 0);
-  const currentOpenPositionsCount = masterTradesCacheArray.filter(t => t.status === "open").length;
-
-  // Calculate strict filtering bounds for local timeframes
-  const filteredArray = masterTradesCacheArray.filter(trade => {
-    const tradeDate = new Date(trade.createdAt || trade.openedAt);
-    const differenceInTime = now.getTime() - tradeDate.getTime();
-    const differenceInDays = differenceInTime / (1000 * 3600 * 24);
-
-    if (timeframeFilter === "today") {
-      return tradeDate.toDateString() === now.toDateString();
-    } else if (timeframeFilter === "yesterday") {
-      const yesterday = new Date();
-      yesterday.setDate(now.getDate() - 1);
-      return tradeDate.toDateString() === yesterday.toDateString();
-    } else if (timeframeFilter === "7days") {
-      return differenceInDays <= 7;
-    } else if (timeframeFilter === "30days") {
-      return differenceInDays <= 30;
-    } else if (timeframeFilter === "90days") {
-      return differenceInDays <= 90;
-    }
-    return true; // default "all"
-  });
-
-  // Calculate timeframe-isolated historical PnL allocations
-  const timeFramePnL = filteredArray.reduce((acc, current) => acc + (current.pnl || 0), 0);
-  const todayPnL = masterTradesCacheArray.filter(t => new Date(t.createdAt || t.openedAt).toDateString() === now.toDateString()).reduce((acc, t) => acc + (t.pnl || 0), 0);
-
-  // Core Static Asset Matrix Binding
-  const baselineAccountStartingBalance = 10000; // Simulated reference pool tracking margin
-  const liveDynamicLiquidBalance = baselineAccountStartingBalance + totalRealizedPnLAllTime;
-  
-  document.getElementById("balanceAmount").textContent = `$${liveDynamicLiquidBalance.toLocaleString(undefined, {minimumFractionDigits:2})}`;
-  
-  // Dynamically calculate Health Score based on parameters instead of demo values
-  const relativeHealthPerformanceMetric = Math.min(100, Math.max(10, Math.round(100 + (totalRealizedPnLAllTime / baselineAccountStartingBalance) * 100)));
-  document.getElementById("healthPercent").textContent = `${relativeHealthPerformanceMetric}%`;
-  document.getElementById("healthFill").style.width = `${relativeHealthPerformanceMetric}%`;
-
-  // Bind Metrics UI fields securely
-  document.getElementById("statWinRate").textContent = `${calculatedWinRatioPercent}%`;
-  document.getElementById("statTotal").textContent = totalCountAllTime;
-  document.getElementById("statOpen").textContent = currentOpenPositionsCount;
-  
-  const totalPnlElement = document.getElementById("statTotalPnl");
-  totalPnlElement.textContent = `$${totalRealizedPnLAllTime.toLocaleString(undefined, {minimumFractionDigits: 2})}`;
-  totalPnlElement.className = `stat-value ${totalRealizedPnLAllTime >= 0 ? 'green':'red'}`;
-
-  const todayPnlElement = document.getElementById("statTodayPnl");
-  todayPnlElement.textContent = `$${todayPnL.toLocaleString(undefined, {minimumFractionDigits: 2})}`;
-  todayPnlElement.className = `stat-value ${todayPnL >= 0 ? 'green':'red'}`;
-
-  // Process Dynamic AI Intelligence Intelligence Module Interface Metrics
-  const activeMonitoredAssetsCount = MONITOR_ASSETS.length;
-  const currentTrendMatchesCalculated = Math.max(1, Math.min(activeMonitoredAssetsCount, Math.floor(calculatedWinRatioPercent / 8)));
-  const pendingPotentialEntries = currentOpenPositionsCount > 0 ? 0 : Math.floor(Math.random() * 2) + 1; // logical variance
-  
-  document.getElementById('scanningMarkets').textContent = activeMonitoredAssetsCount;
-  document.getElementById('trendMatches').textContent = currentTrendMatchesCalculated;
-  document.getElementById('potentialEntries').textContent = pendingPotentialEntries;
-  
-  // Calculate Market Directional Weights based on win allocations
-  const computedConfidenceIndex = totalCountAllTime > 0 ? Math.min(96, Math.max(65, Math.round(calculatedWinRatioPercent + 10))) : 82;
-  document.getElementById('confidenceValue').textContent = `${computedConfidenceIndex}%`;
-  document.getElementById('confidenceFill').style.width = `${computedConfidenceIndex}%`;
-  document.getElementById('gaugeConfidence').textContent = computedConfidenceIndex;
-  document.getElementById('gaugeFill').style.width = `${computedConfidenceIndex}%`;
-
-  // Calculate current risk metrics based on settings and open nodes
-  const configurationRiskCeilingPct = (currentProfileContext?.risk?.riskPct || 0.10) * 100;
-  const accurateCalculatedExposurePct = currentOpenPositionsCount > 0 ? Math.min(100, Math.round((currentOpenPositionsCount / (currentProfileContext?.risk?.maxOpenTrades || 3)) * configurationRiskCeilingPct)) : 0;
-  
-  document.getElementById('riskPercentText').textContent = `${accurateCalculatedExposurePct}%`;
-  document.getElementById('riskFill').style.width = `${accurateCalculatedExposurePct}%`;
-  
-  let structuralRiskWarningLabel = "🟢 Low Strategic Risk";
-  if(accurateCalculatedExposurePct > 75) structuralRiskWarningLabel = "🔴 High Risk Saturation";
-  else if(accurateCalculatedExposurePct > 35) structuralRiskWarningLabel = "⚠️ Moderate Exposure Profile";
-  document.getElementById('riskLevel').textContent = structuralRiskWarningLabel;
-
-  // Process Performance highlights dynamically from real elements
-  const numericPnLMappingList = masterTradesCacheArray.map(t => t.pnl || 0);
-  const historicMaxYieldPerformance = numericPnLMappingList.length > 0 ? Math.max(...numericPnLMappingList) : 0;
-  document.getElementById("bestTrade").textContent = historicMaxYieldPerformance > 0 ? `+$${historicMaxYieldPerformance.toFixed(2)}` : "$0.00";
-
-  // Calculate real historical win-streaks across arrays
-  let masterWinStreakTracker = 0;
-  let dynamicRollingCounter = 0;
-  [...masterTradesCacheArray].reverse().forEach(trade => {
-    if(trade.status === "won" || trade.pnl > 0) {
-      dynamicRollingCounter++;
-      if(dynamicRollingCounter > masterWinStreakTracker) masterWinStreakTracker = dynamicRollingCounter;
-    } else if(trade.status === "lost" || trade.pnl < 0) {
-      dynamicRollingCounter = 0;
-    }
-  });
-  document.getElementById("winStreak").textContent = masterWinStreakTracker;
-  
-  const estimatedReturnRatioValue = baselineAccountStartingBalance > 0 ? ((totalRealizedPnLAllTime / baselineAccountStartingBalance) * 100).toFixed(1) : "0.0";
-  document.getElementById("monthlyReturn").textContent = `${estimatedReturnRatioValue >= 0 ? '+':''}${estimatedReturnRatioValue}%`;
-
-  // Dynamic Session Interface Parsing
-  const currentUTCHourValue = now.getUTCHours();
-  let explicitTradingSessionString = "Asian Pacific Matrix Cycle";
-  let internalVolatilityIndexLabel = "Low — Compression Horizon";
-  
-  if(currentUTCHourValue >= 7 && currentUTCHourValue < 13) {
-    explicitTradingSessionString = "London Bank Settlement Cycle";
-    internalVolatilityIndexLabel = "Medium — Fluid Extensions";
-  } else if (currentUTCHourValue >= 13 && currentUTCHourValue < 17) {
-    explicitTradingSessionString = "London / New York Overlap Cluster";
-    internalVolatilityIndexLabel = "High — Maximum Vector Expansion";
-  } else if (currentUTCHourValue >= 17 && currentUTCHourValue < 21) {
-    explicitTradingSessionString = "New York Afternoon Distribution Cycle";
-    internalVolatilityIndexLabel = "Medium-High — Order Block Mitigation";
-  }
-  document.getElementById("currentSession").textContent = explicitTradingSessionString;
-  document.getElementById("volatility").textContent = internalVolatilityIndexLabel;
-  document.getElementById("marketStatus").innerHTML = `<span style="color:#10b981">● Connected Live Framework</span>`;
-
-  // Feed Live Signal Cards dynamically from real open/recent items
-  generateAILiveSignalItems(filteredArray);
-  
-  // Rebuild Chart components tracking active configurations
-  drawHistoryMatrixTable(filteredArray);
-
-  let chronologicalAccrualPointsTracker = 0;
-  const visualTimelineLabels = [...filteredArray].reverse().map((t, idx) => `Position ${idx + 1}`);
-  const visualTimelinePoints = [...filteredArray].reverse().map(t => {
-    chronologicalAccrualPointsTracker += (t.pnl || 0);
-    return chronologicalAccrualPointsTracker;
-  });
-  drawFinancialLinearGraph({ labels: visualTimelineLabels, data: visualTimelinePoints });
-}
-
-function generateAILiveSignalItems(dataset) {
-  const signalTargetBox = document.getElementById("signalsList");
-  const heatmapTargetBox = document.getElementById("heatmapList");
-  
-  if(!dataset || dataset.length === 0) {
-    signalTargetBox.innerHTML = `<div class="empty">No real-time signal objects logged inside selected history index.</div>`;
-    heatmapTargetBox.innerHTML = `<div class="empty">No directional heatmap maps processed.</div>`;
-    return;
-  }
-
-  let signalsHTML = "";
-  let heatmapHTML = "";
-
-  // Dynamic slice targeting active components
-  dataset.slice(0, 4).forEach(trade => {
-    const isDirectionBuy = trade.direction === "MULTUP" || trade.direction?.toLowerCase() === "buy";
-    const statusColorTheme = isDirectionBuy ? "buy" : "sell";
-    const statusGlowIndicator = isDirectionBuy ? "🟢" : "🔴";
-    
-    signalsHTML += `<div class="signal-item">
-      <span><strong>${trade.symbol}</strong></span>
-      <span class="signal-dir ${statusColorTheme}">${isDirectionBuy ? 'BUY' : 'SELL'}</span>
-      <span>Allocation: $${trade.stake?.toFixed(2) || '0.00'}</span>
-      <span>${statusGlowIndicator}</span>
-    </div>`;
-  });
-
-  // Calculate unique directional probabilities based on history distributions
-  const uniqueAssetPairs = [...new Set(dataset.map(t => t.symbol))].slice(0, 5);
-  uniqueAssetPairs.forEach(asset => {
-    const assetCluster = dataset.filter(t => t.symbol === asset);
-    const wonAssetCluster = assetCluster.filter(t => t.status === "won").length;
-    const concentrationProbabilityRatio = Math.round((wonAssetCluster / assetCluster.length) * 100) || 70;
-    
-    let probabilityMetricColorClass = "medium";
-    let radialIndicatorSymbol = "🟡";
-    if(concentrationProbabilityRatio > 65) { probabilityMetricColorClass = "high"; radialIndicatorSymbol = "🟢"; }
-    else if(concentrationProbabilityRatio < 45) { probabilityMetricColorClass = "low"; radialIndicatorSymbol = "🔴"; }
-
-    heatmapHTML += `<div class="heatmap-item">
-      <span>${asset} Momentum Node</span>
-      <span class="heatmap-percent ${probabilityMetricColorClass}">${radialIndicatorSymbol} ${concentrationProbabilityRatio}% Win Probability</span>
-    </div>`;
-  });
-
-  signalTargetBox.innerHTML = signalsHTML;
-  heatmapTargetBox.innerHTML = heatmapHTML;
-}
-
-function drawHistoryMatrixTable(dataset) {
-  const section = document.getElementById("tradesTable");
-  if(!dataset || dataset.length === 0) {
-    section.innerHTML = `<div class="empty">No historic operational database rows mapped inside this filtering tab context.</div>`;
-    return;
-  }
-  let layout = `<table><thead><tr><th>Opened Timestamp</th><th>Asset Pair</th><th>Direction</th><th>Risk Allocation</th><th>PnL Yield</th><th>Lifecycle Status</th></tr></thead><tbody>`;
-  dataset.forEach(row => {
-    const isBuyDirection = row.direction === 'MULTUP' || row.direction?.toLowerCase() === 'buy';
-    const trackingStateTheme = row.status === 'open' ? 'open' : (row.status === 'won' ? 'won' : 'lost');
-    layout += `<tr>
-      <td>${new Date(row.createdAt || row.openedAt).toLocaleString()}</td>
-      <td><strong>${row.symbol}</strong></td>
-      <td><span class="badge ${isBuyDirection ? 'buy':'sell'}">${isBuyDirection ? 'BUY':'SELL'}</span></td>
-      <td>$${(row.stake || 0).toFixed(2)}</td>
-      <td style="font-weight:bold;" class="${(row.pnl || 0) >= 0 ? 'green':'red'}">$${row.pnl ? row.pnl.toFixed(2) : '0.00'}</td>
-      <td><span class="badge ${trackingStateTheme}">${row.status.toUpperCase()}</span></td>
-    </tr>`;
-  });
-  layout += `</tbody></table>`;
-  section.innerHTML = layout;
-}
-
-function drawRealTimeSystemLogs(dataset) {
-  const viewport = document.getElementById("timelineList");
-  const logContainerTerminal = document.getElementById("logsContainer");
-  const arrayPayload = dataset.logs || dataset || [];
-  
-  if(!arrayPayload || arrayPayload.length === 0) {
-    viewport.innerHTML = `<div class="empty">Log streams empty.</div>`;
-    logContainerTerminal.innerHTML = `<div class="empty">Console thread array pipeline reporting null arrays.</div>`;
-    return;
-  }
-  
-  let timelineBlocks = "";
-  let fullTerminalConsoleBlocks = "";
-
-  arrayPayload.slice(0, 15).forEach(entry => {
-    const timestamp = new Date(entry.createdAt).toLocaleTimeString();
-    const logDecorationTheme = entry.level === 'error' ? 'error' : (entry.level === 'warn' ? 'warn' : 'info');
-    timelineBlocks += `<div class="timeline-item">
-      <span class="timeline-time">${timestamp}</span>
-      <span class="timeline-text ${logDecorationTheme}">${entry.message}</span>
-    </div>`;
-  });
-
-  arrayPayload.forEach(entry => {
-    const dateFormatted = new Date(entry.createdAt).toISOString();
-    fullTerminalConsoleBlocks += `<div class="log-entry">[${dateFormatted}] [${entry.level?.toUpperCase() || 'INFO'}] — ${entry.message}</div>`;
-  });
-
-  viewport.innerHTML = timelineBlocks;
-  logContainerTerminal.innerHTML = fullTerminalConsoleBlocks;
-}
-
-function drawFinancialLinearGraph(contextCoordinates) {
-  const canvas = document.getElementById("equityChart");
-  if(lineChartTracker) {
-    lineChartTracker.data.labels = contextCoordinates.labels;
-    lineChartTracker.data.datasets[0].data = contextCoordinates.data;
-    lineChartTracker.update();
-    return;
-  }
-  lineChartTracker = new Chart(canvas, {
-    type: 'line',
-    data: {
-      labels: contextCoordinates.labels,
-      datasets: [{
-        label: 'Account Dynamic PnL Curve',
-        data: contextCoordinates.data,
-        borderColor: '#38bdf8',
-        backgroundColor: 'rgba(56, 189, 248, 0.05)',
-        fill: true,
-        tension: 0.15,
-        borderWidth: 2
-      }]
-    },
-    options: {
-      responsive: true,
-      maintainAspectRatio: false,
-      plugins: { legend: { display: false } },
-      scales: {
-        x: { grid: { display: false }, ticks: { color: '#64748b', font: { size: 10 } } },
-        y: { grid: { color: 'rgba(255,255,255,0.05)' }, ticks: { color: '#64748b', font: { size: 10 } } }
-      }
-    }
-  });
-}
-
-function updateTimeframeSelection(selectionRange, tabElement) {
-  document.querySelectorAll(".filter-tab").forEach(tab => tab.classList.remove("active"));
-  tabElement.classList.add("active");
-  timeframeFilter = selectionRange;
-  processAndRenderCachedData(); 
-}
-
-function toggleLogsPane() {
-  const pane = document.getElementById("logsCard");
-  logsVisible = !logsVisible;
-  pane.style.display = logsVisible ? "block" : "none";
-}
-
-async function toggleExecutionDaemon() {
-  if(!currentProfileContext) return;
-  const desiredState = !currentProfileContext.botActive;
-  const payloadResponse = await requestGateway("/api/user/bot", "PUT", { active: desiredState });
-  if(payloadResponse) alert(`Daemon response: ${payloadResponse.message || 'State modification executed.'}`);
-  await refreshInterfaceFeed();
-}
-
-async function commitRiskProtocol() {
-  const structure = {
-    riskPct: parseFloat(document.getElementById("riskPct").value),
-    maxOpenTrades: parseInt(document.getElementById("maxOpen").value),
-    stopLossPct: parseFloat(document.getElementById("stopLoss").value),
-    takeProfitPct: parseFloat(document.getElementById("takeProfit").value)
-  };
-  const response = await requestGateway("/api/user/risk", "PUT", structure);
-  if(response) alert("Operational risk configuration criteria committed successfully to database.");
-  await refreshInterfaceFeed();
-}
-
-async function commitAccountSettings() {
-  const parameters = {
-    derivAppId: document.getElementById("settingsAppId").value,
-    derivMode: document.getElementById("settingsMode").value,
-    telegramChatId: document.getElementById("settingsChatId").value
-  };
-  const rawTokenString = document.getElementById("settingsPAT").value;
-  if(rawTokenString && rawTokenString.trim() !== "") {
-    parameters.derivPAT = rawTokenString;
-  }
-  const response = await requestGateway("/api/user/settings", "PUT", parameters);
-  if(response) alert("Environment configurations written directly to database cluster.");
-  await refreshInterfaceFeed();
-}
-
-async function triggerActionSync(endpointRouterLink) {
-  const output = await requestGateway(endpointRouterLink, "POST");
-  if(output) alert(output.message || "Proxy synchronizer array task handled successfully.");
-  await refreshInterfaceFeed();
-}
-
-window.onload = runDashboardSystemLoop;
 </script>
+
 </body>
+
 </html>
