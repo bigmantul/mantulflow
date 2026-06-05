@@ -35,7 +35,7 @@ const SYMBOLS = [
   "cryBTCUSD", "cryETHUSD",
 ];
 const POLL_SECS          = 20;
-const MAX_IDLE_SECS      = 20;
+const MAX_IDLE_SECS      = 30;
 const TELEGRAM_BOT_TOKEN = process.env.TELEGRAM_BOT_TOKEN;
 
 const runningBots = new Map();
