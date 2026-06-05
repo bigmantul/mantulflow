@@ -646,7 +646,10 @@ async function loadStats() {
   document.getElementById("statOpen").textContent  = s.open;
 
   // Process balance mapping from absolute starting metrics
-  const startingLiquidityThresholdValue = 10000;
+  const startingLiquidityThresholdValue = async function getBalance(ws) {
+  const resp = await sendMessage(ws, { balance: 1 }, "balance");
+  return parseFloat(resp.balance.balance);
+}
   const realCalculatedBalance = startingLiquidityThresholdValue + (s.totalPnl || 0);
   document.getElementById("balanceAmount").textContent = `$${realCalculatedBalance.toLocaleString(undefined, {minimumFractionDigits:2})}`;
   
