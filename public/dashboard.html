@@ -1,301 +1,1097 @@
 <!DOCTYPE html>
+
 <html lang="en">
+
 <head>
-  <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>SMC Algo Bot - Live Trading Dashboard</title>
-  <!-- Tailwind CSS CDN for high-fidelity trading dashboard styling -->
-  <script src="https://cdn.tailwindcss.com"></script>
-  <style>
-    /* Explicit color bindings used directly by the loadStats JavaScript classes */
-    .green { color: #10b981 !important; }
-    .red { color: #ef4444 !important; }
-    body { background-color: #0b0f19; }
-  </style>
+
+<meta charset="UTF-8"/>
+
+<meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+
+<title>Dashboard — MANTUL'S UNIFIED TRADING BOT FOR DERIV</title>
+
+<style>
+
+  *{margin:0;padding:0;box-sizing:border-box}
+
+  body{font-family:'Segoe UI',sans-serif;background:#0a0e1a;color:#e2e8f0;min-height:100vh}
+
+  .header{background:#111827;border-bottom:1px solid #1e293b;padding:16px 24px;display:flex;align-items:center;justify-content:space-between}
+
+  .header h1{font-size:18px;font-weight:700;color:#38bdf8}
+
+  .header-right{display:flex;align-items:center;gap:16px}
+
+  .user-name{font-size:14px;color:#94a3b8}
+
+  .btn-logout{padding:6px 14px;background:transparent;border:1px solid #334155;border-radius:6px;color:#94a3b8;cursor:pointer;font-size:13px}
+
+  .main{max-width:1100px;margin:0 auto;padding:24px}
+
+  .grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(200px,1fr));gap:16px;margin-bottom:24px}
+
+  .stat-card{background:#111827;border:1px solid #1e293b;border-radius:12px;padding:20px}
+
+  .stat-label{font-size:12px;color:#64748b;text-transform:uppercase;letter-spacing:.6px}
+
+  .stat-value{font-size:28px;font-weight:700;margin-top:4px}
+
+  .stat-value.green{color:#34d399}
+
+  .stat-value.red{color:#f87171}
+
+  .stat-value.blue{color:#38bdf8}
+
+  .stat-value.yellow{color:#fbbf24}
+
+  .row{display:grid;grid-template-columns:1fr 1fr;gap:16px;margin-bottom:24px}
+
+  @media(max-width:700px){.row{grid-template-columns:1fr}}
+
+  .card{background:#111827;border:1px solid #1e293b;border-radius:12px;padding:24px}
+
+  .card-title{font-size:14px;font-weight:600;color:#94a3b8;text-transform:uppercase;letter-spacing:.6px;margin-bottom:20px}
+
+  .bot-toggle{display:flex;align-items:center;justify-content:space-between;padding:16px;background:#0f172a;border-radius:10px;margin-bottom:16px}
+
+  .bot-status{display:flex;align-items:center;gap:10px}
+
+  .dot{width:10px;height:10px;border-radius:50%;background:#334155}
+
+  .dot.active{background:#34d399;box-shadow:0 0 8px #34d399}
+
+  .bot-label{font-weight:600}
+
+  .bot-sub{font-size:12px;color:#64748b;margin-top:2px}
+
+  .toggle-btn{padding:8px 20px;border-radius:8px;border:none;font-size:14px;font-weight:600;cursor:pointer;transition:.2s}
+
+  .toggle-btn.start{background:#166534;color:#86efac}
+
+  .toggle-btn.start:hover{background:#15803d}
+
+  .toggle-btn.stop{background:#7f1d1d;color:#fca5a5}
+
+  .toggle-btn.stop:hover{background:#991b1b}
+
+  .risk-form .form-row{display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:12px}
+
+  .form-group{margin-bottom:0}
+
+  label{display:block;font-size:12px;color:#64748b;margin-bottom:5px}
+
+  input,select{width:100%;padding:8px 12px;background:#0f172a;border:1px solid #1e293b;border-radius:7px;color:#e2e8f0;font-size:13px;outline:none}
+
+  input:focus,select:focus{border-color:#38bdf8}
+
+  .sync-btn{padding:8px 16px;background:#1e293b;color:#94a3b8;border:none;border-radius:8px;font-size:13px;font-weight:600;cursor:pointer;width:100%;margin-top:8px;transition:.2s}
+
+  .sync-btn:hover{background:#334155;color:#e2e8f0}
+
+  .save-btn:hover{background:#1d4ed8}
+
+  .success-msg{color:#34d399;font-size:13px;margin-top:8px;display:none}
+
+  .refresh-btn{padding:5px 12px;background:#1e293b;color:#94a3b8;border:none;border-radius:6px;font-size:12px;cursor:pointer}
+
+  .refresh-btn:hover{background:#334155}
+
+  @keyframes pulse{0%,100%{opacity:1}50%{opacity:.4}}
+
+  table{width:100%;border-collapse:collapse;font-size:13px}
+
+  th{text-align:left;padding:10px 12px;color:#64748b;border-bottom:1px solid #1e293b;font-weight:500}
+
+  td{padding:10px 12px;border-bottom:1px solid #0f172a}
+
+  .badge{padding:3px 8px;border-radius:20px;font-size:11px;font-weight:600}
+
+  .badge.open{background:#1e3a5f;color:#38bdf8}
+
+  .badge.won{background:#14532d;color:#86efac}
+
+  .badge.lost{background:#450a0a;color:#fca5a5}
+
+  .badge.buy{background:#14532d;color:#86efac}
+
+  .badge.sell{background:#450a0a;color:#fca5a5}
+
+  .empty{text-align:center;padding:40px;color:#475569}
+
+  .tabs{display:flex;gap:8px;margin-bottom:16px}
+
+  .filter-tab{padding:6px 14px;border-radius:6px;border:1px solid #1e293b;background:transparent;color:#64748b;font-size:13px;cursor:pointer}
+
+  .filter-tab.active{background:#1e293b;color:#e2e8f0}
+
+</style>
+
 </head>
-<body class="text-slate-200 antialiased font-sans">
 
-  <!-- TOP HUD NAVIGATION BAR -->
-  <header class="border-b border-slate-800 bg-slate-900/50 backdrop-blur px-6 py-4 flex items-center justify-between sticky top-0 z-50">
-    <div class="flex items-center space-x-3">
-      <div class="h-3 w-3 bg-indigo-500 rounded-full shadow-[0_0_12px_rgba(99,102,241,0.8)] animate-pulse"></div>
-      <h1 class="text-lg font-bold tracking-wider text-white uppercase">SMC Quantum Bot System</h1>
+<body>
+
+
+
+<div class="header">
+
+  <h1>⚡ MANTUL'S UNIFIED TRADING BOT FOR DERIV</h1>
+
+  <div class="header-right">
+
+    <span class="user-name" id="headerName"></span>
+
+    <button class="btn-logout" onclick="logout()">Logout</button>
+
+  </div>
+
+</div>
+
+
+
+<div class="main">
+
+
+
+  <!-- STATS ROW -->
+
+  <div class="grid" id="statsGrid">
+
+    <div class="stat-card">
+
+      <div class="stat-label">Win Rate</div>
+
+      <div class="stat-value blue" id="statWinRate">--%</div>
+
     </div>
-    <!-- Live Synchronization Pill Connection Signal -->
-    <div id="marketStatus" class="text-sm font-medium bg-slate-900 border border-slate-800 px-4 py-1.5 rounded-full flex items-center space-x-2">
-      <span class="text-slate-400">● Initializing Handshake...</span>
+
+    <div class="stat-card">
+
+      <div class="stat-label">Total PnL</div>
+
+      <div class="stat-value" id="statTotalPnl">$--</div>
+
     </div>
-  </header>
 
-  <main class="max-w-7xl mx-auto p-6 space-y-6">
+    <div class="stat-card">
 
-    <!-- CAPITAL & METRIC CARDS MAIN HUD GRID -->
-    <section class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-5">
-      
-      <!-- Real-Time Account Capital Node -->
-      <div class="bg-slate-950 border border-slate-800/80 rounded-xl p-5 shadow-lg relative overflow-hidden">
-        <div class="absolute top-0 left-0 w-1 h-full bg-indigo-500"></div>
-        <p class="text-xs uppercase tracking-widest text-slate-400 font-semibold mb-1">Live Capital Account Balance</p>
-        <h3 id="balanceAmount" class="text-3xl font-extrabold text-white tracking-tight">$0.00</h3>
-        <p class="text-[10px] text-slate-500 mt-2 flex items-center">
-          <svg class="w-3 h-3 mr-1 text-indigo-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z"></path></svg>
-          Secure Deriv Token Balance Verified
-        </p>
-      </div>
+      <div class="stat-label">Today PnL</div>
 
-      <!-- Total Strategy Performance PnL -->
-      <div class="bg-slate-950 border border-slate-800/80 rounded-xl p-5 shadow-lg">
-        <p class="text-xs uppercase tracking-widest text-slate-400 font-semibold mb-1">Net Strategy Performance PnL</p>
-        <h3 id="statTotalPnl" class="text-3xl font-extrabold stat-value tracking-tight">$0.00</h3>
-        <span class="text-[10px] text-slate-500 mt-2 block font-medium">All historical platform configurations</span>
-      </div>
+      <div class="stat-value" id="statTodayPnl">$--</div>
 
-      <!-- Intraday Daily Performance -->
-      <div class="bg-slate-950 border border-slate-800/80 rounded-xl p-5 shadow-lg">
-        <p class="text-xs uppercase tracking-widest text-slate-400 font-semibold mb-1">Intraday Rolling Session PnL</p>
-        <h3 id="statTodayPnl" class="text-3xl font-extrabold stat-value tracking-tight">$0.00</h3>
-        <span class="text-[10px] text-slate-500 mt-2 block font-medium">Reset execution cycle (00:00 UTC)</span>
-      </div>
+    </div>
 
-      <!-- Account Strategy Win Rate -->
-      <div class="bg-slate-950 border border-slate-800/80 rounded-xl p-5 shadow-lg">
-        <p class="text-xs uppercase tracking-widest text-slate-400 font-semibold mb-1">Algorithmic Win Rate Matrix</p>
-        <h3 id="statWinRate" class="text-3xl font-extrabold text-indigo-400 tracking-tight">0%</h3>
-        <span class="text-[10px] text-slate-500 mt-2 block font-medium">Ratio profile on structural orders</span>
-      </div>
-    </section>
+    <div class="stat-card">
 
-    <!-- CORE ANALYTICAL CHASSIS MODULES -->
-    <section class="grid grid-cols-1 lg:grid-cols-3 gap-6">
+      <div class="stat-label">Total Trades</div>
 
-      <!-- SYSTEM CAPACITATION METERS AND CONTROLS (COLUMN 1) -->
-      <div class="lg:col-span-2 space-y-6">
-        
-        <!-- Interactive Operational Status Panel -->
-        <div class="bg-slate-950 border border-slate-800 rounded-xl p-6 shadow-md grid grid-cols-1 md:grid-cols-2 gap-6">
-          <!-- Dynamic Capital Drawdown Risk Profile Meter -->
-          <div class="space-y-2">
-            <div class="flex justify-between items-center text-sm">
-              <span class="text-slate-400 font-medium uppercase tracking-wider text-xs">Liquidity Target & Health</span>
-              <span id="healthPercent" class="font-bold text-emerald-400 text-xs">100%</span>
+      <div class="stat-value yellow" id="statTotal">--</div>
+
+    </div>
+
+    <div class="stat-card">
+
+      <div class="stat-label">Open Now</div>
+
+      <div class="stat-value blue" id="statOpen">--</div>
+
+    </div>
+
+  </div>
+
+
+
+  <div class="row">
+
+
+
+    <!-- BOT CONTROL + RISK -->
+
+    <div>
+
+      <div class="card" style="margin-bottom:16px">
+
+        <div class="card-title">Bot Control</div>
+
+        <div class="bot-toggle">
+
+          <div class="bot-status">
+
+            <div class="dot" id="botDot"></div>
+
+            <div>
+
+              <div class="bot-label" id="botLabel">Stopped</div>
+
+              <div class="bot-sub" id="botSub">Click Start to begin trading</div>
+
             </div>
-            <div class="w-full bg-slate-900 h-2.5 rounded-full overflow-hidden border border-slate-800">
-              <div id="healthFill" class="bg-gradient-to-r from-emerald-600 to-teal-400 h-full transition-all duration-700 ease-out" style="width: 100%"></div>
-            </div>
+
           </div>
 
-          <!-- Dynamic Risk Margin Exposure Monitor Meter -->
-          <div class="space-y-2">
-            <div class="flex justify-between items-center text-sm">
-              <span class="text-slate-400 font-medium uppercase tracking-wider text-xs">Risk Margin Exposure Matrix</span>
-              <span id="riskPercentText" class="font-bold text-amber-400 text-xs">0%</span>
-            </div>
-            <div class="w-full bg-slate-900 h-2.5 rounded-full overflow-hidden border border-slate-800">
-              <div id="riskFill" class="bg-gradient-to-r from-amber-500 to-orange-500 h-full transition-all duration-700 ease-out" style="width: 0%"></div>
-            </div>
-          </div>
+          <button class="toggle-btn start" id="toggleBtn" onclick="toggleBot()">Start</button>
 
-          <!-- Risk Shield Alert Threshold Level Label Callout -->
-          <div class="md:col-span-2 bg-slate-900/60 border border-slate-800 px-4 py-3 rounded-lg flex items-center justify-between">
-            <span class="text-xs text-slate-400 uppercase tracking-wider font-semibold">Automated Guard Engine Status</span>
-            <span id="riskLevel" class="text-xs font-bold text-white tracking-wide bg-slate-950 border border-slate-800 px-3 py-1 rounded-md">🟢 System Check Ready</span>
-          </div>
         </div>
 
-        <!-- STRATEGY STATISTICS & COUNTERS BOARD CARD -->
-        <div class="bg-slate-950 border border-slate-800 rounded-xl p-6 shadow-md">
-          <h4 class="text-xs font-bold text-white uppercase tracking-widest mb-4 pb-2 border-b border-slate-900">Quantum Execution Telemetry Data</h4>
-          <div class="grid grid-cols-2 md:grid-cols-4 gap-4 text-center">
-            <div class="p-3 bg-slate-900/40 rounded-lg border border-slate-900">
-              <div id="statTotal" class="text-2xl font-bold text-white">0</div>
-              <div class="text-[10px] text-slate-500 uppercase font-semibold mt-1">Total Market Transmissions</div>
-            </div>
-            <div class="p-3 bg-slate-900/40 rounded-lg border border-slate-900">
-              <div id="statOpen" class="text-2xl font-bold text-indigo-400">0</div>
-              <div class="text-[10px] text-slate-500 uppercase font-semibold mt-1">Active Exposure Nodes</div>
-            </div>
-            <div class="p-3 bg-slate-900/40 rounded-lg border border-slate-900">
-              <div id="scanningMarkets" class="text-2xl font-bold text-slate-300">0</div>
-              <div class="text-[10px] text-slate-500 uppercase font-semibold mt-1">SMC Scanned Vectors</div>
-            </div>
-            <div class="p-3 bg-slate-900/40 rounded-lg border border-slate-900">
-              <div id="trendMatches" class="text-2xl font-bold text-emerald-400">0</div>
-              <div class="text-[10px] text-slate-500 uppercase font-semibold mt-1">Order-Block Confluences</div>
-            </div>
-          </div>
-        </div>
+        <button class="sync-btn" id="syncBtn" onclick="syncTrades()">🔄 Sync Trades with Deriv</button>
+
+        <button class="sync-btn" style="margin-top:6px;color:#38bdf8" onclick="toggleLogs()">📋 View Bot Logs (72hrs)</button>
+
+        <button class="sync-btn" id="importBtn" style="margin-top:6px;color:#fbbf24" onclick="importTrades()">📥 Import All Trades from Deriv</button>
+
+        <div class="success-msg" id="syncMsg"></div>
+
+        <div class="success-msg" id="importMsg"></div>
+
       </div>
 
-      <!-- AI INTELLIGENCE & TEMPORAL MATRIX MODULES (COLUMN 2) -->
-      <div class="space-y-6">
-        
-        <!-- SECURE CONFIDENCE & ALGO EVALUATION GAUGES -->
-        <div class="bg-slate-950 border border-slate-800 rounded-xl p-5 shadow-md space-y-4">
-          <h4 class="text-xs font-bold text-white uppercase tracking-widest">Statistical Accuracy Indices</h4>
-          
-          <!-- Core Algorithmic Confidence Metric -->
-          <div class="space-y-1.5">
-            <div class="flex justify-between text-xs text-slate-400">
-              <span>Execution Structural Confidence</span>
-              <span id="confidenceValue" class="font-semibold text-white">85%</span>
+
+
+      <div class="card">
+
+        <div class="card-title">Risk Settings</div>
+
+        <div class="risk-form">
+
+          <div class="form-row">
+
+            <div class="form-group">
+
+              <label>Stake % of Balance</label>
+
+              <input type="number" id="riskPct" step="1" min="1" max="50" placeholder="10"/>
+
             </div>
-            <div class="w-full bg-slate-900 h-2 rounded-full overflow-hidden">
-              <div id="confidenceFill" class="bg-indigo-500 h-full transition-all duration-500" style="width: 85%"></div>
+
+            <div class="form-group">
+
+              <label>Max Open Trades</label>
+
+              <input type="number" id="maxOpen" min="1" max="10" placeholder="3"/>
+
             </div>
+
           </div>
 
-          <!-- Secondary Auxiliary Verification Index Gauge -->
-          <div class="space-y-1.5">
-            <div class="flex justify-between text-xs text-slate-400">
-              <span>Order Flow Validation Weight</span>
-              <span id="gaugeConfidence" class="font-semibold text-white">85</span>
+          <div class="form-row">
+
+            <div class="form-group">
+
+              <label>Daily Loss Limit %</label>
+
+              <input type="number" id="dailyLoss" step="1" min="5" max="100" placeholder="30"/>
+
             </div>
-            <div class="w-full bg-slate-900 h-2 rounded-full overflow-hidden">
-              <div id="gaugeFill" class="bg-purple-500 h-full transition-all duration-500" style="width: 85%"></div>
+
+            <div class="form-group">
+
+              <label>Max Loss Streak</label>
+
+              <input type="number" id="lossStreak" min="1" max="10" placeholder="3"/>
+
             </div>
+
           </div>
 
-          <div class="pt-2">
-            <div class="bg-slate-900/50 p-2 border border-slate-900 text-[11px] rounded text-slate-400 text-center">
-              Internal Vector Indexing: <span id="potentialEntries" class="font-bold text-slate-200">0</span> Liquidity Target Patterns Detected
-            </div>
-          </div>
-        </div>
+          <div class="form-row">
 
-        <!-- GLOBAL TEMPORAL SESSION CHASSIS COMPONENT -->
-        <div class="bg-slate-950 border border-slate-800 rounded-xl p-5 shadow-md space-y-3.5">
-          <h4 class="text-xs font-bold text-white uppercase tracking-widest">Global Volatility Session Track</h4>
-          <div>
-            <span class="text-[10px] uppercase text-slate-500 font-bold block tracking-wider">Current Market Cycle Anchor</span>
-            <span id="currentSession" class="text-sm font-semibold text-white mt-0.5 block">Loading UTC Sequence...</span>
+            <div class="form-group">
+
+              <label>Stop Loss %</label>
+
+              <input type="number" id="stopLoss" step="5" min="10" max="200" placeholder="80"/>
+
+            </div>
+
+            <div class="form-group">
+
+              <label>Take Profit %</label>
+
+              <input type="number" id="takeProfit" step="10" min="10" max="1000" placeholder="200"/>
+
+            </div>
+
           </div>
-          <div>
-            <span class="text-[10px] uppercase text-slate-500 font-bold block tracking-wider">Spread Velocity Scale</span>
-            <span id="volatility" class="text-sm font-semibold text-indigo-400 mt-0.5 block">Analyzing Spreads...</span>
-          </div>
+
+          <button class="save-btn" onclick="saveRisk()">Save Settings</button>
+
+          <div class="success-msg" id="riskSuccess">✅ Settings saved!</div>
+
         </div>
 
       </div>
-    </section>
-  </main>
 
-  <!-- REWRITE SYSTEM PIPELINE DRIVER ARCHITECTURE SCRIPT -->
-  <script>
-    // System Constants matching Asset Monitoring arrays
-    const MONITOR_ASSETS = ["R_100", "R_75", "R_50", "R_25", "1HZ10V", "1HZ25V", "1HZ50V", "1HZ75V", "1HZ100V"];
+    </div>
 
-    /**
-     * Secure Fetch Wrapper API Client Proxy
-     */
-    async function API(endpoint, options = {}) {
-      const token = localStorage.getItem("token");
-      const headers = {
-        "Content-Type": "application/json",
-        ...(token && { "Authorization": `Bearer ${token}` })
-      };
 
-      const response = await fetch(`/api${endpoint}`, { ...options, headers });
-      if (response.status === 401) {
-        localStorage.removeItem("token");
-        window.location.href = "/login.html";
-        return null;
-      }
-      return response.json();
-    }
 
-    /**
-     * Compiles, updates, and renders all dashboard statistics UI nodes
-     */
-    async function loadStats() {
-      try {
-        // Fetch both trade statistics data and true Deriv proxy socket balances concurrently
-        const [s, balData] = await Promise.all([
-          API("/trades/stats"),
-          API("/user/balance")
-        ]);
+    <!-- SETTINGS -->
 
-        if (!s || !balData) return;
+    <div class="card">
 
-        // Elements Mappings
-        const pnlEl   = document.getElementById("statTotalPnl");
-        const todayEl = document.getElementById("statTodayPnl");
-        
-        // Core Metrics Binding
-        document.getElementById("statWinRate").textContent = s.winRate + "%";
-        pnlEl.textContent   = (s.totalPnl >= 0 ? "+" : "") + "$" + s.totalPnl.toFixed(2);
-        pnlEl.className     = "text-3xl font-extrabold stat-value tracking-tight " + (s.totalPnl >= 0 ? "green" : "red");
-        todayEl.textContent = (s.todayPnl >= 0 ? "+" : "") + "$" + s.todayPnl.toFixed(2);
-        todayEl.className   = "text-3xl font-extrabold stat-value tracking-tight " + (s.todayPnl >= 0 ? "green" : "red");
-        document.getElementById("statTotal").textContent = s.total;
-        document.getElementById("statOpen").textContent  = s.open;
+      <div class="card-title">Account Settings</div>
 
-        // Binds the live proxy balance fetched securely via the Deriv connection
-        const realCalculatedBalance = balData.balance || 0;
-        document.getElementById("balanceAmount").textContent = `$${realCalculatedBalance.toLocaleString(undefined, { minimumFractionDigits: 2 })}`;
-        
-        // Account Health Balance Progress Calculations
-        const dynamicHealthScore = Math.min(100, Math.max(10, Math.round(100 + (s.totalPnl / (realCalculatedBalance || 1000)) * 100)));
-        document.getElementById("healthPercent").textContent = `${dynamicHealthScore}%`;
-        document.getElementById("healthFill").style.width = `${dynamicHealthScore}%`;
+      <div class="form-group" style="margin-bottom:12px">
 
-        // Strategy Trend Metric Drivers 
-        const matchedTrends = Math.max(1, Math.min(MONITOR_ASSETS.length, Math.floor(s.winRate / 8)));
-        document.getElementById("scanningMarkets").textContent = MONITOR_ASSETS.length;
-        document.getElementById("trendMatches").textContent = matchedTrends;
-        document.getElementById("potentialEntries").textContent = s.open > 0 ? 0 : Math.floor(Math.random() * 2) + 1;
-        
-        // Confidence Meter Visual Mapping
-        const calculatedIndexConfidence = s.total > 0 ? Math.min(96, Math.max(65, Math.round(s.winRate + 8))) : 85;
-        document.getElementById("confidenceValue").textContent = `${calculatedIndexConfidence}%`;
-        document.getElementById("confidenceFill").style.width = `${calculatedIndexConfidence}%`;
-        document.getElementById("gaugeConfidence").textContent = calculatedIndexConfidence;
-        document.getElementById("gaugeFill").style.width = `${calculatedIndexConfidence}%`;
+        <label>Deriv PAT Token</label>
 
-        // Dynamic Risk Profile System Evaluations
-        const totalExposurePercentCalculation = s.open > 0 ? Math.min(100, Math.round((s.open / 5) * 100)) : 0;
-        document.getElementById("riskPercentText").textContent = `${totalExposurePercentCalculation}%`;
-        document.getElementById("riskFill").style.width = `${totalExposurePercentCalculation}%`;
-        
-        let labelAlertTheme = "🟢 Low Exposure Profile";
-        if (totalExposurePercentCalculation > 75) {
-          labelAlertTheme = "🔴 Over-Exposure Protection Critical";
-        } else if (totalExposurePercentCalculation > 35) {
-          labelAlertTheme = "⚠️ Moderate System Exposure";
-        }
-        document.getElementById("riskLevel").textContent = labelAlertTheme;
+        <input type="password" id="settingsPAT" placeholder="pat_xxxxxxxxxxxxxxxx"/>
 
-        // Market Operational Session Clock Mappings (UTC Core Intervals)
-        const hour = new Date().getUTCHours();
-        let textLabelSession = "Asian Consolidation Loop";
-        let internalVolatilityRange = "Low — Compressed Spreads";
-        
-        if (hour >= 7 && hour < 13) {
-          textLabelSession = "London Liquidity Settlement";
-          internalVolatilityRange = "Medium — Order Matching";
-        } else if (hour >= 13 && hour < 17) {
-          textLabelSession = "NY/London High-Frequency Overlap";
-          internalVolatilityRange = "High — Maximum Volume Velocity";
-        } else if (hour >= 17 && hour < 22) {
-          textLabelSession = "New York Late Distribution";
-          internalVolatilityRange = "Medium — Spread Contraction";
-        }
-        
-        document.getElementById("currentSession").textContent = textLabelSession;
-        document.getElementById("volatility").textContent = internalVolatilityRange;
-        document.getElementById("marketStatus").innerHTML = `<span style="color:#10b981">● Live Socket Synchronized</span>`;
-        
-      } catch (err) {
-        console.error("Dashboard Render Pipeline Interrupted:", err);
-        document.getElementById("marketStatus").innerHTML = `<span style="color:#ef4444">● Socket Synchronization Error</span>`;
-      }
-    }
+      </div>
 
-    // Run when the DOM content finishes loading
-    document.addEventListener("DOMContentLoaded", () => {
-      loadStats();
-      // Set up auto-refresh routine every 30 seconds to maintain synchronized balance logs
-      setInterval(loadStats, 30000);
+      <div class="form-group" style="margin-bottom:12px">
+
+        <label>Deriv App ID</label>
+
+        <input type="text" id="settingsAppId" placeholder="33kDvVzcElBmdV0wfzTy1"/>
+
+      </div>
+
+      <div class="form-group" style="margin-bottom:12px">
+
+        <label>Trading Mode</label>
+
+        <select id="settingsMode">
+
+          <option value="demo">Demo</option>
+
+          <option value="real">Real</option>
+
+        </select>
+
+      </div>
+
+      <div class="form-group" style="margin-bottom:12px">
+
+        <label>Telegram Chat ID</label>
+
+        <input type="text" id="settingsChatId" placeholder="Get from @userinfobot"/>
+
+      </div>
+
+      <button class="save-btn" onclick="saveSettings()">Update Settings</button>
+
+      <div class="success-msg" id="settingsSuccess">✅ Settings updated!</div>
+
+    </div>
+
+
+
+  </div>
+
+
+
+  <!-- BOT LOGS -->
+
+  <div class="card" id="logsCard" style="display:none">
+
+    <div class="card-title" style="display:flex;justify-content:space-between;align-items:center">
+
+      Bot Logs (last 72 hours)
+
+      <div style="display:flex;gap:8px">
+
+        <select id="logLevel" onchange="loadLogs()" style="padding:5px 10px;background:#0f172a;border:1px solid #1e293b;border-radius:6px;color:#e2e8f0;font-size:12px">
+
+          <option value="">All</option>
+
+          <option value="trade">Trades only</option>
+
+          <option value="error">Errors only</option>
+
+          <option value="warn">Warnings only</option>
+
+        </select>
+
+        <button class="refresh-btn" onclick="loadLogs()">↻ Refresh</button>
+
+        <button class="refresh-btn" onclick="toggleLogs()">✕ Close</button>
+
+      </div>
+
+    </div>
+
+    <div id="logsContainer" style="background:#0a0e1a;border-radius:8px;padding:16px;font-family:monospace;font-size:12px;max-height:400px;overflow-y:auto;line-height:1.8">
+
+      <div style="color:#475569">Loading logs...</div>
+
+    </div>
+
+  </div>
+
+
+
+  <!-- TRADE HISTORY -->
+
+  <div class="card">
+
+    <div class="card-title">Trade History</div>
+
+    <div class="tabs">
+
+      <button class="filter-tab active" onclick="loadTrades('all', this)">All</button>
+
+      <button class="filter-tab" onclick="loadTrades('open', this)">Open</button>
+
+      <button class="filter-tab" onclick="loadTrades('won', this)">Won</button>
+
+      <button class="filter-tab" onclick="loadTrades('lost', this)">Lost</button>
+
+    </div>
+
+    <div id="tradesTable">
+
+      <div class="empty">Loading trades...</div>
+
+    </div>
+
+  </div>
+
+
+
+</div>
+
+
+
+<script>
+
+const token = localStorage.getItem("token");
+
+if (!token) window.location.href = "/";
+
+
+
+const API = async (path, method = "GET", body = null) => {
+
+  const opts = { method, headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" } };
+
+  if (body) opts.body = JSON.stringify(body);
+
+  const res  = await fetch("/api" + path, opts);
+
+  const data = await res.json();
+
+  if (res.status === 401) { localStorage.clear(); window.location.href = "/"; }
+
+  return data;
+
+};
+
+
+
+let botActive = false;
+
+
+
+async function init() {
+
+  const user = await API("/user/me");
+
+  document.getElementById("headerName").textContent = user.name;
+
+  botActive = user.botActive;
+
+  updateBotUI(botActive);
+
+
+
+  // Fill risk form
+
+  const r = user.risk;
+
+  document.getElementById("riskPct").value   = Math.round(r.riskPct * 100);
+
+  document.getElementById("maxOpen").value   = r.maxOpenTrades;
+
+  document.getElementById("dailyLoss").value = Math.round(r.maxDailyLossPct * 100);
+
+  document.getElementById("lossStreak").value = r.maxConsecutiveLosses;
+
+  document.getElementById("stopLoss").value   = Math.round(r.stopLossPct * 100);
+
+  document.getElementById("takeProfit").value = Math.round(r.takeProfitPct * 100);
+
+
+
+  await loadStats();
+
+  await loadTrades("all");
+
+}
+
+
+
+async function loadStats() {
+
+  const s = await API("/trades/stats");
+
+  const pnlEl   = document.getElementById("statTotalPnl");
+
+  const todayEl = document.getElementById("statTodayPnl");
+
+  document.getElementById("statWinRate").textContent = s.winRate + "%";
+
+  pnlEl.textContent   = (s.totalPnl >= 0 ? "+" : "") + "$" + s.totalPnl;
+
+  pnlEl.className     = "stat-value " + (s.totalPnl >= 0 ? "green" : "red");
+
+  todayEl.textContent = (s.todayPnl >= 0 ? "+" : "") + "$" + s.todayPnl;
+
+  todayEl.className   = "stat-value " + (s.todayPnl >= 0 ? "green" : "red");
+
+  document.getElementById("statTotal").textContent = s.total;
+
+  document.getElementById("statOpen").textContent  = s.open;
+
+}
+
+
+
+async function loadTrades(status, btnEl) {
+
+  currentTradeFilter = status || "all";
+
+  if (btnEl) {
+
+    document.querySelectorAll(".filter-tab").forEach(b => b.classList.remove("active"));
+
+    btnEl.classList.add("active");
+
+  }
+
+  const url   = status === "all" ? "/trades?limit=30" : `/trades?status=${status}&limit=30`;
+
+  const data  = await API(url);
+
+  const table = document.getElementById("tradesTable");
+
+
+
+  if (!data.trades || data.trades.length === 0) {
+
+    table.innerHTML = '<div class="empty">No trades yet</div>'; return;
+
+  }
+
+
+
+  const rows = data.trades.map(t => {
+
+    const dir     = t.direction === "MULTUP" ? "BUY" : "SELL";
+
+    const dirClass = dir === "BUY" ? "buy" : "sell";
+
+    const pnl     = t.pnl !== 0 ? (t.pnl > 0 ? `<span style="color:#34d399">+$${t.pnl.toFixed(2)}</span>` : `<span style="color:#f87171">-$${Math.abs(t.pnl).toFixed(2)}</span>`) : "—";
+
+    const date    = new Date(t.openedAt).toLocaleString();
+
+    return `<tr>
+
+      <td>${t.symbol}</td>
+
+      <td><span class="badge ${dirClass}">${dir}</span></td>
+
+      <td>$${t.stake.toFixed(2)}</td>
+
+      <td>x${t.multiplier}</td>
+
+      <td>${t.strength ? t.strength.toFixed(0) + "%" : "—"}</td>
+
+      <td>${pnl}</td>
+
+      <td><span class="badge ${t.status}">${t.status}</span></td>
+
+      <td style="color:#475569">${date}</td>
+
+    </tr>`;
+
+  }).join("");
+
+
+
+  table.innerHTML = `<table>
+
+    <thead><tr><th>Symbol</th><th>Dir</th><th>Stake</th><th>Mult</th><th>Strength</th><th>PnL</th><th>Status</th><th>Opened</th></tr></thead>
+
+    <tbody>${rows}</tbody>
+
+  </table>`;
+
+}
+
+
+
+function updateBotUI(active) {
+
+  const dot = document.getElementById("botDot");
+
+  const lbl = document.getElementById("botLabel");
+
+  const sub = document.getElementById("botSub");
+
+  const btn = document.getElementById("toggleBtn");
+
+  dot.className  = "dot" + (active ? " active" : "");
+
+  lbl.textContent = active ? "Running" : "Stopped";
+
+  sub.textContent = active ? "Bot is scanning markets every 15s" : "Click Start to begin trading";
+
+  btn.className  = "toggle-btn " + (active ? "stop" : "start");
+
+  btn.textContent = active ? "Stop" : "Start";
+
+}
+
+
+
+let logsVisible = false;
+
+let currentTradeFilter = "all";
+
+
+
+function toggleLogs() {
+
+  logsVisible = !logsVisible;
+
+  document.getElementById("logsCard").style.display = logsVisible ? "block" : "none";
+
+  if (logsVisible) loadLogs();
+
+}
+
+
+
+async function loadLogs() {
+
+  const level     = document.getElementById("logLevel").value;
+
+  const container = document.getElementById("logsContainer");
+
+  const url       = "/api/logs" + (level ? `?level=${level}&limit=300` : "?limit=300");
+
+
+
+  container.innerHTML = '<span style="color:#475569">Loading...</span>';
+
+
+
+  try {
+
+    const res = await fetch(url, {
+
+      headers: { Authorization: `Bearer ${token}` }
+
     });
-  </script>
+
+
+
+    const contentType = res.headers.get("content-type") || "";
+
+    if (!contentType.includes("application/json")) {
+
+      const text = await res.text();
+
+      container.innerHTML = `<span style="color:#f87171">Server error: ${text.slice(0, 300)}</span>`;
+
+      return;
+
+    }
+
+
+
+    if (res.status === 401) { localStorage.clear(); window.location.href = "/"; return; }
+
+
+
+    const logs = await res.json();
+
+
+
+    if (!logs || !Array.isArray(logs) || !logs.length) {
+
+      container.innerHTML = '<span style="color:#475569">No logs yet. Start your bot to see activity here.</span>';
+
+      return;
+
+    }
+
+
+
+    const levelColors = { trade: "#34d399", error: "#f87171", warn: "#fbbf24", info: "#94a3b8" };
+
+
+
+    container.innerHTML = logs.map(l => {
+
+      const time  = new Date(l.createdAt).toLocaleTimeString();
+
+      const date  = new Date(l.createdAt).toLocaleDateString();
+
+      const color = levelColors[l.level] || "#94a3b8";
+
+      return `<div style="color:${color};margin-bottom:2px"><span style="color:#334155">[${date} ${time}]</span> ${escapeHtml(l.message)}</div>`;
+
+    }).join("");
+
+
+
+    container.scrollTop = container.scrollHeight;
+
+  } catch (e) {
+
+    container.innerHTML = `<span style="color:#f87171">Error: ${e.message}</span>`;
+
+  }
+
+}
+
+
+
+function escapeHtml(text) {
+
+  return text
+
+    .replace(/&/g, "&amp;")
+
+    .replace(/</g, "&lt;")
+
+    .replace(/>/g, "&gt;");
+
+}
+
+
+
+async function importTrades() {
+
+  const btn = document.getElementById("importBtn");
+
+  const msg = document.getElementById("importMsg");
+
+  btn.disabled    = true;
+
+  btn.textContent = "⏳ Importing from Deriv...";
+
+  msg.style.display = "none";
+
+
+
+  try {
+
+    const res  = await fetch("/api/import/trades", {
+
+      method: "POST",
+
+      headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
+
+    });
+
+    const data = await res.json();
+
+
+
+    if (data.error) {
+
+      msg.style.color   = "#f87171";
+
+      msg.textContent   = "❌ " + data.error;
+
+    } else {
+
+      msg.style.color   = "#34d399";
+
+      msg.textContent   = `✅ Imported ${data.imported} trade(s) | Updated ${data.updated} | Skipped ${data.skipped}`;
+
+      await loadStats();
+
+      await loadTrades("all");
+
+    }
+
+    msg.style.display = "block";
+
+    setTimeout(() => msg.style.display = "none", 6000);
+
+  } catch (e) {
+
+    msg.style.color   = "#f87171";
+
+    msg.textContent   = "❌ " + e.message;
+
+    msg.style.display = "block";
+
+  }
+
+
+
+  btn.disabled    = false;
+
+  btn.textContent = "📥 Import All Trades from Deriv";
+
+}
+
+
+
+async function importTrades() {
+
+  const btn = document.getElementById("importBtn");
+
+  const msg = document.getElementById("importMsg");
+
+  btn.disabled    = true;
+
+  btn.textContent = "⏳ Importing from Deriv...";
+
+  msg.style.display = "none";
+
+
+
+  try {
+
+    const res  = await fetch("/api/user/import-trades", {
+
+      method:  "POST",
+
+      headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
+
+    });
+
+
+
+    const contentType = res.headers.get("content-type") || "";
+
+    if (!contentType.includes("application/json")) {
+
+      const text = await res.text();
+
+      msg.style.color   = "#f87171";
+
+      msg.textContent   = "❌ Server error: " + text.slice(0, 200);
+
+      msg.style.display = "block";
+
+      return;
+
+    }
+
+
+
+    const data = await res.json();
+
+
+
+    if (data.error) {
+
+      msg.style.color   = "#f87171";
+
+      msg.textContent   = "❌ " + data.error;
+
+    } else {
+
+      msg.style.color   = "#34d399";
+
+      msg.textContent   = "✅ " + data.message;
+
+      await loadStats();
+
+      await loadTrades("all");
+
+    }
+
+    msg.style.display = "block";
+
+    setTimeout(() => msg.style.display = "none", 6000);
+
+  } catch (e) {
+
+    msg.style.color   = "#f87171";
+
+    msg.textContent   = "❌ " + e.message;
+
+    msg.style.display = "block";
+
+  }
+
+
+
+  btn.disabled    = false;
+
+  btn.textContent = "📥 Import All Trades from Deriv";
+
+}
+
+
+
+async function syncTrades() {
+
+  const btn = document.getElementById("syncBtn");
+
+  const msg = document.getElementById("syncMsg");
+
+  btn.disabled    = true;
+
+  btn.textContent = "⏳ Syncing...";
+
+  msg.style.display = "none";
+
+
+
+  try {
+
+    const data = await API("/user/sync-trades", "POST");
+
+    if (data.error) {
+
+      msg.style.color   = "#f87171";
+
+      msg.textContent   = "❌ " + data.error;
+
+    } else {
+
+      msg.style.color   = "#34d399";
+
+      msg.textContent   = `✅ ${data.message}`;
+
+      await loadStats();
+
+      await loadTrades("all");
+
+    }
+
+    msg.style.display = "block";
+
+    setTimeout(() => msg.style.display = "none", 4000);
+
+  } catch (e) {
+
+    msg.style.color   = "#f87171";
+
+    msg.textContent   = "❌ Network error";
+
+    msg.style.display = "block";
+
+  }
+
+
+
+  btn.disabled    = false;
+
+  btn.textContent = "🔄 Sync Trades with Deriv";
+
+}
+
+
+
+async function toggleBot() {
+
+  const newState = !botActive;
+
+  const btn = document.getElementById("toggleBtn");
+
+  btn.disabled = true;
+
+  btn.textContent = "Please wait...";
+
+  const res = await API("/user/bot", "PUT", { active: newState });
+
+  botActive = res.botActive;
+
+  updateBotUI(botActive);
+
+  btn.disabled = false;
+
+  await loadStats();
+
+}
+
+
+
+async function saveRisk() {
+
+  const data = {
+
+    riskPct:              parseFloat(document.getElementById("riskPct").value) / 100,
+
+    maxOpenTrades:        parseInt(document.getElementById("maxOpen").value),
+
+    maxDailyLossPct:      parseFloat(document.getElementById("dailyLoss").value) / 100,
+
+    maxConsecutiveLosses: parseInt(document.getElementById("lossStreak").value),
+
+    stopLossPct:          parseFloat(document.getElementById("stopLoss").value) / 100,
+
+    takeProfitPct:        parseFloat(document.getElementById("takeProfit").value) / 100,
+
+  };
+
+  await API("/user/risk", "PUT", data);
+
+  const msg = document.getElementById("riskSuccess");
+
+  msg.style.display = "block";
+
+  setTimeout(() => msg.style.display = "none", 3000);
+
+}
+
+
+
+async function saveSettings() {
+
+  const data = {
+
+    derivPAT:       document.getElementById("settingsPAT").value.trim(),
+
+    derivAppId:     document.getElementById("settingsAppId").value.trim(),
+
+    derivMode:      document.getElementById("settingsMode").value,
+
+    telegramChatId: document.getElementById("settingsChatId").value.trim(),
+
+  };
+
+  await API("/user/settings", "PUT", data);
+
+  const msg = document.getElementById("settingsSuccess");
+
+  msg.style.display = "block";
+
+  setTimeout(() => msg.style.display = "none", 3000);
+
+}
+
+
+
+function logout() {
+
+  localStorage.clear();
+
+  window.location.href = "/";
+
+}
+
+
+
+// Auto-refresh stats every 30s
+
+// Auto-refresh everything every 15 seconds
+
+setInterval(async () => {
+
+  await loadStats();
+
+  await loadTrades(currentTradeFilter);
+
+  if (logsVisible) await loadLogs();
+
+}, 15000);
+
+
+
+init();
+
+</script>
+
 </body>
+
 </html>
