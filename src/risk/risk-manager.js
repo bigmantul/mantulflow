@@ -4,7 +4,7 @@
 
 export class RiskManager {
 
-  static MIN_STAKE     = 1000;
+  static MIN_STAKE     = 1.00;
   static MAX_STAKE_CAP = 1000;
 
   constructor({
