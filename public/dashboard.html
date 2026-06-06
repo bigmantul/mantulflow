@@ -9,6 +9,8 @@
 <link rel="icon" href="/icon.jpg">
 <link rel="apple-touch-icon" href="/icon.jpg">
 <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
+<!-- TradingView Widget Script -->
+<script src="https://s3.tradingview.com/tv.js"></script>
 <meta name="viewport" content="width=1200">
 <style>
 :root{
@@ -177,6 +179,20 @@ td{padding:10px 12px;border-bottom:1px solid rgba(255,255,255,0.03);font-size:12
 .timeline-text{font-size:12px;color:var(--text-muted);line-height:1.5}
 .timeline-icon{width:20px;height:20px;border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:9px;flex-shrink:0;margin-top:1px}
 
+/* TradingView Chart Container */
+.tv-chart-container {
+  margin-top: 16px;
+  border-radius: 16px;
+  overflow: hidden;
+  background: rgba(0,0,0,0.2);
+  border: 1px solid var(--border);
+  padding: 8px;
+}
+#tradingview_chart {
+  height: 400px;
+  width: 100%;
+}
+
 /* Toast */
 .toast{position:fixed;bottom:28px;right:28px;background:rgba(15,23,42,0.95);backdrop-filter:blur(20px);border:1px solid var(--border);border-radius:14px;padding:13px 20px;font-size:13px;z-index:9999;transform:translateX(120%);transition:.3s cubic-bezier(.34,1.56,.64,1);max-width:300px}
 .toast.show{transform:translateX(0)}
@@ -242,6 +258,14 @@ td{padding:10px 12px;border-bottom:1px solid rgba(255,255,255,0.03);font-size:12
   <!-- LIVE MARKET TICKERS -->
   <div class="ticker-row" id="tickerRow">
     <div style="color:var(--text-muted);font-size:12px;font-family:var(--mono)">Loading live prices...</div>
+  </div>
+
+  <!-- TRADINGVIEW LIVE CHART (Replaces Binance Widget) -->
+  <div class="card chart-card">
+    <div class="card-title">Live TradingView Chart</div>
+    <div class="tv-chart-container">
+      <div id="tradingview_chart"></div>
+    </div>
   </div>
 
   <!-- BOT CONTROL + AI PANEL -->
@@ -369,6 +393,40 @@ td{padding:10px 12px;border-bottom:1px solid rgba(255,255,255,0.03);font-size:12
 <div id="toast" class="toast"></div>
 
 <script>
+// TradingView Advanced Chart Initialization
+function initTradingViewChart() {
+  if (typeof TradingView !== 'undefined') {
+    new TradingView.widget({
+      "autosize": false,
+      "symbol": "FX:EURUSD",
+      "interval": "D",
+      "timezone": "Etc/UTC",
+      "theme": "dark",
+      "style": "1",
+      "locale": "en",
+      "toolbar_bg": "#030712",
+      "enable_publishing": false,
+      "allow_symbol_change": true,
+      "container_id": "tradingview_chart",
+      "height": 400,
+      "width": "100%",
+      "hide_top_toolbar": false,
+      "hide_legend": false,
+      "save_image": false,
+      "studies": [
+        "MASimple@tv-basicstudies",
+        "RSI@tv-basicstudies",
+        "MACD@tv-basicstudies"
+      ],
+      "show_popup_button": true,
+      "popup_width": "1000",
+      "popup_height": "650"
+    });
+  } else {
+    setTimeout(initTradingViewChart, 500);
+  }
+}
+
 // ═══════════════════════════════════════════════════════
 //  CORE
 // ═══════════════════════════════════════════════════════
@@ -905,6 +963,9 @@ async function init(){
 
   // Update AI panel
   await updateAIPanel();
+
+  // Initialize TradingView Chart
+  initTradingViewChart();
 }
 
 // Auto-refresh every 15s
