@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8"/>
 <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
-<title>MANTUL FLOW — Smart Money Trading</title>
+<title>MANTUL FLOW</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=Space+Mono:wght@400;700&family=DM+Sans:wght@300;400;500;600;700&display=swap" rel="stylesheet">
 <link rel="icon" href="/icon.jpg">
@@ -490,7 +490,7 @@ function updatePriceTable(){
       return `<tr><td><div class="asset-name"><span>${pair.icon}</span> ${pair.label}</div></td><td class="price">—</td><td>—</td><td>—</td></tr>`;
     }
     
-    const dp = pair.symbol.includes("JPY") || pair.symbol.includes("XAU") || pair.symbol.includes("XAG") || pair.symbol.includes("BTC") || pair.symbol.includes("ETH") ? 2 : 5;
+    const dp = pair.symbol.includes("BTC") || pair.symbol.includes("ETH") || pair.symbol.includes("XAG") || pair.symbol.includes("JPY") || pair.symbol.includes("XAU") ? 2 : 5;
     const priceFormatted = price.toFixed(dp);
     
     let change = 0;
