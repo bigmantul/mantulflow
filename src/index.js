@@ -53,20 +53,26 @@ const SYMBOLS = [
   // Crypto
   "cryBTCUSD", "cryETHUSD",
 
-  // Indices
-  "frxUS500", "frxUSTEC", "frxUS30",
+  // Indices (CFDs)
+  "frxUS500",   // S&P 500
+  "frxUSTEC",   // NASDAQ 100
+  "frxUS30",    // Wall Street 30
 
   // Boom & Crash
-  "BOOM500", "CRASH500",
+  "BOOM500",
+  "CRASH500",
 
   // Jump Indices
-  "JD75", "JD100",
+  "JD75",
+  "JD100",
 
-  // Step Indices
-  "STP400", "STP500",
+  // Step Index (VALID DERIV FORMAT)
+  "stpRNG400",
+  "stpRNG500",
 
   // Volatility Indices
-  "R_100",  "R_75", "R_100_1S", "R_75_1S"
+  "R_75",
+  "R_100"
 ];
 
 const POLL_SECS        = 15;

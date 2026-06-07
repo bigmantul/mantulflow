@@ -28,63 +28,53 @@ const FALLBACK_MULTIPLIERS = {
   // =========================
   // FOREX (LOW VOLATILITY)
   // =========================
-  frxEURUSD: 100,
-  frxGBPUSD: 100,
-  frxUSDJPY: 100,
-  frxUSDCHF: 100,
-  frxAUDUSD: 100,
-  frxUSDCAD: 100,
-  frxNZDUSD: 100,
-  frxGBPJPY: 75,
-  frxEURGBP: 75,
-  frxEURCHF: 75,
-  frxEURCAD: 75,
-  frxEURAUD: 75,
+  frxEURUSD: 100, frxGBPUSD: 100, frxUSDJPY: 100,
+  frxUSDCHF: 100, frxAUDUSD: 100, frxUSDCAD: 100,
+  frxNZDUSD: 100, frxGBPJPY: 80,
+  frxEURGBP: 80, frxEURCHF: 80, frxEURCAD: 80, frxEURAUD: 80,
 
   // =========================
-  // METALS
+  // METALS (MEDIUM VOLATILITY)
   // =========================
-  frxXAUUSD: 50,
-  frxXAGUSD: 50,
+  frxXAUUSD: 60,  // Gold
+  frxXAGUSD: 60,  // Silver
 
   // =========================
-  // CRYPTO
+  // CRYPTO (HIGH VOLATILITY)
   // =========================
-  cryBTCUSD: 30,
-  cryETHUSD: 30,
+  cryBTCUSD: 40,
+  cryETHUSD: 40,
 
   // =========================
-  // INDICES
+  // INDICES (MEDIUM RISK)
   // =========================
-  frxUS500: 50,
-  frxUSTEC: 50,
-  frxUS30: 40,
+  frxUS500: 60,
+  frxUSTEC: 60,
+  frxUS30: 50,
 
   // =========================
-  // BOOM & CRASH
+  // BOOM & CRASH (HIGH RISK)
   // =========================
-  BOOM500: 25,
-  CRASH500: 25,
+  BOOM500: 30,
+  CRASH500: 30,
 
   // =========================
-  // JUMP INDICES
+  // JUMP INDICES (VERY HIGH RISK)
   // =========================
-  JD75: 20,
-  JD100: 20,
+  JD75: 25,
+  JD100: 25,
 
   // =========================
-  // STEP INDICES
+  // STEP INDICES (LOW-MEDIUM RISK)
   // =========================
-  STP400: 75,
-  STP500: 75,
+  stpRNG400: 80,
+  stpRNG500: 80,
 
   // =========================
-  // VOLATILITY INDICES (FIXED)
+  // VOLATILITY INDICES (EXTREME RISK)
   // =========================
-  R_100: 20,
-  R_75: 25,        // ✅ Volatility 75 (NORMAL ADDED)
-  R_100_1S: 15,
-  R_75_1S: 15
+  R_75: 25,
+  R_100: 20
 };
 
 const multiplierCache = new Map();
