@@ -14,7 +14,7 @@
 // ═══════════════════════════════════════════════════════
 
 const MIN_BARS_H4  = 100;
-const MIN_BARS_M30  = 100;
+const MIN_BARS_M30 = 100;
 const MIN_BARS_M15 = 60;
 
 const LONDON_START   = 7;
@@ -379,38 +379,41 @@ function get4HBias(dfH4) {
     return { bias: "neutral", reason: "4H market structure unclear" };
   }
 
-  // Check bullish conditions
-  if (emaData.priceAbove &&
-      emaData.slope === "rising" &&
-      structure === "bullish" &&
-      bosBreak === "bullish_break") {
+  // ── BULLISH: Need EMA + slope + structure (BOS is bonus) ──
+  // Removed strict BOS requirement — BOS often lags
+  if (emaData.priceAbove && emaData.slope === "rising" && structure === "bullish") {
     return {
-      bias:      "bullish",
-      reason:    "Price above EMA50 | HH+HL structure | BOS bullish break | EMA rising",
-      emaSlope:  emaData.slope,
+      bias:     "bullish",
+      reason:   `Price above EMA50 | HH+HL | EMA rising${bosBreak==="bullish_break"?" | BOS confirmed ✅":""}`,
+      emaSlope: emaData.slope,
       structure,
       bosBreak,
     };
   }
 
-  // Check bearish conditions
-  if (!emaData.priceAbove &&
-      emaData.slope === "falling" &&
-      structure === "bearish" &&
-      bosBreak === "bearish_break") {
+  // ── BEARISH: Need EMA + slope + structure ──────────────
+  if (!emaData.priceAbove && emaData.slope === "falling" && structure === "bearish") {
     return {
-      bias:      "bearish",
-      reason:    "Price below EMA50 | LH+LL structure | BOS bearish break | EMA falling",
-      emaSlope:  emaData.slope,
+      bias:     "bearish",
+      reason:   `Price below EMA50 | LH+LL | EMA falling${bosBreak==="bearish_break"?" | BOS confirmed ✅":""}`,
+      emaSlope: emaData.slope,
       structure,
       bosBreak,
     };
   }
 
-  // Partial alignment — not enough
+  // ── PARTIAL — need at least EMA + slope aligned ────────
+  // e.g. EMA rising + price above but structure unclear
+  if (emaData.priceAbove && emaData.slope === "rising") {
+    return { bias: "neutral", reason: `4H EMA bullish but structure unclear (${structure}) — waiting` };
+  }
+  if (!emaData.priceAbove && emaData.slope === "falling") {
+    return { bias: "neutral", reason: `4H EMA bearish but structure unclear (${structure}) — waiting` };
+  }
+
   return {
     bias:   "neutral",
-    reason: `4H partial: EMA ${emaData.slope} | Structure ${structure} | Break ${bosBreak} — all 4 conditions needed`,
+    reason: `4H: EMA ${emaData.slope} | Structure ${structure} — no clear bias`,
   };
 }
 

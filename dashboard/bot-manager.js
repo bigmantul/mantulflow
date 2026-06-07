@@ -10,7 +10,7 @@
 
 import { connectForMode }                from "../src/auth/deriv-auth.js";
 import { connectWebSocket, sendMessage } from "../src/utils/ws-client.js";
-import { getMultiTf }                    from "../src/data/candles.js";
+import { getCachedMultiTf }              from "../src/data/candle-cache.js";
 import {
   getLatestSignalMtf, getSignalStrength, getVolatilityScalar,
   marketIsTradeable, get15mTrend, getTradeReason,
@@ -50,7 +50,7 @@ const SYMBOLS = [
   "R_100"
 ];
 
-const POLL_SECS          = 20;
+const POLL_SECS          = 30; // increased to reduce rate limit hits
 const MAX_IDLE_SECS      = 30;
 const TELEGRAM_BOT_TOKEN = process.env.TELEGRAM_BOT_TOKEN;
 
@@ -315,9 +315,14 @@ function createPortfolio(userId) {
 
 
 // ── RUN ONE USER'S BOT ────────────────────────────────
+let _userStartOffset = 0;
+
 async function runUserBot(user, stopSignal) {
   const userId   = user._id.toString();
   const label    = user.name;
+  // Stagger start time so users don't all scan simultaneously
+  const myOffset = (_userStartOffset++ % 4) * 7000; // 7s apart
+  if (myOffset > 0) await new Promise(r => setTimeout(r, myOffset));
   const botToken = TELEGRAM_BOT_TOKEN;
   const chatId   = user.telegramChatId;
 
@@ -453,7 +458,9 @@ async function runUserBot(user, stopSignal) {
             continue;
           }
 
-          const tf = await getMultiTf(ws, symbol);
+          // Small delay between symbols to avoid rate limit
+          await new Promise(r => setTimeout(r, 500));
+          const tf = await getCachedMultiTf(ws, symbol);
           lastApiCall = Date.now();
           const { h4: dfH4, m30: dfM30, m15: dfM15 } = tf;
           // Cache 4H candles for trade monitor (trend reversal detection)
