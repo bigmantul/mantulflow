@@ -29,27 +29,11 @@ const SYMBOLS = [
   // Forex
   "frxEURUSD", "frxGBPUSD", "frxUSDJPY", "frxUSDCHF",
   "frxAUDUSD", "frxUSDCAD", "frxNZDUSD",
-  "frxGBPJPY", "frxEURGBP", "frxEURCHF", "frxEURCAD", "frxEURAUD",
-
   // Metals
   "frxXAUUSD", "frxXAGUSD",
-
   // Crypto
-  "cryBTCUSD", "cryETHUSD",
-  
-  // Boom & Crash
-  "BOOM500",
-  "CRASH500",
-
-  // Jump Indices
-  "JD75",
-  "JD100",
-
-  // Volatility Indices
-  "R_75",
-  "R_100"
+  "cryBTCUSD", "cryETHUSD", "cryLTCUSD", "cryBCHUSD",
 ];
-
 const POLL_SECS          = 30; // increased to reduce rate limit hits
 const MAX_IDLE_SECS      = 30;
 const TELEGRAM_BOT_TOKEN = process.env.TELEGRAM_BOT_TOKEN;
