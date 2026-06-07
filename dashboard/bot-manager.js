@@ -443,7 +443,7 @@ async function runUserBot(user, stopSignal) {
           }
 
           // Small delay between symbols to avoid rate limit
-          await new Promise(r => setTimeout(r, 500));
+          await new Promise(r => setTimeout(r, 300));
           const tf = await getCachedMultiTf(ws, symbol);
           lastApiCall = Date.now();
           const { h4: dfH4, m30: dfM30, m15: dfM15 } = tf;
