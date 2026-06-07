@@ -96,7 +96,7 @@ export async function getCachedMultiTf(ws, symbol) {
   // Add small delay between requests to avoid hitting rate limit
   const [h4, m30, m15] = await Promise.all([
     getCachedCandles(ws, symbol, 14400, 200),
-    getCachedCandles(ws, symbol, 3600,  200),
+     getCachedCandles(ws, symbol, 1800,  200),  // 30M (30 * 60)
     getCachedCandles(ws, symbol, 900,   200),
   ]);
   return { h4, m30, m15 };
