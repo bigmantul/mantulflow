@@ -62,10 +62,6 @@ const SYMBOLS = [
   "JD75",
   "JD100",
 
- // Step Index (VALID DERIV FORMAT)
-  "STEPINDEX_400",
-  "STEPINDEX_500",
-
   // Volatility Indices
   "R_75",
   "R_100"

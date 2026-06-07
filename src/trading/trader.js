@@ -58,14 +58,6 @@ const FALLBACK_MULTIPLIERS = {
   JD100: 25,
 
   // =========================
-  // STEP INDICES (LOW-MEDIUM RISK)
-  // =========================
-  // Step Index (VALID DERIV FORMAT)
-  STEPINDEX_400: 80,
-  STEPINDEX_500: 80,
-
-
-  // =========================
   // VOLATILITY INDICES (EXTREME RISK)
   // =========================
   R_75: 25,
