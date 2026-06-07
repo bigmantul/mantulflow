@@ -48,9 +48,9 @@ const FALLBACK_MULTIPLIERS = {
   // =========================
   // INDICES (MEDIUM RISK)
   // =========================
-  frxUS500: 60,
-  frxUSTEC: 60,
-  frxUS30: 50,
+  US500: 60,
+  USTEC: 60,
+  WSUS30: 50,     // Indices (CFDs)
 
   // =========================
   // BOOM & CRASH (HIGH RISK)
@@ -74,7 +74,8 @@ const FALLBACK_MULTIPLIERS = {
   // VOLATILITY INDICES (EXTREME RISK)
   // =========================
   R_75: 25,
-  R_100: 20
+  R_100: 20,
+ 
 };
 
 const multiplierCache = new Map();

@@ -38,9 +38,9 @@ const SYMBOLS = [
   "cryBTCUSD", "cryETHUSD",
 
   // Indices (CFDs)
-  "frxUS500",   // S&P 500
-  "frxUSTEC",   // NASDAQ 100
-  "frxUS30",    // Wall Street 30
+  "US500",   // S&P 500
+  "US100",   // NASDAQ 100
+  "WS30",    // Wall Street 30
 
   // Boom & Crash
   "BOOM500",
