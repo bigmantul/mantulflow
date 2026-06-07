@@ -45,10 +45,28 @@ const SYMBOLS = [
   // Forex
   "frxEURUSD", "frxGBPUSD", "frxUSDJPY", "frxUSDCHF",
   "frxAUDUSD", "frxUSDCAD", "frxNZDUSD",
+  "frxGBPJPY", "frxEURGBP", "frxEURCHF", "frxEURCAD", "frxEURAUD",
+
   // Metals
   "frxXAUUSD", "frxXAGUSD",
+
   // Crypto
   "cryBTCUSD", "cryETHUSD",
+
+  // Indices
+  "frxUS500", "frxUSTEC", "frxUS30",
+
+  // Boom & Crash
+  "BOOM500", "CRASH500",
+
+  // Jump Indices
+  "JD75", "JD100",
+
+  // Step Indices
+  "STP400", "STP500",
+
+  // Volatility Indices
+  "R_100",  "R_75", "R_100_1S", "R_75_1S"
 ];
 
 const POLL_SECS        = 15;

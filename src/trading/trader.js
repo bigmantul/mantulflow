@@ -24,10 +24,67 @@ const openTimers = new Map();
 
 // Fallback multipliers per symbol
 const FALLBACK_MULTIPLIERS = {
-  frxEURUSD: 100, frxGBPUSD: 100, frxUSDJPY: 100,
-  frxUSDCHF: 100, frxAUDUSD: 100, frxUSDCAD: 100,
-  frxNZDUSD: 100, frxXAUUSD: 100, frxXAGUSD: 100,
-  cryBTCUSD: 100, cryETHUSD: 100,
+
+  // =========================
+  // FOREX (LOW VOLATILITY)
+  // =========================
+  frxEURUSD: 100,
+  frxGBPUSD: 100,
+  frxUSDJPY: 100,
+  frxUSDCHF: 100,
+  frxAUDUSD: 100,
+  frxUSDCAD: 100,
+  frxNZDUSD: 100,
+  frxGBPJPY: 75,
+  frxEURGBP: 75,
+  frxEURCHF: 75,
+  frxEURCAD: 75,
+  frxEURAUD: 75,
+
+  // =========================
+  // METALS
+  // =========================
+  frxXAUUSD: 50,
+  frxXAGUSD: 50,
+
+  // =========================
+  // CRYPTO
+  // =========================
+  cryBTCUSD: 30,
+  cryETHUSD: 30,
+
+  // =========================
+  // INDICES
+  // =========================
+  frxUS500: 50,
+  frxUSTEC: 50,
+  frxUS30: 40,
+
+  // =========================
+  // BOOM & CRASH
+  // =========================
+  BOOM500: 25,
+  CRASH500: 25,
+
+  // =========================
+  // JUMP INDICES
+  // =========================
+  JD75: 20,
+  JD100: 20,
+
+  // =========================
+  // STEP INDICES
+  // =========================
+  STP400: 75,
+  STP500: 75,
+
+  // =========================
+  // VOLATILITY INDICES (FIXED)
+  // =========================
+  R_100: 20,
+  R_75: 25,        // ✅ Volatility 75 (NORMAL ADDED)
+  R_100_1S: 15,
+  R_75_1S: 15
 };
 
 const multiplierCache = new Map();
