@@ -46,13 +46,6 @@ const FALLBACK_MULTIPLIERS = {
   cryETHUSD: 40,
 
   // =========================
-  // INDICES (MEDIUM RISK)
-  // =========================
-  US500: 60,
-  USTEC: 60,
-  WSUS30: 50,     // Indices (CFDs)
-
-  // =========================
   // BOOM & CRASH (HIGH RISK)
   // =========================
   BOOM500: 30,
@@ -67,8 +60,10 @@ const FALLBACK_MULTIPLIERS = {
   // =========================
   // STEP INDICES (LOW-MEDIUM RISK)
   // =========================
-  stpRNG400: 80,
-  stpRNG500: 80,
+  // Step Index (VALID DERIV FORMAT)
+  STEPINDEX_400: 80,
+  STEPINDEX_500: 80,
+
 
   // =========================
   // VOLATILITY INDICES (EXTREME RISK)

@@ -53,11 +53,6 @@ const SYMBOLS = [
   // Crypto
   "cryBTCUSD", "cryETHUSD",
 
-  // Indices (CFDs)
-  "US500",   // S&P 500
-  "US100",   // NASDAQ 100
-  "WS30",    // Wall Street 30
-
 
   // Boom & Crash
   "BOOM500",
@@ -67,9 +62,9 @@ const SYMBOLS = [
   "JD75",
   "JD100",
 
-  // Step Index (VALID DERIV FORMAT)
-  "stpRNG400",
-  "stpRNG500",
+ // Step Index (VALID DERIV FORMAT)
+  "STEPINDEX_400",
+  "STEPINDEX_500",
 
   // Volatility Indices
   "R_75",
