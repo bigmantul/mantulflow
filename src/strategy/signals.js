@@ -13,8 +13,8 @@
 //    2hr forced close is handled by trader.js
 // ═══════════════════════════════════════════════════════
 
-const MIN_BARS_H4  = 100;
-const MIN_BARS_M30 = 100;
+const MIN_BARS_H4  = 50;
+const MIN_BARS_M30 = 50;
 const MIN_BARS_M15 = 60;
 
 const LONDON_START   = 7;
@@ -31,7 +31,7 @@ const MARKET_SCHEDULE = {
   frxUSDCHF: "forex", frxAUDUSD: "forex", frxUSDCAD: "forex",
   frxNZDUSD: "forex", frxXAUUSD: "forex", frxXAGUSD: "forex",
   cryBTCUSD: "24/7",  cryETHUSD: "24/7",
-  cryLTCUSD: "24/7",  cryBCHUSD: "24/7",
+ 
 };
 
 export function isMarketOpen(symbol) {
