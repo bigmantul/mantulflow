@@ -3,13 +3,12 @@
 <head>
 <meta charset="UTF-8"/>
 <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
-<title>MANTUL FLOW</title>
+<title>MANTUL FLOW — Smart Money Trading</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
-<link href="https://fonts.googleapis.com/css2?family=Space+Mono:wght@400;700&family=DM+Sans:wght@300;400;500;600;700&display=swap" rel="stylesheet">
 <link rel="icon" href="/icon.jpg">
 <link rel="apple-touch-icon" href="/icon.jpg">
+<link href="https://fonts.googleapis.com/css2?family=Space+Mono:wght@400;700&family=DM+Sans:wght@300;400;500;600;700&display=swap" rel="stylesheet">
 <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
-<meta name="viewport" content="width=1200">
 <style>
 :root{
   --bg:#030712;
@@ -99,22 +98,6 @@ body::before{content:'';position:fixed;inset:0;background:url("data:image/svg+xm
 .ticker-chg.up{color:var(--green)}.ticker-chg.dn{color:var(--red)}
 .ticker-dot{width:5px;height:5px;border-radius:50%}
 .ticker-dot.up{background:var(--green);box-shadow:0 0 6px var(--green)}.ticker-dot.dn{background:var(--red);box-shadow:0 0 6px var(--red)}
-
-/* Live Price Table - like your screenshot */
-.live-price-card{padding:24px}
-.price-table{width:100%;border-collapse:collapse}
-.price-table th{padding:12px 16px;text-align:left;color:var(--text-muted);font-family:var(--mono);font-size:10px;letter-spacing:1px;border-bottom:1px solid var(--border)}
-.price-table td{padding:14px 16px;border-bottom:1px solid rgba(255,255,255,0.04);font-size:14px}
-.price-table tr:hover{background:rgba(56,189,248,0.03)}
-.asset-name{font-weight:600;display:flex;align-items:center;gap:8px}
-.asset-name span{font-size:18px}
-.asset-symbol{font-size:11px;color:var(--text-muted);font-family:var(--mono);margin-left:6px}
-.price{font-family:var(--mono);font-weight:700}
-.change{font-family:var(--mono);font-size:13px;font-weight:700}
-.change.up{color:var(--green)}.change.down{color:var(--red)}
-.change-badge{padding:3px 8px;border-radius:20px;font-size:11px;display:inline-block}
-.change-badge.up{background:rgba(16,185,129,0.12);color:var(--green)}
-.change-badge.down{background:rgba(248,113,113,0.12);color:var(--red)}
 
 /* Two col */
 .two-col{display:grid;grid-template-columns:1fr 1fr;gap:20px}
@@ -255,17 +238,9 @@ td{padding:10px 12px;border-bottom:1px solid rgba(255,255,255,0.03);font-size:12
     </div>
   </div>
 
-  <!-- LIVE MARKET PRICES TABLE (Like your screenshot) -->
-  <div class="card live-price-card">
-    <div class="card-title">LIVE MARKET PRICES</div>
-    <table class="price-table" id="priceTable">
-      <thead>
-        <tr><th>Asset</th><th>Price</th><th>24h Change</th><th>24h Change %</th></tr>
-      </thead>
-      <tbody id="priceTableBody">
-        <tr><td colspan="4" style="text-align:center">Loading prices...</td></tr>
-      </tbody>
-    </table>
+  <!-- LIVE MARKET TICKERS -->
+  <div class="ticker-row" id="tickerRow">
+    <div style="color:var(--text-muted);font-size:12px;font-family:var(--mono)">Loading live prices...</div>
   </div>
 
   <!-- BOT CONTROL + AI PANEL -->
@@ -439,23 +414,23 @@ updateClock();
 //  LIVE MARKET PRICES via Deriv WebSocket
 // ═══════════════════════════════════════════════════════
 const DERIV_PAIRS = [
-  {label:"Bitcoin", symbol:"cryBTCUSD", icon:"₿"},
-  {label:"Ethereum", symbol:"cryETHUSD", icon:"⟠"},
-  {label:"EUR/USD", symbol:"frxEURUSD", icon:"€"},
-  {label:"GBP/USD", symbol:"frxGBPUSD", icon:"£"},
-  {label:"USD/JPY", symbol:"frxUSDJPY", icon:"¥"},
-  {label:"XAU/USD", symbol:"frxXAUUSD", icon:"🥇"},
-  {label:"XAG/USD", symbol:"frxXAGUSD", icon:"🥈"},
-  {label:"USD/CAD", symbol:"frxUSDCAD", icon:"C$"},
-  {label:"AUD/USD", symbol:"frxAUDUSD", icon:"A$"},
-  {label:"NZD/USD", symbol:"frxNZDUSD", icon:"NZ$"},
-  {label:"USD/CHF", symbol:"frxUSDCHF", icon:"₣"},
+  {label:"EUR/USD", symbol:"frxEURUSD"},
+  {label:"GBP/USD", symbol:"frxGBPUSD"},
+  {label:"USD/JPY", symbol:"frxUSDJPY"},
+  {label:"USD/CHF", symbol:"frxUSDCHF"},
+  {label:"AUD/USD", symbol:"frxAUDUSD"},
+  {label:"USD/CAD", symbol:"frxUSDCAD"},
+  {label:"NZD/USD", symbol:"frxNZDUSD"},
+  {label:"XAU/USD", symbol:"frxXAUUSD"},
+  {label:"XAG/USD", symbol:"frxXAGUSD"},
+  {label:"BTC/USD", symbol:"cryBTCUSD"},
+  {label:"ETH/USD", symbol:"cryETHUSD"},
 ];
 
-const prices = {};
+const prices    = {};
 const prevPrices = {};
-let tickWs = null;
-let tickReqId = 1;
+let tickWs      = null;
+let tickReqId   = 1;
 
 function connectTickWs(){
   if(tickWs) tickWs.close();
@@ -468,53 +443,41 @@ function connectTickWs(){
   tickWs.onmessage = e => {
     const d = JSON.parse(e.data);
     if(d.msg_type==="tick"&&d.tick){
-      const sym = d.tick.symbol;
+      const sym   = d.tick.symbol;
       const price = parseFloat(d.tick.quote);
       prevPrices[sym] = prices[sym] || price;
-      prices[sym] = price;
-      updatePriceTable();
+      prices[sym]     = price;
+      updateTicker(sym, price);
     }
   };
   tickWs.onclose = ()=> setTimeout(connectTickWs, 5000);
 }
 
-function updatePriceTable(){
-  const tbody = document.getElementById("priceTableBody");
-  if(!tbody) return;
-  
-  const rows = DERIV_PAIRS.map(pair => {
-    const price = prices[pair.symbol];
-    const prev = prevPrices[pair.symbol];
-    
-    if(!price) {
-      return `<tr><td><div class="asset-name"><span>${pair.icon}</span> ${pair.label}</div></td><td class="price">—</td><td>—</td><td>—</td></tr>`;
-    }
-    
-    const dp = pair.symbol.includes("BTC") || pair.symbol.includes("ETH") || pair.symbol.includes("XAG") || pair.symbol.includes("JPY") || pair.symbol.includes("XAU") ? 2 : 5;
-    const priceFormatted = price.toFixed(dp);
-    
-    let change = 0;
-    let changePercent = "0.00";
-    let isUp = true;
-    
-    if(prev && prev !== price) {
-      change = price - prev;
-      changePercent = ((change / prev) * 100).toFixed(2);
-      isUp = change >= 0;
-    }
-    
-    const changeFormatted = isUp ? `+${change.toFixed(dp)}` : `${change.toFixed(dp)}`;
-    const changePercentFormatted = isUp ? `+${changePercent}%` : `${changePercent}%`;
-    
-    return `<tr>
-      <td><div class="asset-name"><span>${pair.icon}</span> ${pair.label}</div></td>
-      <td class="price">$${priceFormatted}</td>
-      <td class="change ${isUp ? 'up' : 'down'}">${changeFormatted}</td>
-      <td><span class="change-badge ${isUp ? 'up' : 'down'}">${changePercentFormatted}</span></td>
-    </tr>`;
-  }).join("");
-  
-  tbody.innerHTML = rows;
+function updateTicker(sym, price){
+  const el  = document.getElementById("tk_"+sym);
+  if(!el) return;
+  const prev = prevPrices[sym] || price;
+  const up   = price >= prev;
+  const pair = DERIV_PAIRS.find(p=>p.symbol===sym);
+  const dp   = sym.includes("JPY")||sym.includes("XAU")||sym.includes("XAG")||sym.includes("BTC")||sym.includes("ETH") ? 2 : 5;
+  const chg  = prev ? ((price-prev)/prev*100).toFixed(3) : "0.000";
+  el.innerHTML = `
+    <div class="ticker-dot ${up?'up':'dn'}"></div>
+    <span class="ticker-name">${pair?.label||sym}</span>
+    <span class="ticker-price">${price.toFixed(dp)}</span>
+    <span class="ticker-chg ${up?'up':'dn'}">${up?'▲':'▼'} ${Math.abs(chg)}%</span>`;
+}
+
+function buildTickers(){
+  const row = document.getElementById("tickerRow");
+  row.innerHTML = DERIV_PAIRS.map(p=>
+    `<div class="ticker" id="tk_${p.symbol}" onclick="window.open('/charts.html#${p.symbol}','_blank')">
+       <div class="ticker-dot dn"></div>
+       <span class="ticker-name">${p.label}</span>
+       <span class="ticker-price">—</span>
+       <span class="ticker-chg dn">—</span>
+     </div>`
+  ).join("");
 }
 
 // ═══════════════════════════════════════════════════════
@@ -523,38 +486,24 @@ function updatePriceTable(){
 let cachedUser = null;
 
 async function refreshBalance(){
-  if(!cachedUser) cachedUser = await API("/user/me");
-  const { derivPAT, derivAppId, derivMode } = cachedUser;
-  if(!derivPAT) return;
-
   document.getElementById("balanceAmount").textContent = "$ ...";
-
-  const balance = await new Promise(resolve=>{
-    const ws = new WebSocket(`wss://ws.binaryws.com/websockets/v3?app_id=${derivAppId||"1089"}`);
-    const t   = setTimeout(()=>{ws.close();resolve(null);},8000);
-    ws.onopen = ()=> ws.send(JSON.stringify({authorize:derivPAT}));
-    ws.onmessage = e=>{
-      const d = JSON.parse(e.data);
-      if(d.msg_type==="authorize"){
-        clearTimeout(t);
-        ws.close();
-        resolve(d.authorize?.balance ?? null);
-      }
-      if(d.error){ clearTimeout(t); ws.close(); resolve(null); }
-    };
-    ws.onerror=()=>{ clearTimeout(t); resolve(null); };
-  });
-
-  if(balance!==null){
-    document.getElementById("balanceAmount").textContent = `$${parseFloat(balance).toFixed(2)}`;
-    const health = Math.min(95, Math.max(20, Math.floor(balance/100)));
-    document.getElementById("healthFill").style.width = health+"%";
-    document.getElementById("healthPct").textContent   = health+"%";
-    document.getElementById("balanceMode").textContent = (derivMode||"demo").toUpperCase();
-    toast(`Balance: $${parseFloat(balance).toFixed(2)}`,"ok");
-  } else {
+  try {
+    // Server fetches balance using stored PAT — PAT never exposed to browser
+    const data = await API("/user/balance");
+    if(data.balance !== null && data.balance !== undefined){
+      const bal = parseFloat(data.balance);
+      document.getElementById("balanceAmount").textContent = `$${bal.toFixed(2)}`;
+      const health = Math.min(95, Math.max(20, Math.floor(bal/200)));
+      document.getElementById("healthFill").style.width = health+"%";
+      document.getElementById("healthPct").textContent  = health+"%";
+      document.getElementById("balanceMode").textContent = (data.mode||"demo").toUpperCase();
+    } else {
+      document.getElementById("balanceAmount").textContent = "$—";
+      if(data.error) toast("Balance: "+data.error,"err");
+    }
+  } catch(e){
     document.getElementById("balanceAmount").textContent = "$—";
-    toast("Could not fetch balance","err");
+    toast("Balance fetch failed","err");
   }
 }
 
@@ -929,7 +878,8 @@ async function init(){
   document.getElementById("setMode").value   = user.derivMode||"demo";
   document.getElementById("setChatId").value = user.telegramChatId||"";
 
-  // Connect Deriv WS for live prices
+  // Build tickers + connect Deriv WS
+  buildTickers();
   connectTickWs();
 
   // Load balance from Deriv
