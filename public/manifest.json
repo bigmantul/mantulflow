@@ -2,6 +2,7 @@
   "name": "MANTUL FLOW",
   "short_name": "MANTUL-FLOW",
   "start_url": "/",
+  "scope": "/",
   "display": "standalone",
   "background_color": "#ffffff",
   "theme_color": "#39ff14",
