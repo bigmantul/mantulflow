@@ -243,48 +243,22 @@ function getCandleQuality(candle, prevCandle = null) {
 //  Bearish engulfing, pin bar, momentum candle
 // ═══════════════════════════════════════════════════════
 function getConfirmationCandle(df) {
-  if (df.length < 3) return "none";
+  if (df.length < 2) return "none";
 
-  const c1    = df[df.length - 3];  // previous candle
-  const c2    = df[df.length - 2];  // current closed candle
-  const body2 = Math.abs(c2.close - c2.open);
-  const range2 = c2.high - c2.low;
-  const wickLo = Math.min(c2.open, c2.close) - c2.low;
-  const wickHi = c2.high - Math.max(c2.open, c2.close);
+  const candle = df[df.length - 2];  // most recent closed candle
+  const body = Math.abs(candle.close - candle.open);
+  const range = candle.high - candle.low;
 
-  if (range2 === 0) return "none";
+  if (range === 0) return "none";
 
-  // Check candle quality first
-  const quality = getCandleQuality(c2, c1);
-  if (!quality.valid) return "none";
+  const bodyRatio = body / range;
 
-  // Bullish engulfing
-  if (c1.close < c1.open &&
-      c2.close > c2.open &&
-      c2.close > c1.open &&
-      c2.open  < c1.close) return "bullish_engulfing";
+  // Minimum body size: 30% of range
+  if (bodyRatio < 0.3) return "none";
 
-  // Bearish engulfing
-  if (c1.close > c1.open &&
-      c2.close < c2.open &&
-      c2.close < c1.open &&
-      c2.open  > c1.close) return "bearish_engulfing";
-
-  // Bullish pin bar (hammer)
-  if (wickLo > body2 * 2 &&
-      wickHi < body2 &&
-      c2.close > c2.open) return "bullish_pin";
-
-  // Bearish pin bar (shooting star)
-  if (wickHi > body2 * 2 &&
-      wickLo < body2 &&
-      c2.close < c2.open) return "bearish_pin";
-
-  // Strong bullish momentum candle
-  if (c2.close > c2.open && body2 / range2 >= 0.7) return "bullish_momentum";
-
-  // Strong bearish momentum candle
-  if (c2.close < c2.open && body2 / range2 >= 0.7) return "bearish_momentum";
+  // Direction
+  if (candle.close > candle.open) return "bullish";
+  if (candle.close < candle.open) return "bearish";
 
   return "none";
 }
@@ -446,10 +420,10 @@ function get30MConfirmation(dfM30, requiredBias) {
     if (!pullback) {
       return { confirmed: false, reason: "30M pullback not complete yet" };
     }
-    const bullishCandles = ["bullish_engulfing", "bullish_pin", "bullish_momentum"];
-    if (!bullishCandles.includes(confirm)) {
-      return { confirmed: false, reason: `30M no bullish candle (got: ${confirm})` };
-    }
+    const bullishCandles = ["bullish"];  // was ["bullish_engulfing", "bullish_pin", "bullish_momentum"]
+if (!bullishCandles.includes(confirm)) {
+  return { confirmed: false, reason: `30M no bullish candle (got: ${confirm})` };
+}
     return {
       confirmed: true,
       reason:    `30M: EMA above ✅ | HH+HL ✅ | Pullback done ✅ | ${confirm} ✅`,
@@ -468,10 +442,10 @@ function get30MConfirmation(dfM30, requiredBias) {
     if (!pullback) {
       return { confirmed: false, reason: "30M pullback not complete yet" };
     }
-    const bearishCandles = ["bearish_engulfing", "bearish_pin", "bearish_momentum"];
-    if (!bearishCandles.includes(confirm)) {
-      return { confirmed: false, reason: `30M no bearish candle (got: ${confirm})` };
-    }
+    const bearishCandles = ["bearish"];  // was ["bearish_engulfing", "bearish_pin", "bearish_momentum"]
+if (!bearishCandles.includes(confirm)) {
+  return { confirmed: false, reason: `30M no bearish candle (got: ${confirm})` };
+}
     return {
       confirmed: true,
       reason:    `30M: EMA below ✅ | LH+LL ✅ | Pullback done ✅ | ${confirm} ✅`,
