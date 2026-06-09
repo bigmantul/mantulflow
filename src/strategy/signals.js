@@ -461,39 +461,51 @@ function get15MEntry(dfM15, requiredBias) {
   const reversePoint  = hasReversePoint(dfM15, requiredBias);
   const breakout      = hasBreakout(dfM15, requiredBias);
 
-  if (requiredBias === "bullish") {
-    // Must have pullback forming higher low
-    if (!reversePoint) {
-      return { valid: false, reason: "15M no higher low formed yet" };
-    }
-    // Must have bullish trigger candle OR breakout of swing high
-    const bullishTriggers = ["bullish_engulfing", "bullish_pin", "bullish_momentum"];
-    if (!bullishTriggers.includes(triggerCandle) && !breakout) {
-      return { valid: false, reason: `15M no trigger (candle: ${triggerCandle}, breakout: ${breakout})` };
-    }
-    const entryType = breakout ? "swing_high_breakout" : triggerCandle;
-    return {
-      valid:  true,
-      reason: `15M: Higher low ✅ | Entry: ${entryType} ✅`,
-      entry:  entryType,
-    };
+ if (requiredBias === "bullish") {
+  if (!reversePoint) {
+    return { valid: false, reason: "15M no higher low formed yet" };
   }
 
+  if (triggerCandle !== "bullish") {
+  return {
+    valid: false,
+    reason: "15M bullish trigger candle missing"
+  };
+}
+
+  const entryType = breakout
+    ? "swing_high_breakout"
+    : "bullish_candle";
+
+  return {
+    valid: true,
+    reason: `15M: Higher low ✅ | Entry: ${entryType} ✅`,
+    entry: entryType,
+  };
+}
+
   if (requiredBias === "bearish") {
-    if (!reversePoint) {
-      return { valid: false, reason: "15M no lower high formed yet" };
-    }
-    const bearishTriggers = ["bearish_engulfing", "bearish_pin", "bearish_momentum"];
-    if (!bearishTriggers.includes(triggerCandle) && !breakout) {
-      return { valid: false, reason: `15M no trigger (candle: ${triggerCandle}, breakout: ${breakout})` };
-    }
-    const entryType = breakout ? "swing_low_breakout" : triggerCandle;
-    return {
-      valid:  true,
-      reason: `15M: Lower high ✅ | Entry: ${entryType} ✅`,
-      entry:  entryType,
-    };
+  if (!reversePoint) {
+    return { valid: false, reason: "15M no lower high formed yet" };
   }
+
+  if (triggerCandle !== "bearish") {
+  return {
+    valid: false,
+    reason: "15M bearish trigger candle missing"
+  };
+}
+
+  const entryType = breakout
+    ? "swing_low_breakout"
+    : "bearish_candle";
+
+  return {
+    valid: true,
+    reason: `15M: Lower high ✅ | Entry: ${entryType} ✅`,
+    entry: entryType,
+  };
+}
 
   return { valid: false, reason: "Unknown bias" };
 }
