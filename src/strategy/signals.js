@@ -420,15 +420,11 @@ function get30MConfirmation(dfM30, requiredBias) {
     if (!pullback) {
       return { confirmed: false, reason: "30M pullback not complete yet" };
     }
-    const bullishCandles = ["bullish"];  // was ["bullish_engulfing", "bullish_pin", "bullish_momentum"]
-if (!bullishCandles.includes(confirm)) {
-  return { confirmed: false, reason: `30M no bullish candle (got: ${confirm})` };
-}
+  
     return {
-      confirmed: true,
-      reason:    `30M: EMA above ✅ | HH+HL ✅ | Pullback done ✅ | ${confirm} ✅`,
-      candle:    confirm,
-    };
+  confirmed: true,
+  reason: "30M: EMA above ✅ | HH+HL ✅ | Pullback done ✅",
+};
   }
 
   if (requiredBias === "bearish") {
@@ -442,15 +438,11 @@ if (!bullishCandles.includes(confirm)) {
     if (!pullback) {
       return { confirmed: false, reason: "30M pullback not complete yet" };
     }
-    const bearishCandles = ["bearish"];  // was ["bearish_engulfing", "bearish_pin", "bearish_momentum"]
-if (!bearishCandles.includes(confirm)) {
-  return { confirmed: false, reason: `30M no bearish candle (got: ${confirm})` };
-}
+ 
     return {
-      confirmed: true,
-      reason:    `30M: EMA below ✅ | LH+LL ✅ | Pullback done ✅ | ${confirm} ✅`,
-      candle:    confirm,
-    };
+  confirmed: true,
+  reason: "30M: EMA below ✅ | LH+LL ✅ | Pullback done ✅",
+};
   }
 
   return { confirmed: false, reason: "Unknown bias" };
