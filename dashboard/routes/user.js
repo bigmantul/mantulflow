@@ -24,13 +24,14 @@ router.get("/me", protect, async (req, res) => {
 router.put("/risk", protect, async (req, res) => {
   try {
     const {
-      riskPct, maxOpenTrades, maxDailyLossPct,
+      stakeAmount, maxOpenTrades, maxDailyLossPct,
       maxConsecutiveLosses, stopLossPct, takeProfitPct,
     } = req.body;
 
     const user = await User.findById(req.user._id);
 
-    if (riskPct              !== undefined) user.risk.riskPct              = Math.min(Math.max(riskPct, 0.01), 0.50);
+    // stakeAmount: fixed dollar amount, minimum $1
+    if (stakeAmount          !== undefined) user.risk.stakeAmount          = Math.max(parseFloat(stakeAmount), 1.00);
     if (maxOpenTrades        !== undefined) user.risk.maxOpenTrades        = Math.min(Math.max(maxOpenTrades, 1), 10);
     if (maxDailyLossPct      !== undefined) user.risk.maxDailyLossPct      = Math.min(Math.max(maxDailyLossPct, 0.05), 1.0);
     if (maxConsecutiveLosses !== undefined) user.risk.maxConsecutiveLosses = Math.min(Math.max(maxConsecutiveLosses, 1), 10);

@@ -2,228 +2,351 @@
 <html lang="en">
 <head>
 <meta charset="UTF-8"/>
-<meta name="viewport" content="width=1200"/>
+<meta name="viewport" content="width=device-width, initial-scale=1.0"/>
 <title>Admin — MANTUL FLOW</title>
-<link rel="icon" href="/icon.jpg">
-<link rel="apple-touch-icon" href="/icon.jpg">
+<link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@300;400;500;600;700&family=Space+Mono:wght@400;700&display=swap" rel="stylesheet">
 <style>
-  *{margin:0;padding:0;box-sizing:border-box}
-  body{font-family:'Segoe UI',sans-serif;background:#0a0e1a;color:#e2e8f0;min-height:100vh}
-  .header{background:#111827;border-bottom:1px solid #1e293b;padding:16px 24px;display:flex;align-items:center;justify-content:space-between}
-  .header h1{font-size:18px;font-weight:700;color:#f59e0b}
-  .btn-logout{padding:6px 14px;background:transparent;border:1px solid #334155;border-radius:6px;color:#94a3b8;cursor:pointer;font-size:13px}
-  .main{max-width:1200px;margin:0 auto;padding:24px}
+*{margin:0;padding:0;box-sizing:border-box}
+:root{
+  --base:#05070f;--glass:rgba(15,20,32,0.7);--glass2:rgba(10,15,25,0.5);
+  --border:rgba(56,189,248,0.2);--border2:rgba(56,189,248,0.08);
+  --cyan:#38bdf8;--indigo:#1e40af;--purple:#818cf8;
+  --green:#10b981;--red:#f87171;--yellow:#fbbf24;
+  --text:#e2e8f0;--muted:#64748b;--dim:#1e2d3d;
+  --mono:'Space Mono',monospace;--sans:'Space Grotesk',sans-serif;
+}
+body{font-family:var(--sans);background:var(--base);color:var(--text);min-height:100vh;overflow-x:hidden}
+.bg-gradient{position:fixed;inset:0;z-index:0;background:radial-gradient(ellipse 80% 60% at 20% 20%,rgba(30,64,175,0.25),transparent),radial-gradient(ellipse 60% 80% at 80% 80%,rgba(129,140,248,0.12),transparent),var(--base);animation:bgDrift 25s ease-in-out infinite}
+@keyframes bgDrift{0%,100%{background-position:0% 0%}50%{background-position:100% 50%}}
+.grid-overlay{position:fixed;inset:0;z-index:0;background-image:linear-gradient(rgba(56,189,248,0.04) 1px,transparent 1px),linear-gradient(90deg,rgba(56,189,248,0.04) 1px,transparent 1px);background-size:60px 60px;animation:gridMove 20s linear infinite}
+@keyframes gridMove{0%{transform:translate(0,0)}100%{transform:translate(60px,60px)}}
+.orb{position:fixed;border-radius:50%;filter:blur(140px);opacity:.15;animation:orbFloat 20s ease-in-out infinite;pointer-events:none;z-index:0}
+.orb1{width:600px;height:600px;background:#1e3a8a;top:-20%;left:-20%;animation-duration:22s}
+.orb2{width:400px;height:400px;background:#4f46e5;bottom:-15%;right:-10%;animation-duration:18s;animation-delay:-6s}
+.orb3{width:350px;height:350px;background:#0891b2;top:40%;right:20%;animation-duration:25s;animation-delay:-12s}
+@keyframes orbFloat{0%,100%{transform:translate(0,0)}50%{transform:translate(60px,-50px)}}
+.wrapper{position:relative;z-index:1;min-height:100vh}
+.page{max-width:1440px;margin:0 auto;padding:24px}
 
-  /* LOGIN */
-  .login-wrap{display:flex;align-items:center;justify-content:center;min-height:80vh}
-  .login-card{background:#111827;border:1px solid #1e293b;border-radius:16px;padding:40px;width:360px;text-align:center}
-  .login-card h2{font-size:20px;font-weight:700;color:#f59e0b;margin-bottom:8px}
-  .login-card p{color:#64748b;font-size:13px;margin-bottom:24px}
-  input{width:100%;padding:10px 14px;background:#0f172a;border:1px solid #1e293b;border-radius:8px;color:#e2e8f0;font-size:14px;outline:none;margin-bottom:12px}
-  input:focus{border-color:#f59e0b}
-  .btn{width:100%;padding:11px;border-radius:8px;border:none;font-size:14px;font-weight:600;cursor:pointer;transition:.2s}
-  .btn-gold{background:#92400e;color:#fcd34d}
-  .btn-gold:hover{background:#b45309}
-  .error{color:#f87171;font-size:13px;margin-top:8px;display:none}
+/* LOGO / HEADER */
+.header{display:flex;align-items:center;justify-content:space-between;padding:20px 0 32px;animation:fadeInDown .8s ease both}
+@keyframes fadeInDown{from{opacity:0;transform:translateY(-20px)}to{opacity:1;transform:translateY(0)}}
+.logo{display:flex;align-items:center;gap:16px}
+.logo-icon{width:56px;height:56px;border-radius:20px;background:linear-gradient(135deg,#7c3aed,#f59e0b);display:flex;align-items:center;justify-content:center;font-size:26px;font-weight:700;color:#fff;animation:iconPulse 3s ease-in-out infinite;flex-shrink:0}
+@keyframes iconPulse{0%,100%{box-shadow:0 0 20px rgba(245,158,11,0.3)}50%{box-shadow:0 0 40px rgba(245,158,11,0.7),0 0 60px rgba(124,58,237,0.4)}}
+.logo-text h1{font-size:22px;font-weight:700;letter-spacing:-.5px;background:linear-gradient(90deg,#fff 0%,#f59e0b 40%,#818cf8 70%,#f59e0b 100%);background-size:200% auto;-webkit-background-clip:text;background-clip:text;color:transparent;animation:shimmer 5s linear infinite}
+@keyframes shimmer{to{background-position:200% center}}
+.logo-text p{font-size:10px;color:var(--muted);letter-spacing:2px;text-transform:uppercase;margin-top:3px}
+.header-right{display:flex;align-items:center;gap:12px}
+.admin-badge{padding:6px 16px;background:rgba(245,158,11,0.1);border:1px solid rgba(245,158,11,0.3);border-radius:40px;font-size:11px;font-family:var(--mono);color:#f59e0b}
+.btn-out{padding:8px 20px;background:rgba(248,113,113,0.1);border:1px solid rgba(248,113,113,0.3);border-radius:12px;color:var(--red);font-size:12px;font-family:var(--mono);cursor:pointer;transition:.2s}
+.btn-out:hover{background:rgba(248,113,113,0.2)}
 
-  /* STATS GRID */
-  .stats-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(160px,1fr));gap:16px;margin-bottom:28px}
-  .stat{background:#111827;border:1px solid #1e293b;border-radius:12px;padding:18px}
-  .stat-label{font-size:11px;color:#64748b;text-transform:uppercase;letter-spacing:.6px}
-  .stat-value{font-size:26px;font-weight:700;margin-top:4px}
-  .gold{color:#f59e0b} .green{color:#34d399} .blue{color:#38bdf8} .red{color:#f87171}
+/* LOGIN */
+.login-wrap{display:flex;align-items:center;justify-content:center;min-height:70vh}
+.login-card{background:var(--glass);backdrop-filter:blur(20px);border:1px solid rgba(245,158,11,0.3);border-radius:36px;padding:44px;width:400px;text-align:center}
+.login-title{font-size:20px;font-weight:700;color:#f59e0b;margin-bottom:6px}
+.login-sub{font-size:12px;color:var(--muted);margin-bottom:28px;font-family:var(--mono)}
+.pw-input{width:100%;padding:12px 16px;background:rgba(0,0,0,0.4);border:1px solid rgba(255,255,255,0.07);border-radius:16px;color:var(--text);font-size:14px;outline:none;text-align:center;letter-spacing:3px;transition:border .2s;font-family:var(--mono)}
+.pw-input:focus{border-color:rgba(245,158,11,0.5)}
+.login-btn{width:100%;padding:12px;margin-top:14px;background:linear-gradient(135deg,#78350f,#f59e0b);border:none;border-radius:16px;color:#fff;font-size:14px;font-weight:700;cursor:pointer;transition:.2s;font-family:var(--sans)}
+.login-btn:hover{filter:brightness(1.1);transform:scale(1.01)}
+.login-err{color:var(--red);font-size:12px;margin-top:10px;font-family:var(--mono);display:none}
 
-  /* USERS TABLE */
-  .card{background:#111827;border:1px solid #1e293b;border-radius:12px;padding:24px;margin-bottom:20px}
-  .card-title{font-size:13px;font-weight:600;color:#94a3b8;text-transform:uppercase;letter-spacing:.6px;margin-bottom:16px;display:flex;justify-content:space-between;align-items:center}
-  table{width:100%;border-collapse:collapse;font-size:13px}
-  th{text-align:left;padding:10px 12px;color:#64748b;border-bottom:1px solid #1e293b;font-weight:500;white-space:nowrap}
-  td{padding:10px 12px;border-bottom:1px solid #0f172a;vertical-align:middle}
-  tr:hover td{background:#0f172a}
-  .badge{padding:3px 8px;border-radius:20px;font-size:11px;font-weight:600;white-space:nowrap}
-  .badge.running{background:#14532d;color:#86efac}
-  .badge.stopped{background:#1e293b;color:#64748b}
-  .badge.demo{background:#1e3a5f;color:#38bdf8}
-  .badge.real{background:#451a03;color:#fcd34d}
-  .dot{width:8px;height:8px;border-radius:50%;display:inline-block;margin-right:6px}
-  .dot.on{background:#34d399;box-shadow:0 0 6px #34d399}
-  .dot.off{background:#334155}
-  .action-btn{padding:5px 12px;border-radius:6px;border:none;font-size:12px;font-weight:600;cursor:pointer;transition:.2s;margin-right:4px}
-  .btn-start{background:#14532d;color:#86efac}
-  .btn-start:hover{background:#166534}
-  .btn-stop{background:#7f1d1d;color:#fca5a5}
-  .btn-stop:hover{background:#991b1b}
-  .btn-view{background:#1e3a5f;color:#7dd3fc}
-  .btn-view:hover{background:#1e40af}
-  .btn-del{background:#1e293b;color:#f87171}
-  .btn-del:hover{background:#450a0a}
+/* GLASS CARD */
+.glass-card{background:var(--glass);backdrop-filter:blur(20px);border:1px solid var(--border);border-radius:36px;transition:transform .3s ease,box-shadow .3s ease,border-color .3s ease}
+.glass-card:hover{transform:translateY(-4px);box-shadow:0 20px 50px rgba(0,0,0,.4),0 0 30px rgba(56,189,248,0.08);border-color:rgba(56,189,248,0.35)}
+.card-label{font-size:10px;letter-spacing:2px;text-transform:uppercase;color:var(--muted);font-family:var(--mono);margin-bottom:18px}
 
-  /* USER DETAIL MODAL */
-  .modal{display:none;position:fixed;inset:0;background:rgba(0,0,0,.7);z-index:100;align-items:center;justify-content:center}
-  .modal.open{display:flex}
-  .modal-box{background:#111827;border:1px solid #1e293b;border-radius:16px;padding:28px;width:90%;max-width:800px;max-height:85vh;overflow-y:auto}
-  .modal-header{display:flex;justify-content:space-between;align-items:center;margin-bottom:20px}
-  .modal-title{font-size:16px;font-weight:700;color:#f59e0b}
-  .close-btn{background:none;border:none;color:#64748b;font-size:22px;cursor:pointer;line-height:1}
-  .info-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(140px,1fr));gap:12px;margin-bottom:20px}
-  .info-item{background:#0f172a;border-radius:8px;padding:12px}
-  .info-label{font-size:11px;color:#64748b;margin-bottom:4px}
-  .info-value{font-size:16px;font-weight:600}
-  .empty{text-align:center;padding:32px;color:#475569}
-  .refresh-btn{padding:6px 14px;background:#1e293b;color:#94a3b8;border:none;border-radius:6px;font-size:12px;cursor:pointer}
-  .refresh-btn:hover{background:#334155}
+/* STATS */
+.stats-row{display:grid;grid-template-columns:repeat(auto-fit,minmax(160px,1fr));gap:14px;margin-bottom:24px}
+.stat-card{padding:22px;border-radius:28px;text-align:center}
+.stat-lbl{font-size:9px;color:var(--muted);letter-spacing:2px;text-transform:uppercase;font-family:var(--mono);margin-bottom:8px}
+.stat-val{font-size:28px;font-weight:700;font-family:var(--mono)}
+.stat-val.c{color:var(--cyan)}.stat-val.g{color:var(--green)}.stat-val.r{color:var(--red)}.stat-val.y{color:#f59e0b}
+.stat-val.grad{background:linear-gradient(135deg,#f59e0b,var(--purple));-webkit-background-clip:text;background-clip:text;color:transparent}
+
+/* USER TABLE */
+.users-card{padding:28px;margin-bottom:24px;overflow-x:auto}
+table{width:100%;border-collapse:collapse;font-size:12px}
+th{padding:12px 14px;color:var(--muted);font-family:var(--mono);font-size:9px;letter-spacing:1.5px;border-bottom:1px solid rgba(255,255,255,0.05);text-align:left;white-space:nowrap}
+td{padding:12px 14px;border-bottom:1px solid rgba(255,255,255,0.03);white-space:nowrap;vertical-align:middle}
+tr:hover td{background:rgba(56,189,248,0.02)}
+.badge{padding:3px 10px;border-radius:20px;font-size:10px;font-weight:700;font-family:var(--mono)}
+.badge.running{background:rgba(16,185,129,0.12);color:var(--green)}
+.badge.stopped{background:rgba(100,116,139,0.1);color:var(--muted)}
+.badge.demo{background:rgba(56,189,248,0.12);color:var(--cyan)}
+.badge.real{background:rgba(245,158,11,0.12);color:#f59e0b}
+.status-dot{width:8px;height:8px;border-radius:50%;display:inline-block;margin-right:6px}
+.status-dot.on{background:var(--green);box-shadow:0 0 6px var(--green)}
+.status-dot.off{background:var(--muted)}
+
+/* ACTION BUTTONS */
+.action-btns-row{display:flex;gap:6px;flex-wrap:wrap}
+.ab{padding:5px 12px;border:none;border-radius:8px;font-size:11px;font-family:var(--mono);font-weight:700;cursor:pointer;transition:.2s;white-space:nowrap}
+.ab:hover{filter:brightness(1.15);transform:scale(1.03)}
+.ab.start{background:rgba(16,185,129,0.2);color:var(--green);border:1px solid rgba(16,185,129,0.3)}
+.ab.stop{background:rgba(248,113,113,0.2);color:var(--red);border:1px solid rgba(248,113,113,0.3)}
+.ab.view{background:rgba(56,189,248,0.15);color:var(--cyan);border:1px solid var(--border2)}
+.ab.edit{background:rgba(245,158,11,0.15);color:#f59e0b;border:1px solid rgba(245,158,11,0.3)}
+.ab.sync{background:rgba(129,140,248,0.15);color:var(--purple);border:1px solid rgba(129,140,248,0.3)}
+.ab.reset{background:rgba(245,158,11,0.1);color:#f59e0b;border:1px solid rgba(245,158,11,0.2)}
+.ab.del{background:rgba(248,113,113,0.1);color:var(--red);border:1px solid rgba(248,113,113,0.2)}
+
+/* MODAL */
+.modal{display:none;position:fixed;inset:0;background:rgba(0,0,0,0.75);z-index:200;align-items:center;justify-content:center;backdrop-filter:blur(8px)}
+.modal.open{display:flex}
+.modal-box{background:rgba(10,15,28,0.98);border:1px solid var(--border);border-radius:36px;padding:36px;width:90%;max-width:700px;max-height:88vh;overflow-y:auto;animation:modalIn .3s ease}
+@keyframes modalIn{from{opacity:0;transform:scale(.95)}to{opacity:1;transform:scale(1)}}
+.modal-header{display:flex;justify-content:space-between;align-items:center;margin-bottom:24px}
+.modal-title{font-size:16px;font-weight:700;color:#f59e0b}
+.modal-close{background:none;border:none;color:var(--muted);font-size:24px;cursor:pointer;line-height:1;transition:.2s}
+.modal-close:hover{color:var(--red)}
+.info-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(140px,1fr));gap:12px;margin-bottom:24px}
+.info-box{background:rgba(0,0,0,0.3);border:1px solid var(--border2);border-radius:16px;padding:14px}
+.info-lbl{font-size:9px;color:var(--muted);font-family:var(--mono);letter-spacing:1px;margin-bottom:5px}
+.info-val{font-size:16px;font-weight:700;font-family:var(--mono)}
+.field{margin-bottom:14px}
+.field label{display:block;font-size:10px;color:var(--muted);font-family:var(--mono);letter-spacing:1px;margin-bottom:5px}
+input[type=text],input[type=password],input[type=email],input[type=number],select{width:100%;padding:10px 14px;background:rgba(0,0,0,0.4);border:1px solid rgba(255,255,255,0.07);border-radius:14px;color:var(--text);font-size:13px;outline:none;transition:border .2s;font-family:var(--sans)}
+input:focus,select:focus{border-color:var(--border)}
+.form-grid{display:grid;grid-template-columns:1fr 1fr;gap:12px}
+.save-btn{width:100%;padding:12px;background:linear-gradient(135deg,#78350f,#f59e0b);border:none;border-radius:14px;color:#fff;font-size:13px;font-weight:700;cursor:pointer;transition:.2s;font-family:var(--sans);margin-top:8px}
+.save-btn:hover{filter:brightness(1.1)}
+.divider{height:1px;background:rgba(255,255,255,0.05);margin:20px 0}
+.empty{text-align:center;padding:48px;color:var(--dim)}
+.refresh-btn{padding:6px 14px;background:rgba(255,255,255,0.04);border:1px solid var(--border2);border-radius:10px;color:var(--muted);font-size:11px;font-family:var(--mono);cursor:pointer;transition:.2s}
+.refresh-btn:hover{background:rgba(56,189,248,0.08);color:var(--text)}
+.toast{position:fixed;bottom:28px;right:28px;z-index:9999;background:rgba(10,15,30,0.95);backdrop-filter:blur(20px);border:1px solid var(--border2);border-radius:18px;padding:14px 22px;font-size:13px;transform:translateX(120%);transition:.35s cubic-bezier(.34,1.56,.64,1);max-width:320px}
+.toast.show{transform:translateX(0)}
+.toast.ok{border-left:3px solid var(--green)}
+.toast.err{border-left:3px solid var(--red)}
 </style>
 </head>
 <body>
+<div class="bg-gradient"></div>
+<div class="grid-overlay"></div>
+<div class="orb orb1"></div>
+<div class="orb orb2"></div>
+<div class="orb orb3"></div>
 
-<!-- LOGIN SCREEN -->
-<div id="loginScreen">
-  <div class="login-wrap">
-    <div class="login-card">
-      <h2>🔐 Admin Panel</h2>
-      <p>MANTUL'S UNIFIED TRADING BOT</p>
-      <input type="password" id="adminPassword" placeholder="Enter admin password" onkeydown="if(event.key==='Enter')adminLogin()"/>
-      <button class="btn btn-gold" onclick="adminLogin()">Login</button>
-      <div class="error" id="loginError"></div>
+<div class="wrapper">
+<div class="page">
+
+  <!-- LOGIN -->
+  <div id="loginScreen">
+    <div style="padding:40px 0 20px;animation:fadeInDown .8s ease both">
+      <div class="logo" style="justify-content:center">
+        <div class="logo-icon">🛡️</div>
+        <div class="logo-text">
+          <h1>MANTUL FLOW</h1>
+          <p>Admin Control Panel</p>
+        </div>
+      </div>
+    </div>
+    <div class="login-wrap" style="min-height:50vh">
+      <div class="login-card">
+        <div class="login-title">🔐 Admin Access</div>
+        <div class="login-sub">Enter admin password to continue</div>
+        <input class="pw-input" type="password" id="adminPw" placeholder="••••••••" onkeydown="if(event.key==='Enter')adminLogin()"/>
+        <button class="login-btn" onclick="adminLogin()">Access Admin Panel</button>
+        <div class="login-err" id="loginErr">Wrong password</div>
+      </div>
     </div>
   </div>
-</div>
 
-<!-- ADMIN DASHBOARD -->
-<div id="adminPanel" style="display:none">
-  <div class="header">
-    <h1>🛡️ MANTUL'S ADMIN PANEL</h1>
-    <div style="display:flex;align-items:center;gap:12px">
-      <span style="font-size:13px;color:#64748b" id="botCount"></span>
-      <button class="btn-logout" onclick="adminLogout()">Logout</button>
+  <!-- ADMIN PANEL -->
+  <div id="adminPanel" style="display:none">
+    <div class="header">
+      <div class="logo">
+        <div class="logo-icon">🛡️</div>
+        <div class="logo-text">
+          <h1>MANTUL FLOW</h1>
+          <p>Admin Control Panel</p>
+        </div>
+      </div>
+      <div class="header-right">
+        <span class="admin-badge">👑 ADMIN</span>
+        <span style="font-size:11px;font-family:var(--mono);color:var(--muted)" id="botCountEl">—</span>
+        <button class="refresh-btn" onclick="loadAll()">↻ Refresh</button>
+        <button class="btn-out" onclick="adminLogout()">Exit</button>
+      </div>
     </div>
-  </div>
-
-  <div class="main">
 
     <!-- PLATFORM STATS -->
-    <div class="stats-grid" id="platformStats"></div>
+    <div class="stats-row" id="platformStats">
+      <div class="stat-card glass-card"><div class="stat-lbl">Total Users</div><div class="stat-val c" id="pUsers">—</div></div>
+      <div class="stat-card glass-card"><div class="stat-lbl">Active Bots</div><div class="stat-val g" id="pActive">—</div></div>
+      <div class="stat-card glass-card"><div class="stat-lbl">Running Now</div><div class="stat-val y" id="pRunning">—</div></div>
+      <div class="stat-card glass-card"><div class="stat-lbl">Total Trades</div><div class="stat-val c" id="pTrades">—</div></div>
+      <div class="stat-card glass-card"><div class="stat-lbl">Win Rate</div><div class="stat-val g" id="pWR">—</div></div>
+      <div class="stat-card glass-card"><div class="stat-lbl">Total PnL</div><div class="stat-val grad" id="pPnl">—</div></div>
+    </div>
 
     <!-- USERS TABLE -->
-    <div class="card">
-      <div class="card-title">
+    <div class="glass-card users-card">
+      <div class="card-label" style="display:flex;justify-content:space-between;align-items:center">
         All Users
         <button class="refresh-btn" onclick="loadAll()">↻ Refresh</button>
       </div>
       <div id="usersTable"><div class="empty">Loading...</div></div>
     </div>
-
   </div>
+
+</div>
 </div>
 
 <!-- USER DETAIL MODAL -->
-<div class="modal" id="userModal">
+<div class="modal" id="detailModal">
   <div class="modal-box">
     <div class="modal-header">
-      <span class="modal-title" id="modalTitle">User Detail</span>
-      <button class="close-btn" onclick="closeModal()">✕</button>
+      <span class="modal-title" id="detailTitle">User Detail</span>
+      <button class="modal-close" onclick="closeModal('detailModal')">✕</button>
     </div>
-    <div id="modalContent"></div>
+    <div id="detailContent"></div>
   </div>
 </div>
 
+<!-- EDIT USER MODAL -->
+<div class="modal" id="editModal">
+  <div class="modal-box">
+    <div class="modal-header">
+      <span class="modal-title" id="editTitle">Edit User</span>
+      <button class="modal-close" onclick="closeModal('editModal')">✕</button>
+    </div>
+    <div id="editContent">
+      <input type="hidden" id="editUserId"/>
+      <div class="form-grid">
+        <div class="field"><label>Full Name</label><input type="text" id="editName" placeholder="Full name"/></div>
+        <div class="field"><label>Email</label><input type="email" id="editEmail" placeholder="email@example.com"/></div>
+      </div>
+      <div class="form-grid">
+        <div class="field"><label>Deriv App ID</label><input type="text" id="editAppId" placeholder="App ID"/></div>
+        <div class="field"><label>Trading Mode</label>
+          <select id="editMode">
+            <option value="demo">Demo</option>
+            <option value="real">Real</option>
+          </select>
+        </div>
+      </div>
+      <div class="form-grid">
+        <div class="field"><label>New PAT Token (leave blank to keep)</label><input type="password" id="editPAT" placeholder="pat_xxxxxxxx"/></div>
+        <div class="field"><label>Telegram Chat ID</label><input type="text" id="editChatId" placeholder="123456789"/></div>
+      </div>
+      <div class="divider"></div>
+      <div style="font-size:10px;color:var(--muted);font-family:var(--mono);letter-spacing:1px;margin-bottom:14px">RISK SETTINGS</div>
+      <div class="form-grid">
+        <div class="field"><label>STAKE AMOUNT ($)</label><input type="number" id="editStake" min="1" step="0.5" placeholder="1.00"/></div>
+        <div class="field"><label>MAX OPEN TRADES</label><input type="number" id="editMaxOpen" min="1" max="10" placeholder="3"/></div>
+      </div>
+      <div class="form-grid">
+        <div class="field"><label>STOP LOSS %</label><input type="number" id="editSL" min="10" max="200" placeholder="80"/></div>
+        <div class="field"><label>TAKE PROFIT %</label><input type="number" id="editTP" min="10" max="1000" placeholder="200"/></div>
+      </div>
+      <div class="form-grid">
+        <div class="field"><label>DAILY LOSS LIMIT %</label><input type="number" id="editDailyLoss" min="5" max="100" placeholder="30"/></div>
+        <div class="field"><label>MAX LOSS STREAK</label><input type="number" id="editStreak" min="1" max="10" placeholder="3"/></div>
+      </div>
+      <button class="save-btn" onclick="saveEditUser()">💾 Save Changes</button>
+    </div>
+  </div>
+</div>
+
+<div id="toast" class="toast"></div>
+
 <script>
 let adminToken = sessionStorage.getItem("adminToken");
-if (adminToken) showPanel();
+if(adminToken) showPanel();
 
-async function adminLogin() {
-  const password = document.getElementById("adminPassword").value;
-  const errEl    = document.getElementById("loginError");
-  errEl.style.display = "none";
-  try {
-    const res  = await fetch("/api/admin/login", {
-      method: "POST", headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ password }),
-    });
-    const data = await res.json();
-    if (!res.ok) { errEl.textContent = data.error; errEl.style.display = "block"; return; }
-    adminToken = data.token;
-    sessionStorage.setItem("adminToken", adminToken);
-    showPanel();
-  } catch (e) {
-    errEl.textContent = "Network error"; errEl.style.display = "block";
-  }
-}
-
-function adminLogout() {
-  sessionStorage.removeItem("adminToken");
-  adminToken = null;
-  document.getElementById("loginScreen").style.display = "block";
-  document.getElementById("adminPanel").style.display  = "none";
-}
-
-function showPanel() {
-  document.getElementById("loginScreen").style.display = "none";
-  document.getElementById("adminPanel").style.display  = "block";
-  loadAll();
-}
-
-const API = async (path, method = "GET", body = null) => {
-  const opts = { method, headers: { Authorization: `Bearer ${adminToken}`, "Content-Type": "application/json" } };
-  if (body) opts.body = JSON.stringify(body);
-  const res  = await fetch("/api/admin" + path, opts);
-  if (res.status === 401) { adminLogout(); return null; }
+const API = async(path,method="GET",body=null)=>{
+  const opts={method,headers:{Authorization:`Bearer ${adminToken}`,"Content-Type":"application/json"}};
+  if(body) opts.body=JSON.stringify(body);
+  const res=await fetch("/api/admin"+path,opts);
+  if(res.status===401){adminLogout();return null;}
   return res.json();
 };
 
-async function loadAll() {
+function toast(msg,type="ok"){
+  const el=document.getElementById("toast");
+  el.textContent=msg;el.className=`toast ${type} show`;
+  setTimeout(()=>el.classList.remove("show"),3500);
+}
+
+async function adminLogin(){
+  const pw=document.getElementById("adminPw").value;
+  const err=document.getElementById("loginErr");
+  err.style.display="none";
+  try{
+    const res=await fetch("/api/admin/login",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({password:pw})});
+    const d=await res.json();
+    if(!res.ok){err.style.display="block";return;}
+    adminToken=d.token;
+    sessionStorage.setItem("adminToken",adminToken);
+    showPanel();
+  }catch(e){err.style.display="block";}
+}
+
+function adminLogout(){
+  sessionStorage.removeItem("adminToken");
+  adminToken=null;
+  document.getElementById("loginScreen").style.display="block";
+  document.getElementById("adminPanel").style.display="none";
+}
+
+function showPanel(){
+  document.getElementById("loginScreen").style.display="none";
+  document.getElementById("adminPanel").style.display="block";
+  loadAll();
+}
+
+async function loadAll(){
   await loadStats();
   await loadUsers();
 }
 
-async function loadStats() {
-  const s = await API("/stats");
-  if (!s) return;
-  document.getElementById("botCount").textContent = `${s.runningBots} bots running`;
-  document.getElementById("platformStats").innerHTML = `
-    <div class="stat"><div class="stat-label">Total Users</div><div class="stat-value blue">${s.totalUsers}</div></div>
-    <div class="stat"><div class="stat-label">Active Bots</div><div class="stat-value green">${s.activeUsers}</div></div>
-    <div class="stat"><div class="stat-label">Running Now</div><div class="stat-value gold">${s.runningBots}</div></div>
-    <div class="stat"><div class="stat-label">Total Trades</div><div class="stat-value blue">${s.totalTrades}</div></div>
-    <div class="stat"><div class="stat-label">Open Trades</div><div class="stat-value gold">${s.openTrades}</div></div>
-    <div class="stat"><div class="stat-label">Win Rate</div><div class="stat-value green">${s.winRate}%</div></div>
-    <div class="stat"><div class="stat-label">Total PnL</div><div class="stat-value ${s.totalPnl >= 0 ? 'green' : 'red'}">${s.totalPnl >= 0 ? '+' : ''}$${s.totalPnl}</div></div>
-  `;
+async function loadStats(){
+  const s=await API("/stats");
+  if(!s) return;
+  document.getElementById("botCountEl").textContent=`${s.runningBots} bots running`;
+  document.getElementById("pUsers").textContent=s.totalUsers;
+  document.getElementById("pActive").textContent=s.activeUsers;
+  document.getElementById("pRunning").textContent=s.runningBots;
+  document.getElementById("pTrades").textContent=s.totalTrades;
+  document.getElementById("pWR").textContent=s.winRate+"%";
+  const pEl=document.getElementById("pPnl");
+  pEl.textContent=(s.totalPnl>=0?"+":"")+"$"+s.totalPnl;
 }
 
-async function loadUsers() {
-  const users = await API("/users");
-  if (!users) return;
-  if (!users.length) {
-    document.getElementById("usersTable").innerHTML = '<div class="empty">No users yet</div>';
-    return;
-  }
-  const rows = users.map(u => `
+async function loadUsers(){
+  const users=await API("/users");
+  if(!users) return;
+  if(!users.length){document.getElementById("usersTable").innerHTML='<div class="empty">No users yet</div>';return;}
+  const rows=users.map(u=>`
     <tr>
-      <td><span class="dot ${u.isRunning ? 'on' : 'off'}"></span>${u.name}</td>
-      <td style="color:#64748b">${u.email}</td>
+      <td><span class="status-dot ${u.isRunning?'on':'off'}"></span>${u.name}</td>
+      <td style="color:var(--muted);font-size:11px">${u.email}</td>
       <td><span class="badge ${u.derivMode}">${u.derivMode}</span></td>
-      <td><span class="badge ${u.isRunning ? 'running' : 'stopped'}">${u.isRunning ? 'Running' : 'Stopped'}</span></td>
-      <td>${u.tradeCount}</td>
-      <td style="color:#38bdf8">${u.openTrades}</td>
-      <td style="color:${u.winRate >= 50 ? '#34d399' : '#f87171'}">${u.winRate}%</td>
-      <td style="color:${u.totalPnl >= 0 ? '#34d399' : '#f87171'}">${u.totalPnl >= 0 ? '+' : ''}$${u.totalPnl}</td>
-      <td style="color:#475569;font-size:12px">${new Date(u.createdAt).toLocaleDateString()}</td>
+      <td><span class="badge ${u.isRunning?'running':'stopped'}">${u.isRunning?'Running':'Stopped'}</span></td>
+      <td style="font-family:var(--mono)">${u.tradeCount}</td>
+      <td style="font-family:var(--mono);color:var(--cyan)">${u.openTrades}</td>
+      <td style="font-family:var(--mono);color:${u.winRate>=50?'var(--green)':'var(--red)'}">${u.winRate}%</td>
+      <td style="font-family:var(--mono);color:${u.totalPnl>=0?'var(--green)':'var(--red)'}">${u.totalPnl>=0?'+':''}$${u.totalPnl}</td>
+      <td style="color:var(--muted);font-size:11px">${new Date(u.createdAt).toLocaleDateString()}</td>
       <td>
-        ${u.isRunning
-          ? `<button class="action-btn btn-stop" onclick="toggleBot('${u._id}', false, this)">Stop</button>`
-          : `<button class="action-btn btn-start" onclick="toggleBot('${u._id}', true, this)">Start</button>`
-        }
-        <button class="action-btn btn-view" onclick="viewUser('${u._id}', '${u.name}')">View</button>
-        <button class="action-btn btn-view" style="background:#1a2e1a;color:#86efac" onclick="adminSyncTrades('${u._id}', '${u.name}', this)">Sync</button>
-        <button class="action-btn btn-view" style="background:#2d2006;color:#fbbf24" onclick="adminImportTrades('${u._id}', '${u.name}', this)">Import</button>
-        <button class="action-btn btn-del" style="background:#1e293b;color:#fbbf24" onclick="resetTrades('${u._id}', '${u.name}')">Reset</button>
-        <button class="action-btn btn-del" onclick="deleteUser('${u._id}', '${u.name}')">Del</button>
+        <div class="action-btns-row">
+          ${u.isRunning
+            ?`<button class="ab stop" onclick="toggleBot('${u._id}',false,this)">Stop</button>`
+            :`<button class="ab start" onclick="toggleBot('${u._id}',true,this)">Start</button>`
+          }
+          <button class="ab view" onclick="viewUser('${u._id}','${u.name}')">View</button>
+          <button class="ab edit" onclick="editUser('${u._id}','${u.name}')">Edit</button>
+          <button class="ab sync" onclick="adminSync('${u._id}','${u.name}',this)">Sync</button>
+          <button class="ab reset" onclick="resetTrades('${u._id}','${u.name}')">Reset</button>
+          <button class="ab del" onclick="deleteUser('${u._id}','${u.name}')">Del</button>
+        </div>
       </td>
-    </tr>
-  `).join("");
-
-  document.getElementById("usersTable").innerHTML = `
+    </tr>`).join("");
+  document.getElementById("usersTable").innerHTML=`
     <table>
       <thead><tr>
         <th>Name</th><th>Email</th><th>Mode</th><th>Status</th>
@@ -234,114 +357,121 @@ async function loadUsers() {
     </table>`;
 }
 
-async function adminImportTrades(userId, name, btn) {
-  if (!confirm(`Import all trades from Deriv for ${name}?`)) return;
-  btn.disabled    = true;
-  btn.textContent = "...";
-  const data = await fetch(`/api/admin/users/${userId}/import-trades`, {
-    method: "POST",
-    headers: { Authorization: `Bearer ${adminToken}`, "Content-Type": "application/json" },
-  }).then(r => r.json());
-  if (data) alert(`${name}: Imported ${data.imported || 0} | Updated ${data.updated || 0} | Skipped ${data.skipped || 0}`);
-  btn.disabled    = false;
-  btn.textContent = "Import";
+async function toggleBot(id,active,btn){
+  btn.disabled=true;btn.textContent="...";
+  await API(`/users/${id}/bot`,"PUT",{active});
   await loadAll();
 }
 
-async function resetTrades(userId, name) {
-  if (!confirm(`Reset ALL trade history for ${name}?\nThis cannot be undone.`)) return;
-  const data = await API(`/users/${userId}/trades`, "DELETE");
-  if (data) {
-    alert(`${name}: ${data.message}`);
-    await loadAll();
-  }
-}
-
-async function adminSyncTrades(userId, name, btn) {
-  btn.disabled    = true;
-  btn.textContent = "...";
-  const data = await API(`/users/${userId}/sync-trades`, "POST");
-  if (data) {
-    alert(`${name}: ${data.message}`);
-    await loadAll();
-  }
-  btn.disabled    = false;
-  btn.textContent = "Sync";
-}
-
-async function toggleBot(userId, active, btn) {
-  btn.disabled = true;
-  btn.textContent = "...";
-  await API(`/users/${userId}/bot`, "PUT", { active });
-  await loadAll();
-}
-
-async function deleteUser(userId, name) {
-  if (!confirm(`Delete ${name} and all their trades? This cannot be undone.`)) return;
-  await API(`/users/${userId}`, "DELETE");
-  await loadAll();
-}
-
-async function viewUser(userId, name) {
-  document.getElementById("modalTitle").textContent = `👤 ${name}`;
-  document.getElementById("modalContent").innerHTML = '<div class="empty">Loading...</div>';
-  document.getElementById("userModal").classList.add("open");
-
-  const data = await API(`/users/${userId}`);
-  if (!data) return;
-
-  const s = data.stats;
-  const trades = data.trades;
-
-  const tradeRows = trades.length ? trades.map(t => {
-    const dir = t.direction === "MULTUP" ? "BUY" : "SELL";
-    const pnl = t.pnl !== 0
-      ? (t.pnl > 0 ? `<span style="color:#34d399">+$${t.pnl.toFixed(2)}</span>`
-                   : `<span style="color:#f87171">$${t.pnl.toFixed(2)}</span>`)
-      : "—";
-    return `<tr>
-      <td>${t.symbol}</td>
-      <td style="color:${dir==='BUY'?'#34d399':'#f87171'}">${dir}</td>
-      <td>$${t.stake.toFixed(2)}</td>
-      <td>x${t.multiplier}</td>
-      <td>${t.strength ? t.strength.toFixed(0)+'%' : '—'}</td>
-      <td>${pnl}</td>
-      <td><span class="badge ${t.status}">${t.status}</span></td>
-      <td style="color:#475569;font-size:11px">${new Date(t.openedAt).toLocaleString()}</td>
-    </tr>`;
-  }).join("") : `<tr><td colspan="8"><div class="empty">No trades yet</div></td></tr>`;
-
-  document.getElementById("modalContent").innerHTML = `
+async function viewUser(id,name){
+  document.getElementById("detailTitle").textContent=`👤 ${name}`;
+  document.getElementById("detailContent").innerHTML='<div class="empty">Loading...</div>';
+  document.getElementById("detailModal").classList.add("open");
+  const d=await API(`/users/${id}`);
+  if(!d) return;
+  const s=d.stats;
+  const rows=d.trades.slice(0,50).map(t=>{
+    const dir=t.direction==="MULTUP"?"BUY":"SELL";
+    const pnl=t.pnl!=null?(t.pnl>0?`<span style="color:var(--green)">+$${t.pnl.toFixed(2)}</span>`:`<span style="color:var(--red)">$${t.pnl.toFixed(2)}</span>`):"—";
+    return `<tr><td>${t.symbol}</td><td><span class="badge ${dir.toLowerCase()}">${dir}</span></td><td>$${t.stake.toFixed(2)}</td><td>${pnl}</td><td><span class="badge ${t.status}">${t.status}</span></td><td style="color:var(--muted);font-size:11px">${new Date(t.openedAt).toLocaleString()}</td></tr>`;
+  }).join("");
+  document.getElementById("detailContent").innerHTML=`
     <div class="info-grid">
-      <div class="info-item"><div class="info-label">Total Trades</div><div class="info-value blue">${s.total}</div></div>
-      <div class="info-item"><div class="info-label">Open</div><div class="info-value gold">${s.open}</div></div>
-      <div class="info-item"><div class="info-label">Won</div><div class="info-value green">${s.won}</div></div>
-      <div class="info-item"><div class="info-label">Lost</div><div class="info-value red">${s.lost}</div></div>
-      <div class="info-item"><div class="info-label">Win Rate</div><div class="info-value ${s.winRate>=50?'green':'red'}">${s.winRate}%</div></div>
-      <div class="info-item"><div class="info-label">Total PnL</div><div class="info-value ${s.totalPnl>=0?'green':'red'}">${s.totalPnl>=0?'+':''}$${s.totalPnl}</div></div>
-      <div class="info-item"><div class="info-label">Mode</div><div class="info-value">${data.user.derivMode.toUpperCase()}</div></div>
-      <div class="info-item"><div class="info-label">Bot Status</div><div class="info-value ${data.user.isRunning?'green':'red'}">${data.user.isRunning?'Running':'Stopped'}</div></div>
+      <div class="info-box"><div class="info-lbl">Total Trades</div><div class="info-val c">${s.total}</div></div>
+      <div class="info-box"><div class="info-lbl">Open</div><div class="info-val y">${s.open}</div></div>
+      <div class="info-box"><div class="info-lbl">Won</div><div class="info-val g">${s.won}</div></div>
+      <div class="info-box"><div class="info-lbl">Lost</div><div class="info-val r">${s.lost}</div></div>
+      <div class="info-box"><div class="info-lbl">Win Rate</div><div class="info-val ${s.winRate>=50?'g':'r'}">${s.winRate}%</div></div>
+      <div class="info-box"><div class="info-lbl">Total PnL</div><div class="info-val ${s.totalPnl>=0?'g':'r'}">${s.totalPnl>=0?'+':''}$${s.totalPnl}</div></div>
+      <div class="info-box"><div class="info-lbl">Mode</div><div class="info-val">${d.user.derivMode?.toUpperCase()}</div></div>
+      <div class="info-box"><div class="info-lbl">Bot Status</div><div class="info-val ${d.user.isRunning?'g':'r'}">${d.user.isRunning?'Running':'Stopped'}</div></div>
     </div>
-
-    <div style="font-size:13px;font-weight:600;color:#64748b;text-transform:uppercase;letter-spacing:.6px;margin-bottom:12px">Trade History</div>
-    <table>
-      <thead><tr><th>Symbol</th><th>Dir</th><th>Stake</th><th>Mult</th><th>Strength</th><th>PnL</th><th>Status</th><th>Opened</th></tr></thead>
-      <tbody>${tradeRows}</tbody>
-    </table>
-  `;
+    <div style="font-size:10px;color:var(--muted);font-family:var(--mono);letter-spacing:1px;margin-bottom:12px">TRADE HISTORY (Last 50)</div>
+    <div style="overflow-x:auto">
+    <table><thead><tr><th>Symbol</th><th>Dir</th><th>Stake</th><th>PnL</th><th>Status</th><th>Opened</th></tr></thead>
+    <tbody>${rows||'<tr><td colspan="6"><div class="empty">No trades yet</div></td></tr>'}</tbody></table>
+    </div>`;
 }
 
-function closeModal() {
-  document.getElementById("userModal").classList.remove("open");
+async function editUser(id,name){
+  // Fetch user details
+  const d=await API(`/users/${id}`);
+  if(!d) return;
+  const u=d.user;
+  document.getElementById("editTitle").textContent=`✏️ Edit — ${name}`;
+  document.getElementById("editUserId").value=id;
+  document.getElementById("editName").value=u.name||"";
+  document.getElementById("editEmail").value=u.email||"";
+  document.getElementById("editAppId").value=u.derivAppId||"";
+  document.getElementById("editMode").value=u.derivMode||"demo";
+  document.getElementById("editChatId").value=u.telegramChatId||"";
+  document.getElementById("editPAT").value="";
+  // Risk settings
+  const r=u.risk||{};
+  document.getElementById("editStake").value=(r.stakeAmount||1).toFixed(2);
+  document.getElementById("editMaxOpen").value=r.maxOpenTrades||3;
+  document.getElementById("editSL").value=Math.round((r.stopLossPct||0.8)*100);
+  document.getElementById("editTP").value=Math.round((r.takeProfitPct||2.0)*100);
+  document.getElementById("editDailyLoss").value=Math.round((r.maxDailyLossPct||0.3)*100);
+  document.getElementById("editStreak").value=r.maxConsecutiveLosses||3;
+  document.getElementById("editModal").classList.add("open");
 }
 
-// Close modal on backdrop click
-document.getElementById("userModal").addEventListener("click", function(e) {
-  if (e.target === this) closeModal();
-});
+async function saveEditUser(){
+  const id=document.getElementById("editUserId").value;
+  const pat=document.getElementById("editPAT").value.trim();
+  const data={
+    name:           document.getElementById("editName").value.trim(),
+    email:          document.getElementById("editEmail").value.trim(),
+    derivAppId:     document.getElementById("editAppId").value.trim(),
+    derivMode:      document.getElementById("editMode").value,
+    telegramChatId: document.getElementById("editChatId").value.trim(),
+    risk:{
+      stakeAmount:          parseFloat(document.getElementById("editStake").value)||1,
+      maxOpenTrades:        parseInt(document.getElementById("editMaxOpen").value)||3,
+      stopLossPct:          parseFloat(document.getElementById("editSL").value)/100,
+      takeProfitPct:        parseFloat(document.getElementById("editTP").value)/100,
+      maxDailyLossPct:      parseFloat(document.getElementById("editDailyLoss").value)/100,
+      maxConsecutiveLosses: parseInt(document.getElementById("editStreak").value)||3,
+    },
+  };
+  if(pat) data.derivPAT=pat;
+  const res=await API(`/users/${id}`,"PUT",data);
+  if(res&&!res.error){
+    toast("User updated successfully","ok");
+    closeModal("editModal");
+    await loadAll();
+  } else {
+    toast(res?.error||"Update failed","err");
+  }
+}
 
-// Auto refresh every 15 seconds
-setInterval(loadAll, 15000);
+async function adminSync(id,name,btn){
+  btn.disabled=true;btn.textContent="...";
+  const d=await API(`/users/${id}/sync-trades`,"POST");
+  if(d) toast(`${name}: ${d.message}`,"ok");
+  btn.disabled=false;btn.textContent="Sync";
+  await loadAll();
+}
+
+async function resetTrades(id,name){
+  if(!confirm(`Reset ALL trade history for ${name}?\nThis cannot be undone.`)) return;
+  const d=await API(`/users/${id}/trades`,"DELETE");
+  if(d) toast(d.message,"ok");
+  await loadAll();
+}
+
+async function deleteUser(id,name){
+  if(!confirm(`Delete ${name} and ALL their data?\nThis CANNOT be undone.`)) return;
+  await API(`/users/${id}`,"DELETE");
+  toast(`${name} deleted`,"ok");
+  await loadAll();
+}
+
+function closeModal(id){document.getElementById(id).classList.remove("open")}
+document.querySelectorAll(".modal").forEach(m=>{m.addEventListener("click",e=>{if(e.target===m)m.classList.remove("open")})});
+
+setInterval(loadAll,15000);
 </script>
 </body>
 </html>

@@ -1,0 +1,263 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8"/>
+<meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+<title>Trade History — MANTUL FLOW</title>
+<link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@300;400;500;600;700&family=Space+Mono:wght@400;700&display=swap" rel="stylesheet">
+<style>
+*{margin:0;padding:0;box-sizing:border-box}
+:root{
+  --base:#05070f;--glass:rgba(15,20,32,0.7);--border:rgba(56,189,248,0.2);
+  --cyan:#38bdf8;--indigo:#1e40af;--purple:#818cf8;
+  --green:#10b981;--red:#f87171;--yellow:#fbbf24;
+  --text:#e2e8f0;--muted:#64748b;--dim:#1e2d3d;
+  --mono:'Space Mono',monospace;--sans:'Space Grotesk',sans-serif;
+}
+body{font-family:var(--sans);background:var(--base);color:var(--text);min-height:100vh;overflow-x:hidden}
+.bg-gradient{position:fixed;inset:0;z-index:0;background:radial-gradient(ellipse 80% 60% at 20% 20%,rgba(30,64,175,0.25),transparent),radial-gradient(ellipse 60% 80% at 80% 80%,rgba(129,140,248,0.12),transparent),var(--base);animation:bgDrift 25s ease-in-out infinite}
+@keyframes bgDrift{0%,100%{background-position:0% 0%}50%{background-position:100% 50%}}
+.grid-overlay{position:fixed;inset:0;z-index:0;background-image:linear-gradient(rgba(56,189,248,0.04) 1px,transparent 1px),linear-gradient(90deg,rgba(56,189,248,0.04) 1px,transparent 1px);background-size:60px 60px;animation:gridMove 20s linear infinite}
+@keyframes gridMove{0%{transform:translate(0,0)}100%{transform:translate(60px,60px)}}
+.orb{position:fixed;border-radius:50%;filter:blur(140px);opacity:.15;animation:orbFloat 20s ease-in-out infinite;pointer-events:none;z-index:0}
+.orb1{width:600px;height:600px;background:#1e3a8a;top:-20%;left:-20%;animation-duration:22s}
+.orb2{width:400px;height:400px;background:#4f46e5;bottom:-15%;right:-10%;animation-duration:18s;animation-delay:-6s}
+@keyframes orbFloat{0%,100%{transform:translate(0,0)}50%{transform:translate(60px,-50px)}}
+.wrapper{position:relative;z-index:1;min-height:100vh}
+.page{max-width:1400px;margin:0 auto;padding:24px}
+
+/* HEADER */
+.header{display:flex;align-items:center;justify-content:space-between;padding:20px 0 32px;animation:fadeInDown .8s ease both}
+@keyframes fadeInDown{from{opacity:0;transform:translateY(-20px)}to{opacity:1;transform:translateY(0)}}
+.logo{display:flex;align-items:center;gap:16px}
+.logo-icon{width:48px;height:48px;border-radius:18px;background:linear-gradient(135deg,#1e40af,#0ea5e9);display:flex;align-items:center;justify-content:center;font-size:22px;font-weight:700;color:#fff;animation:iconPulse 3s ease-in-out infinite;flex-shrink:0}
+@keyframes iconPulse{0%,100%{box-shadow:0 0 20px rgba(56,189,248,0.3)}50%{box-shadow:0 0 40px rgba(56,189,248,0.7)}}
+.logo-text h1{font-size:18px;font-weight:700;background:linear-gradient(90deg,#fff 0%,#38bdf8 40%,#818cf8 70%,#38bdf8 100%);background-size:200% auto;-webkit-background-clip:text;background-clip:text;color:transparent;animation:shimmer 5s linear infinite}
+@keyframes shimmer{to{background-position:200% center}}
+.logo-text p{font-size:9px;color:var(--muted);letter-spacing:2px;text-transform:uppercase;margin-top:2px}
+.back-btn{padding:8px 20px;background:rgba(56,189,248,0.1);border:1px solid var(--border);border-radius:14px;color:var(--cyan);font-size:12px;font-family:var(--mono);cursor:pointer;text-decoration:none;display:inline-block;transition:.2s}
+.back-btn:hover{background:rgba(56,189,248,0.2)}
+
+/* GLASS CARD */
+.glass-card{background:var(--glass);backdrop-filter:blur(20px);border:1px solid var(--border);border-radius:36px;transition:transform .3s ease,box-shadow .3s ease,border-color .3s ease}
+
+/* STATS */
+.stats-row{display:grid;grid-template-columns:repeat(auto-fit,minmax(160px,1fr));gap:14px;margin-bottom:24px}
+.stat-card{padding:22px;border-radius:28px;text-align:center}
+.stat-lbl{font-size:9px;color:var(--muted);letter-spacing:2px;text-transform:uppercase;font-family:var(--mono);margin-bottom:8px}
+.stat-val{font-size:28px;font-weight:700;font-family:var(--mono)}
+.stat-val.c{color:var(--cyan)}.stat-val.g{color:var(--green)}.stat-val.r{color:var(--red)}.stat-val.y{color:var(--yellow)}
+.stat-val.grad{background:linear-gradient(135deg,var(--cyan),var(--purple));-webkit-background-clip:text;background-clip:text;color:transparent}
+
+/* FILTERS */
+.controls{display:flex;gap:12px;margin-bottom:24px;flex-wrap:wrap;align-items:center}
+.filter-tab{padding:6px 16px;background:transparent;border:1px solid rgba(255,255,255,0.08);border-radius:20px;color:var(--muted);font-size:11px;font-family:var(--mono);cursor:pointer;transition:.2s}
+.filter-tab.active{background:rgba(56,189,248,0.12);border-color:var(--border);color:var(--cyan)}
+.dir-filter{padding:6px 14px;background:transparent;border:1px solid rgba(255,255,255,0.08);border-radius:20px;color:var(--muted);font-size:11px;font-family:var(--mono);cursor:pointer;transition:.2s}
+.dir-filter.active{background:rgba(16,185,129,0.12);border-color:rgba(16,185,129,0.3);color:var(--green)}
+.dir-filter.sell.active{background:rgba(248,113,113,0.12);border-color:rgba(248,113,113,0.3);color:var(--red)}
+
+/* TABLE */
+.trades-card{padding:28px;overflow-x:auto}
+table{width:100%;border-collapse:collapse;font-size:12px}
+th{padding:12px 14px;color:var(--muted);font-family:var(--mono);font-size:9px;letter-spacing:1.5px;border-bottom:1px solid rgba(255,255,255,0.05);text-align:left;white-space:nowrap}
+td{padding:12px 14px;border-bottom:1px solid rgba(255,255,255,0.03);white-space:nowrap}
+tr:hover td{background:rgba(56,189,248,0.03)}
+.badge{padding:3px 10px;border-radius:20px;font-size:10px;font-weight:700;font-family:var(--mono)}
+.badge.buy,.badge.won{background:rgba(16,185,129,0.12);color:var(--green)}
+.badge.sell,.badge.lost{background:rgba(248,113,113,0.12);color:var(--red)}
+.badge.open{background:rgba(56,189,248,0.12);color:var(--cyan)}
+.badge.closed{background:rgba(100,116,139,0.1);color:var(--muted)}
+.empty{text-align:center;padding:60px;color:var(--dim)}
+.pager{display:flex;gap:8px;justify-content:center;margin-top:20px}
+.page-btn{padding:6px 14px;background:rgba(255,255,255,0.04);border:1px solid rgba(255,255,255,0.08);border-radius:10px;color:var(--muted);font-size:11px;font-family:var(--mono);cursor:pointer;transition:.2s}
+.page-btn.active{background:rgba(56,189,248,0.12);border-color:var(--border);color:var(--cyan)}
+.search-input{padding:8px 16px;background:rgba(0,0,0,0.4);border:1px solid rgba(255,255,255,0.07);border-radius:14px;color:var(--text);font-size:13px;outline:none;font-family:var(--sans);width:200px;transition:border .2s}
+.search-input:focus{border-color:var(--border)}
+</style>
+</head>
+<body>
+<div class="bg-gradient"></div>
+<div class="grid-overlay"></div>
+<div class="orb orb1"></div>
+<div class="orb orb2"></div>
+
+<div class="wrapper">
+<div class="page">
+
+  <!-- HEADER -->
+  <div class="header">
+    <div class="logo">
+      <div class="logo-icon">⟳</div>
+      <div class="logo-text">
+        <h1>MANTUL FLOW</h1>
+        <p>Trade History</p>
+      </div>
+    </div>
+    <a class="back-btn" href="/dashboard.html">← Dashboard</a>
+  </div>
+
+  <!-- STATS -->
+  <div class="stats-row" id="statsRow">
+    <div class="stat-card glass-card"><div class="stat-lbl">Win Rate</div><div class="stat-val grad" id="sWR">--%</div></div>
+    <div class="stat-card glass-card"><div class="stat-lbl">Period PnL</div><div class="stat-val" id="sPnl">$--</div></div>
+    <div class="stat-card glass-card"><div class="stat-lbl">Total Trades</div><div class="stat-val y" id="sTotal">--</div></div>
+    <div class="stat-card glass-card"><div class="stat-lbl">Won</div><div class="stat-val g" id="sWon">--</div></div>
+    <div class="stat-card glass-card"><div class="stat-lbl">Lost</div><div class="stat-val r" id="sLost">--</div></div>
+    <div class="stat-card glass-card"><div class="stat-lbl">Open Now</div><div class="stat-val c" id="sOpen">--</div></div>
+  </div>
+
+  <!-- FILTERS -->
+  <div class="controls">
+    <button class="filter-tab active" onclick="setPeriod('all',this)">All Time</button>
+    <button class="filter-tab" onclick="setPeriod('today',this)">Today</button>
+    <button class="filter-tab" onclick="setPeriod('yesterday',this)">Yesterday</button>
+    <button class="filter-tab" onclick="setPeriod('7d',this)">Last 7 Days</button>
+    <button class="filter-tab" onclick="setPeriod('30d',this)">Last 30 Days</button>
+    <button class="filter-tab" onclick="setPeriod('90d',this)">Last 90 Days</button>
+    <span style="flex:1"></span>
+    <button class="dir-filter active" onclick="setDir('all',this)">All</button>
+    <button class="dir-filter" onclick="setDir('open',this)">Open</button>
+    <button class="dir-filter" onclick="setDir('won',this)">Won</button>
+    <button class="dir-filter sell" onclick="setDir('lost',this)">Lost</button>
+    <input class="search-input" id="searchInput" placeholder="Search symbol..." oninput="renderTable()"/>
+  </div>
+
+  <!-- TABLE -->
+  <div class="glass-card trades-card">
+    <div id="tradesTable"><div class="empty">Loading trades...</div></div>
+    <div class="pager" id="pager"></div>
+  </div>
+
+</div>
+</div>
+
+<script>
+const token = localStorage.getItem("token");
+if(!token) window.location.href="/";
+
+const API = async(path)=>{
+  const res = await fetch("/api"+path,{headers:{Authorization:`Bearer ${token}`}});
+  if(res.status===401){localStorage.clear();window.location.href="/";}
+  return res.json();
+};
+
+let allTrades=[], period="all", statusFilter="all";
+const PAGE_SIZE=30;
+let currentPage=1;
+
+function getPeriodStart(p){
+  const d=new Date();
+  if(p==="today"){d.setHours(0,0,0,0);return d}
+  if(p==="yesterday"){d.setDate(d.getDate()-1);d.setHours(0,0,0,0);return d}
+  if(p==="7d"){d.setDate(d.getDate()-7);return d}
+  if(p==="30d"){d.setDate(d.getDate()-30);return d}
+  if(p==="90d"){d.setDate(d.getDate()-90);return d}
+  return null;
+}
+function getPeriodEnd(p){
+  if(p==="yesterday"){const d=new Date();d.setHours(0,0,0,0);return d}
+  return new Date();
+}
+function filterByPeriod(trades,p){
+  const s=getPeriodStart(p),e=getPeriodEnd(p);
+  if(!s) return trades;
+  return trades.filter(t=>{const d=new Date(t.openedAt||0);return d>=s&&d<=e;});
+}
+
+function getFiltered(){
+  let t=filterByPeriod(allTrades,period);
+  if(statusFilter!=="all") t=t.filter(x=>x.status===statusFilter);
+  const q=document.getElementById("searchInput").value.toLowerCase();
+  if(q) t=t.filter(x=>x.symbol.toLowerCase().includes(q));
+  return t;
+}
+
+function calcStats(trades){
+  const closed=trades.filter(t=>t.status!=="open");
+  const open=trades.filter(t=>t.status==="open");
+  const won=closed.filter(t=>t.pnl>0);
+  const lost=closed.filter(t=>t.pnl<=0);
+  const totalPnl=closed.reduce((s,t)=>s+(t.pnl||0),0);
+  const winRate=closed.length?(won.length/closed.length*100).toFixed(1):0;
+  return{totalPnl,winRate,won:won.length,lost:lost.length,total:trades.length,open:open.length};
+}
+
+function updateStats(trades){
+  const s=calcStats(trades);
+  const pEl=document.getElementById("sPnl");
+  pEl.textContent=(s.totalPnl>=0?"+":"")+"$"+s.totalPnl.toFixed(2);
+  pEl.className="stat-val "+(s.totalPnl>=0?"g":"r");
+  document.getElementById("sWR").textContent=s.winRate+"%";
+  document.getElementById("sTotal").textContent=s.total;
+  document.getElementById("sWon").textContent=s.won;
+  document.getElementById("sLost").textContent=s.lost;
+  document.getElementById("sOpen").textContent=s.open;
+}
+
+function renderTable(){
+  const filtered=getFiltered();
+  updateStats(filtered);
+  const start=(currentPage-1)*PAGE_SIZE;
+  const page=filtered.slice(start,start+PAGE_SIZE);
+  const el=document.getElementById("tradesTable");
+  if(!page.length){el.innerHTML='<div class="empty">No trades found</div>';document.getElementById("pager").innerHTML="";return;}
+  const rows=page.map(t=>{
+    const dir=t.direction==="MULTUP"?"BUY":"SELL";
+    const pnl=t.pnl!=null?(t.pnl>0?`<span style="color:var(--green)">+$${t.pnl.toFixed(2)}</span>`:`<span style="color:var(--red)">$${t.pnl.toFixed(2)}</span>`):"—";
+    const opened=new Date(t.openedAt).toLocaleString();
+    const closed=t.closedAt?new Date(t.closedAt).toLocaleString():"—";
+    return `<tr>
+      <td>${t.symbol}</td>
+      <td><span class="badge ${dir.toLowerCase()}">${dir}</span></td>
+      <td>$${t.stake.toFixed(2)}</td>
+      <td>x${t.multiplier}</td>
+      <td>${pnl}</td>
+      <td><span class="badge ${t.status}">${t.status}</span></td>
+      <td style="color:var(--muted)">${opened}</td>
+      <td style="color:var(--muted)">${closed}</td>
+    </tr>`;
+  }).join("");
+  el.innerHTML=`<table>
+    <thead><tr>
+      <th>Symbol</th><th>Dir</th><th>Stake</th><th>Mult</th>
+      <th>PnL</th><th>Status</th><th>Opened</th><th>Closed</th>
+    </tr></thead>
+    <tbody>${rows}</tbody>
+  </table>`;
+
+  // Pagination
+  const pages=Math.ceil(filtered.length/PAGE_SIZE);
+  const pager=document.getElementById("pager");
+  if(pages<=1){pager.innerHTML="";return;}
+  let html="";
+  for(let i=1;i<=Math.min(pages,10);i++){
+    html+=`<button class="page-btn ${i===currentPage?'active':''}" onclick="goPage(${i})">${i}</button>`;
+  }
+  pager.innerHTML=html;
+}
+
+function goPage(p){currentPage=p;renderTable();}
+function setPeriod(p,btn){
+  period=p;currentPage=1;
+  document.querySelectorAll(".filter-tab").forEach(b=>b.classList.remove("active"));
+  if(btn) btn.classList.add("active");
+  renderTable();
+}
+function setDir(s,btn){
+  statusFilter=s;currentPage=1;
+  document.querySelectorAll(".dir-filter").forEach(b=>b.classList.remove("active"));
+  if(btn) btn.classList.add("active");
+  renderTable();
+}
+
+async function init(){
+  const d=await API("/trades?limit=1000");
+  allTrades=d.trades||[];
+  renderTable();
+}
+init();
+setInterval(async()=>{const d=await API("/trades?limit=1000");allTrades=d.trades||[];renderTable();},30000);
+</script>
+</body>
+</html>

@@ -135,6 +135,42 @@ router.put("/users/:id/bot", adminAuth, async (req, res) => {
   }
 });
 
+// ── EDIT USER ────────────────────────────────────────
+router.put("/users/:id", adminAuth, async (req, res) => {
+  try {
+    const user = await User.findById(req.params.id);
+    if (!user) return res.status(404).json({ error: "User not found" });
+
+    const { name, email, derivPAT, derivAppId, derivMode, telegramChatId, risk } = req.body;
+
+    if (name)           user.name           = name;
+    if (email)          user.email          = email.toLowerCase();
+    if (derivPAT)       user.derivPAT       = derivPAT;
+    if (derivAppId)     user.derivAppId     = derivAppId;
+    if (derivMode)      user.derivMode      = derivMode;
+    if (telegramChatId !== undefined) user.telegramChatId = telegramChatId;
+
+    if (risk) {
+      if (risk.stakeAmount          !== undefined) user.risk.stakeAmount          = Math.max(parseFloat(risk.stakeAmount), 1.0);
+      if (risk.maxOpenTrades        !== undefined) user.risk.maxOpenTrades        = Math.min(Math.max(parseInt(risk.maxOpenTrades), 1), 10);
+      if (risk.stopLossPct          !== undefined) user.risk.stopLossPct          = Math.min(Math.max(parseFloat(risk.stopLossPct), 0.10), 2.0);
+      if (risk.takeProfitPct        !== undefined) user.risk.takeProfitPct        = Math.min(Math.max(parseFloat(risk.takeProfitPct), 0.10), 10.0);
+      if (risk.maxDailyLossPct      !== undefined) user.risk.maxDailyLossPct      = Math.min(Math.max(parseFloat(risk.maxDailyLossPct), 0.05), 1.0);
+      if (risk.maxConsecutiveLosses !== undefined) user.risk.maxConsecutiveLosses = Math.min(Math.max(parseInt(risk.maxConsecutiveLosses), 1), 10);
+    }
+
+    await user.save();
+
+    // Restart bot if running to apply new settings
+    const { botManager } = await import("../bot-manager.js");
+    if (user.botActive) await botManager.restartUser(user._id.toString());
+
+    res.json({ message: "User updated successfully" });
+  } catch (e) {
+    res.status(500).json({ error: e.message });
+  }
+});
+
 // ── SYNC TRADES FOR A USER (admin) ───────────────────
 router.post("/users/:id/sync-trades", adminAuth, async (req, res) => {
   try {

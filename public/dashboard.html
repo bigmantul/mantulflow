@@ -2,12 +2,10 @@
 <html lang="en">
 <head>
 <meta charset="UTF-8"/>
-<meta name="viewport" content="width=1200"/>
+<meta name="viewport" content="width=device-width, initial-scale=1.0"/>
 <title>MANTUL FLOW — AI Smart Money Trading</title>
 <link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@300;400;500;600;700&family=Space+Mono:wght@400;700&display=swap" rel="stylesheet">
 <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
-<link rel="icon" href="/icon.jpg">
-<link rel="apple-touch-icon" href="/icon.jpg">
 <style>
 /* ═══════════════════════════════════════════════════
    RESET + VARIABLES
@@ -439,6 +437,10 @@ tr:hover td{background:rgba(56,189,248,0.03)}
 .toast.err{border-left:3px solid var(--red)}
 
 .empty{text-align:center;padding:48px;color:var(--dim);font-size:13px}
+@keyframes fadeInUp{from{opacity:0;transform:translateX(-50%) translateY(10px)}to{opacity:1;transform:translateX(-50%) translateY(0)}}
+@keyframes tlFadeIn{from{opacity:0;transform:translateX(-12px)}to{opacity:1;transform:translateX(0)}}
+.tl-item{animation:tlFadeIn .35s ease both}
+.tl-item:last-child{border:none}
 .divider{height:1px;background:rgba(255,255,255,0.05);margin:18px 0}
 </style>
 </head>
@@ -531,15 +533,15 @@ tr:hover td{background:rgba(56,189,248,0.03)}
       <button class="charts-btn" onclick="window.open('/charts.html','_blank')">📊 View Live Charts — All 11 Pairs</button>
 
       <div class="action-btns">
+        <button class="act-btn" onclick="window.open('/trades.html','_blank')">📊 View Trade History</button>
         <button class="act-btn" onclick="syncTrades()">🔄 Sync Trades with Deriv</button>
         <button class="act-btn" onclick="importTrades()">📥 Import All Trades from Deriv</button>
-        <button class="act-btn" onclick="toggleLogs()">📋 View Bot Logs (72 hours)</button>
       </div>
 
       <div class="divider"></div>
       <div class="card-label">Risk Settings</div>
       <div class="risk-grid">
-        <div class="field"><label>STAKE %</label><input type="number" id="rPct" min="1" max="50" placeholder="10"/></div>
+        <div class="field"><label>STAKE $ (min $1)</label><input type="number" id="rStake" min="1" step="0.5" placeholder="1.00"/></div>
         <div class="field"><label>MAX OPEN</label><input type="number" id="rMax" min="1" max="10" placeholder="3"/></div>
         <div class="field"><label>STOP LOSS %</label><input type="number" id="rSL" min="10" max="200" placeholder="80"/></div>
         <div class="field"><label>TAKE PROFIT %</label><input type="number" id="rTP" min="10" max="1000" placeholder="200"/></div>
@@ -580,37 +582,7 @@ tr:hover td{background:rgba(56,189,248,0.03)}
     <div class="chart-wrap"><canvas id="equityChart"></canvas></div>
   </div>
 
-  <!-- BOT LOGS -->
-  <div class="glass-card logs-card" id="logsCard">
-    <div class="card-label" style="display:flex;justify-content:space-between;align-items:center">
-      Bot Logs (72hrs)
-      <div style="display:flex;gap:8px">
-        <select id="logLvl" onchange="loadLogs()" style="width:auto;padding:4px 10px;font-size:11px;border-radius:8px">
-          <option value="">All</option>
-          <option value="trade">Trades</option>
-          <option value="error">Errors</option>
-          <option value="warn">Warnings</option>
-        </select>
-        <button class="act-btn" style="padding:4px 10px;border-radius:8px" onclick="loadLogs()">↻</button>
-        <button class="act-btn" style="padding:4px 10px;border-radius:8px" onclick="toggleLogs()">✕</button>
-      </div>
-    </div>
-    <div class="logs-wrap" id="logsWrap">Loading...</div>
-  </div>
 
-  <!-- TRADE HISTORY -->
-  <div class="glass-card trades-card">
-    <div class="card-label">Trade History</div>
-    <div class="filter-row">
-      <button class="filter-tab active" onclick="filterTrades('all',this)">All Time</button>
-      <button class="filter-tab" onclick="filterTrades('today',this)">Today</button>
-      <button class="filter-tab" onclick="filterTrades('yesterday',this)">Yesterday</button>
-      <button class="filter-tab" onclick="filterTrades('7d',this)">Last 7 Days</button>
-      <button class="filter-tab" onclick="filterTrades('30d',this)">Last 30 Days</button>
-      <button class="filter-tab" onclick="filterTrades('90d',this)">Last 90 Days</button>
-    </div>
-    <div id="tradesTable"><div class="empty">Loading trades...</div></div>
-  </div>
 
   <!-- ACCOUNT SETTINGS -->
   <div class="glass-card settings-card">
@@ -625,10 +597,20 @@ tr:hover td{background:rgba(56,189,248,0.03)}
     <div class="ok-msg" id="settingsOk">✅ Updated!</div>
   </div>
 
-  <!-- ACTIVITY TIMELINE -->
-  <div class="glass-card timeline-card">
-    <div class="card-label">Activity Timeline</div>
-    <div id="timelineList"><div class="empty">Waiting for bot activity...</div></div>
+  <!-- REAL-TIME ACTIVITY TIMELINE -->
+  <div class="glass-card timeline-card" style="position:relative">
+    <div class="card-label" style="display:flex;justify-content:space-between;align-items:center">
+      <span>Activity Timeline</span>
+      <div style="display:flex;align-items:center;gap:10px">
+        <span style="font-size:10px;font-family:var(--mono);color:var(--muted)" id="tlStatus">Connecting...</span>
+        <div id="tlDot" style="width:7px;height:7px;border-radius:50%;background:var(--muted);transition:.3s"></div>
+      </div>
+    </div>
+    <!-- Scroll-to-top arrow when new logs arrive while scrolled down -->
+    <div id="newLogsPill" style="display:none;position:absolute;bottom:80px;left:50%;transform:translateX(-50%);z-index:10;cursor:pointer;padding:6px 16px;background:rgba(56,189,248,0.2);border:1px solid var(--border);border-radius:40px;font-size:11px;font-family:var(--mono);color:var(--cyan);animation:fadeInUp .3s ease" onclick="scrollTlToTop()">
+      ↑ New activity
+    </div>
+    <div id="timelineList" style="max-height:400px;overflow-y:auto;padding-right:4px"></div>
   </div>
 
 </div><!-- /page -->
@@ -865,29 +847,9 @@ function refreshAll(){
   buildChart(currentPeriod);
 }
 
-function renderTable(trades){
-  const el=document.getElementById("tradesTable");
-  if(!trades||!trades.length){el.innerHTML='<div class="empty">No trades in this period</div>';return;}
-  const rows=trades.map(t=>{
-    const dir=t.direction==="MULTUP"?"BUY":"SELL";
-    const pnl=t.pnl!=null?(t.pnl>0?`<span style="color:var(--green)">+$${t.pnl.toFixed(2)}</span>`:`<span style="color:var(--red)">$${t.pnl.toFixed(2)}</span>`):"—";
-    const dt=new Date(t.openedAt).toLocaleString();
-    return `<tr><td>${t.symbol}</td><td><span class="badge ${dir.toLowerCase()}">${dir}</span></td><td>$${t.stake.toFixed(2)}</td><td>x${t.multiplier}</td><td>${pnl}</td><td><span class="badge ${t.status}">${t.status}</span></td><td style="color:var(--muted)">${dt}</td></tr>`;
-  }).join("");
-  el.innerHTML=`<table><thead><tr><th>Symbol</th><th>Direction</th><th>Stake</th><th>Mult</th><th>PnL</th><th>Status</th><th>Opened</th></tr></thead><tbody>${rows}</tbody></table>`;
-}
 
-function filterTrades(period,btn){
-  currentFilter=period;
-  document.querySelectorAll(".filter-tab").forEach(b=>b.classList.remove("active"));
-  if(btn) btn.classList.add("active");
-  const f=filterByPeriod(allTrades,period);
-  const s=calcStats(f);
-  const pp=document.getElementById("sPeriodPnl");
-  pp.textContent=(s.totalPnl>=0?"+":"")+"$"+s.totalPnl.toFixed(2);
-  pp.className="stat-value "+(s.totalPnl>=0?"g":"r");
-  renderTable(f);
-}
+
+
 
 function setChartPeriod(period,btn){
   currentPeriod=period;
@@ -900,34 +862,91 @@ function setChartPeriod(period,btn){
 }
 
 function buildChart(period){
-  const f=filterByPeriod(allTrades,period).filter(t=>t.status!=="open");
+  const f=filterByPeriod(allTrades,period).filter(t=>t.status!=="open"&&t.pnl!=null);
   const sorted=[...f].sort((a,b)=>new Date(a.closedAt||a.openedAt)-new Date(b.closedAt||b.openedAt));
-  let eq=10000;const labels=[],eqPts=[],pnlBars=[];
+
+  // Build cumulative PnL from 0 (actual profit/loss curve)
+  let cumPnl=0;
+  const labels=[],pnlPoints=[],barData=[];
   sorted.forEach(t=>{
-    eq+=(t.pnl||0);
+    cumPnl+=parseFloat(t.pnl||0);
     labels.push(new Date(t.closedAt||t.openedAt).toLocaleDateString("en-GB",{month:"short",day:"numeric"}));
-    eqPts.push(parseFloat(eq.toFixed(2)));
-    pnlBars.push(parseFloat((t.pnl||0).toFixed(2)));
+    pnlPoints.push(parseFloat(cumPnl.toFixed(2)));
+    barData.push(parseFloat((t.pnl||0).toFixed(2)));
   });
-  if(!labels.length){labels.push("No data");eqPts.push(0);pnlBars.push(0);}
+
+  if(!labels.length){labels.push("No closed trades");pnlPoints.push(0);barData.push(0);}
+
+  // Color gradient — green if positive, red if negative
+  const isPositive = cumPnl >= 0;
+  const lineColor  = isPositive ? "#10b981" : "#f87171";
+  const fillColor  = isPositive ? "rgba(16,185,129,0.08)" : "rgba(248,113,113,0.08)";
+
   if(equityChart) equityChart.destroy();
   const ctx=document.getElementById("equityChart").getContext("2d");
+
+  // Area gradient fill
+  const gradient = ctx.createLinearGradient(0, 0, 0, 280);
+  if(isPositive){
+    gradient.addColorStop(0,"rgba(16,185,129,0.25)");
+    gradient.addColorStop(1,"rgba(16,185,129,0.01)");
+  } else {
+    gradient.addColorStop(0,"rgba(248,113,113,0.25)");
+    gradient.addColorStop(1,"rgba(248,113,113,0.01)");
+  }
+
   equityChart=new Chart(ctx,{
     type:"line",
     data:{
       labels,
       datasets:[
-        {label:"Equity",data:eqPts,borderColor:"#38bdf8",backgroundColor:"rgba(56,189,248,0.05)",tension:.4,fill:true,borderWidth:2,pointRadius:3,pointBackgroundColor:"#38bdf8"},
-        {label:"Trade PnL",data:pnlBars,borderColor:"#10b981",backgroundColor:"rgba(16,185,129,0.08)",tension:.3,fill:false,borderWidth:1.5,pointRadius:2,yAxisID:"y1",type:"bar"}
+        {
+          label:"Cumulative PnL ($)",
+          data:pnlPoints,
+          borderColor:lineColor,
+          backgroundColor:gradient,
+          tension:.4,fill:true,
+          borderWidth:2.5,
+          pointRadius:3,
+          pointBackgroundColor:lineColor,
+          pointBorderColor:"transparent",
+        },
+        {
+          label:"Trade PnL",
+          data:barData,
+          backgroundColor:barData.map(v=>v>=0?"rgba(16,185,129,0.5)":"rgba(248,113,113,0.5)"),
+          borderColor:"transparent",
+          borderRadius:4,
+          type:"bar",
+          yAxisID:"y1",
+        }
       ]
     },
     options:{
       responsive:true,maintainAspectRatio:false,
-      plugins:{legend:{labels:{color:"#64748b",font:{family:"'Space Mono'",size:10}}}},
+      interaction:{mode:"index",intersect:false},
+      plugins:{
+        legend:{labels:{color:"#64748b",font:{family:"'Space Mono'",size:10}}},
+        tooltip:{
+          backgroundColor:"rgba(10,15,30,0.9)",
+          borderColor:"rgba(56,189,248,0.2)",
+          borderWidth:1,
+          titleColor:"#38bdf8",
+          bodyColor:"#94a3b8",
+          padding:12,
+        }
+      },
       scales:{
-        y:{grid:{color:"rgba(255,255,255,0.04)"},ticks:{color:"#64748b",font:{family:"'Space Mono'",size:10}}},
-        y1:{position:"right",grid:{drawOnChartArea:false},ticks:{color:"#10b981",font:{family:"'Space Mono'",size:10}}},
-        x:{ticks:{color:"#64748b",maxTicksLimit:8,font:{family:"'Space Mono'",size:10}}}
+        y:{
+          grid:{color:"rgba(255,255,255,0.03)"},
+          ticks:{color:"#64748b",font:{family:"'Space Mono'",size:10},callback:v=>"$"+v.toFixed(2)},
+        },
+        y1:{
+          position:"right",
+          grid:{drawOnChartArea:false},
+          ticks:{color:"#64748b",font:{family:"'Space Mono'",size:10},callback:v=>"$"+v.toFixed(2)},
+        },
+        x:{ticks:{color:"#64748b",maxTicksLimit:10,font:{family:"'Space Mono'",size:10}}}
       }
     }
   });
@@ -1045,9 +1064,9 @@ async function importTrades(){
 }
 async function saveRisk(){
   const data={
-    riskPct:parseFloat(document.getElementById("rPct").value)/100,
+    stakeAmount:  Math.max(parseFloat(document.getElementById("rStake").value)||1, 1),
     maxOpenTrades:parseInt(document.getElementById("rMax").value),
-    stopLossPct:parseFloat(document.getElementById("rSL").value)/100,
+    stopLossPct:  parseFloat(document.getElementById("rSL").value)/100,
     takeProfitPct:parseFloat(document.getElementById("rTP").value)/100,
   };
   await API("/user/risk","PUT",data);
@@ -1080,7 +1099,7 @@ async function init(){
   botActive=user.botActive;
   updateBotUI(botActive);
   const r=user.risk||{};
-  document.getElementById("rPct").value=Math.round((r.riskPct||.1)*100);
+  document.getElementById("rStake").value=(r.stakeAmount||1.00).toFixed(2);
   document.getElementById("rMax").value=r.maxOpenTrades||3;
   document.getElementById("rSL").value=Math.round((r.stopLossPct||.8)*100);
   document.getElementById("rTP").value=Math.round((r.takeProfitPct||2)*100);
@@ -1104,7 +1123,135 @@ setInterval(async()=>{
   if(logsVisible) await loadLogs();
 },15000);
 
+// ═══════════════════════════════════════════════════
+//  REAL-TIME TIMELINE via WebSocket
+// ═══════════════════════════════════════════════════
+let tlWs = null;
+let tlConnected = false;
+let tlScrolledUp = false;
+
+function connectTimeline(){
+  const wsUrl = `${location.protocol==="https:"?"wss":"ws"}://${location.host}/ws/timeline?token=${token}`;
+  tlWs = new WebSocket(wsUrl);
+
+  tlWs.onopen = () => {
+    tlConnected = true;
+    document.getElementById("tlDot").style.background = "var(--green)";
+    document.getElementById("tlDot").style.boxShadow = "0 0 8px var(--green)";
+    document.getElementById("tlStatus").textContent = "Live";
+    document.getElementById("tlStatus").style.color = "var(--green)";
+  };
+
+  tlWs.onmessage = e => {
+    try {
+      const data = JSON.parse(e.data);
+      if(data.type === "log") {
+        addTlEntry(data);
+      }
+    } catch {}
+  };
+
+  tlWs.onclose = () => {
+    tlConnected = false;
+    document.getElementById("tlDot").style.background = "var(--red)";
+    document.getElementById("tlDot").style.boxShadow = "none";
+    document.getElementById("tlStatus").textContent = "Reconnecting...";
+    document.getElementById("tlStatus").style.color = "var(--muted)";
+    // Auto-reconnect after 3 seconds
+    setTimeout(connectTimeline, 3000);
+  };
+
+  tlWs.onerror = () => tlWs.close();
+}
+
+function getEventIcon(message, level){
+  if(level === "error") return "❌";
+  if(level === "warn")  return "⚠️";
+  if(message.includes("BUY")||message.includes("MULTUP"))  return "🟢";
+  if(message.includes("SELL")||message.includes("MULTDOWN")) return "🔴";
+  if(message.includes("started")||message.includes("Connected")) return "▶️";
+  if(message.includes("stopped")||message.includes("Stopped")) return "⏹️";
+  if(message.includes("closed")||message.includes("→ won")||message.includes("→ lost")) return "🏁";
+  if(message.includes("Scan Cycle")||message.includes("scanning")) return "📡";
+  if(message.includes("LOCKED")) return "🔒";
+  if(message.includes("HOLD"))   return "⏸";
+  return "📋";
+}
+
+const levelColors = {trade:"var(--green)",error:"var(--red)",warn:"var(--yellow)",info:"var(--muted)"};
+
+function addTlEntry(log){
+  const el = document.getElementById("timelineList");
+
+  // Remove empty state
+  const emptyEl = el.querySelector(".empty");
+  if(emptyEl) el.innerHTML = "";
+
+  // Check if scrolled away from top
+  const isAtTop = el.scrollTop < 60;
+  tlScrolledUp = !isAtTop;
+
+  const icon  = getEventIcon(log.message, log.level);
+  const color = levelColors[log.level] || "var(--muted)";
+  const time  = new Date(log.createdAt).toLocaleTimeString();
+
+  const item = document.createElement("div");
+  item.className = "tl-item";
+  item.style.cssText = `
+    display:flex;gap:12px;padding:10px 0;
+    border-bottom:1px solid rgba(255,255,255,0.03);
+    align-items:flex-start;
+  `;
+  item.innerHTML = `
+    <span style="font-family:var(--mono);font-size:9px;color:var(--dim);min-width:55px;margin-top:2px">${time}</span>
+    <span style="font-size:14px;flex-shrink:0;margin-top:0px">${icon}</span>
+    <span style="font-size:11px;color:${color};line-height:1.5;font-family:var(--mono)">${esc(log.message.slice(0,120))}</span>`;
+
+  // Insert at top
+  el.insertBefore(item, el.firstChild);
+
+  // Keep max 100 entries
+  while(el.children.length > 100) el.removeChild(el.lastChild);
+
+  // Show "new activity" pill if user scrolled down
+  if(tlScrolledUp){
+    document.getElementById("newLogsPill").style.display = "block";
+  }
+}
+
+function scrollTlToTop(){
+  const el = document.getElementById("timelineList");
+  el.scrollTo({top:0,behavior:"smooth"});
+  document.getElementById("newLogsPill").style.display = "none";
+  tlScrolledUp = false;
+}
+
+// Hide pill when user scrolls to top manually
+document.getElementById("timelineList")?.addEventListener("scroll", function(){
+  if(this.scrollTop < 60){
+    document.getElementById("newLogsPill").style.display = "none";
+    tlScrolledUp = false;
+  }
+});
+
+// Load historical logs on page open
+async function loadHistoricalTimeline(){
+  try {
+    const res  = await fetch("/api/logs?limit=50", {headers:{Authorization:`Bearer ${token}`}});
+    const logs = await res.json();
+    if(!Array.isArray(logs)) return;
+    const el   = document.getElementById("timelineList");
+    el.innerHTML = "";
+    // Show oldest first (logs come back oldest first from route)
+    logs.forEach(l => addTlEntry(l));
+    // Scroll to top to show most recent
+    el.scrollTop = 0;
+  } catch {}
+}
+
 init();
+loadHistoricalTimeline();
+connectTimeline();
 </script>
 </body>
 </html>

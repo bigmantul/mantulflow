@@ -19,6 +19,15 @@ import {
 import { placeTradeWithRetry, startForcedCloseTimer, cancelForcedCloseTimer, closeTrade } from "../src/trading/trader.js";
 import { RiskManager, StopLossTakeProfit } from "../src/risk/risk-manager.js";
 import { Trade, User, BotLog }             from "./db.js";
+let _broadcast = null;
+// Lazy import broadcaster to avoid circular dependency
+async function getBroadcast() {
+  if (!_broadcast) {
+    const mod = await import("./server.js");
+    _broadcast = mod.broadcastToUser;
+  }
+  return _broadcast;
+}
 import {
   notifyStartup, notifyTradeOpened, notifyRiskBlock,
   notifyReconnecting, notifyMaxTrades, notifyDailySummary,
@@ -51,7 +60,7 @@ const SYMBOLS = [
   "R_100"
 ];
 const POLL_SECS          = 30; // increased to reduce rate limit hits
-const MAX_IDLE_SECS      = 90;
+const MAX_IDLE_SECS      = 30;
 const TELEGRAM_BOT_TOKEN = process.env.TELEGRAM_BOT_TOKEN;
 
 const runningBots = new Map();
@@ -71,7 +80,18 @@ async function getBalance(ws) {
 async function log(userId, message, level = "info") {
   console.log(message);
   try {
-    await BotLog.create({ userId, message, level });
+    const entry = await BotLog.create({ userId, message, level });
+    // Broadcast to connected WebSocket clients in real-time
+    try {
+      const broadcast = await getBroadcast();
+      broadcast(String(userId), {
+        type:      "log",
+        level,
+        message,
+        createdAt: entry.createdAt,
+        id:        entry._id,
+      });
+    } catch {}
   } catch (e) {
     // Don't crash the bot if logging fails
   }
@@ -374,6 +394,7 @@ async function runUserBot(user, stopSignal) {
           break;
         }
 
+        lastApiCall = Date.now(); // reset before balance fetch
         balance     = await getBalance(ws);
         lastApiCall = Date.now();
 
@@ -458,10 +479,11 @@ async function runUserBot(user, stopSignal) {
             continue;
           }
 
+          // Update idle timer before fetch so we don't timeout mid-scan
+          lastApiCall = Date.now();
           // Small delay between symbols to avoid rate limit
           await new Promise(r => setTimeout(r, 300));
           const tf = await getCachedMultiTf(ws, symbol);
-          lastApiCall = Date.now();
           const { h4: dfH4, m30: dfM30, m15: dfM15 } = tf;
           // Cache 4H candles for trade monitor (trend reversal detection)
           if (dfH4 && dfH4.length > 0) dfH4Cache.set(symbol, dfH4);
@@ -498,7 +520,7 @@ async function runUserBot(user, stopSignal) {
               symbol,
               status:       "HOLD",
               h4bias:       h4trend,
-              m30trend:      get15mTrend(dfM30),
+              h1trend:      get15mTrend(dfM30),
               strength,
               rejectReason,
             });
@@ -507,9 +529,8 @@ async function runUserBot(user, stopSignal) {
 
           const direction  = signal === 1 ? "MULTUP" : "MULTDOWN";
           const label2     = signal === 1 ? "BUY" : "SELL";
-          const baseStake  = rm.calculateStake(balance);
-          const volScalar  = getVolatilityScalar(dfM15);
-          const stake      = parseFloat(Math.max(baseStake * volScalar, rm.minStake).toFixed(2));
+          // Fixed dollar stake — user sets amount directly (min $1)
+          const stake      = parseFloat(Math.max(freshUser.risk.stakeAmount || 1.00, 1.00).toFixed(2));
           const strength   = getSignalStrength(dfM15, dfM30, dfH4);
           const limitOrder = {
             stop_loss:   parseFloat((stake * freshUser.risk.stopLossPct).toFixed(2)),
@@ -521,7 +542,7 @@ async function runUserBot(user, stopSignal) {
             symbol,
             status:  label2,
             h4bias:  direction === "MULTUP" ? "bullish" : "bearish",
-            m30trend: direction === "MULTUP" ? "bullish" : "bearish",
+            h1trend: direction === "MULTUP" ? "bullish" : "bearish",
             strength,
           });
 

@@ -23,7 +23,7 @@ const userSchema = new mongoose.Schema({
   telegramChatId: { type: String, default: "" },
   botActive:      { type: Boolean, default: false },
   risk: {
-    riskPct:              { type: Number, default: 0.10 },
+    stakeAmount:          { type: Number, default: 1.00 },  // fixed dollar stake (min $1)
     maxOpenTrades:        { type: Number, default: 3 },
     maxDailyLossPct:      { type: Number, default: 0.30 },
     maxConsecutiveLosses: { type: Number, default: 3 },
@@ -76,6 +76,6 @@ const botLogSchema = new mongoose.Schema({
   createdAt: { type: Date, default: Date.now },
 });
 
-botLogSchema.index({ createdAt: 1 }, { expireAfterSeconds: 259200 });
+botLogSchema.index({ createdAt: 1 }, { expireAfterSeconds: 266400 });
 
 export const BotLog = mongoose.model("BotLog", botLogSchema);
