@@ -59,7 +59,7 @@ const SYMBOLS = [
   "R_75",
   "R_100"
 ];
-const POLL_SECS          = 30; // increased to reduce rate limit hits
+const POLL_SECS          = 45; // 45s between scans — reduces rate limit pressure
 const MAX_IDLE_SECS      = 30;
 const TELEGRAM_BOT_TOKEN = process.env.TELEGRAM_BOT_TOKEN;
 
@@ -394,18 +394,20 @@ async function runUserBot(user, stopSignal) {
           break;
         }
 
-        lastApiCall = Date.now(); // reset before balance fetch
+        lastApiCall = Date.now();
         balance     = await getBalance(ws);
         lastApiCall = Date.now();
 
-        // Sync trade statuses — updates closed trades + live PnL
+        // Sync trade statuses — update lastApiCall after
         await syncTradeStatuses(ws, user._id, label);
+        lastApiCall = Date.now();
 
-        // Monitor open trades for trend reversal + trailing stop
+        // Monitor open trades — update lastApiCall after
         await monitorOpenTrades(ws, user._id, label, portfolio, dfH4Cache);
+        lastApiCall = Date.now();
 
         const currentOpen = await portfolio.sync(ws);
-        lastApiCall       = Date.now();
+        lastApiCall = Date.now();
         rm.openTrades     = currentOpen;
 
         // Apply latest risk settings from DB
@@ -482,7 +484,7 @@ async function runUserBot(user, stopSignal) {
           // Update idle timer before fetch so we don't timeout mid-scan
           lastApiCall = Date.now();
           // Small delay between symbols to avoid rate limit
-          await new Promise(r => setTimeout(r, 300));
+          await new Promise(r => setTimeout(r, 200));
           const tf = await getCachedMultiTf(ws, symbol);
           const { h4: dfH4, m30: dfM30, m15: dfM15 } = tf;
           // Cache 4H candles for trade monitor (trend reversal detection)

@@ -10,7 +10,7 @@
 // ═══════════════════════════════════════════════════════
 
 const cache     = new Map(); // symbol+granularity → { candles, fetchedAt }
-const CACHE_TTL = 60 * 1000; // 60 seconds — refresh candles every 1 minute
+const CACHE_TTL = 90 * 1000; // 90 seconds — refresh candles every 1.5 minutes
 
 // Request queue to prevent parallel fetches for same symbol
 const pending   = new Map();
@@ -98,9 +98,9 @@ async function fetchCandles(ws, symbol, granularity, count) {
 export async function getCachedMultiTf(ws, symbol) {
   // Sequential fetch to avoid rate limit — each TF waits for previous
   const h4  = await getCachedCandles(ws, symbol, 14400, 200);
-  await new Promise(r => setTimeout(r, 200));
+  await new Promise(r => setTimeout(r, 100));
   const m30 = await getCachedCandles(ws, symbol, 1800,  200);
-  await new Promise(r => setTimeout(r, 200));
+  await new Promise(r => setTimeout(r, 100));
   const m15 = await getCachedCandles(ws, symbol, 900,   200);
   return { h4, m30, m15 };
 }
