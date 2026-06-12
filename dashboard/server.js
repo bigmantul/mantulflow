@@ -8,6 +8,7 @@ import cors         from "cors";
 import path         from "path";
 import http         from "http";
 import { WebSocketServer } from "ws";
+import jwt          from "jsonwebtoken";
 import { fileURLToPath }   from "url";
 
 import { connectDB }        from "./db.js";
@@ -49,28 +50,24 @@ const wss = new WebSocketServer({ server, path: "/ws/timeline" });
 const userSockets = new Map();
 
 wss.on("connection", (ws, req) => {
-  // Extract token from query string: /ws/timeline?token=xxx
   const url    = new URL(req.url, "http://localhost");
   const token  = url.searchParams.get("token");
   let userId   = null;
 
+  // Decode JWT to get userId — no await needed, jwt.verify is sync
   if (token) {
     try {
-      const jwt     = await import("jsonwebtoken");
-      // dynamic import workaround for ESM
-    } catch {}
-
-    // Simple JWT decode without verify (verify happens in route middleware)
-    try {
-      const payload = JSON.parse(Buffer.from(token.split(".")[1], "base64").toString());
-      userId = payload.id;
-    } catch {}
+      const payload = jwt.verify(token, process.env.JWT_SECRET);
+      userId = String(payload.id);
+    } catch {
+      // Invalid token — still allow connection but won't receive events
+    }
   }
 
   if (userId) {
     if (!userSockets.has(userId)) userSockets.set(userId, new Set());
     userSockets.get(userId).add(ws);
-    ws.send(JSON.stringify({ type: "connected", message: "Timeline connected" }));
+    ws.send(JSON.stringify({ type: "connected", message: "Timeline connected ✅" }));
   }
 
   ws.on("close", () => {
@@ -81,6 +78,12 @@ wss.on("connection", (ws, req) => {
   });
 
   ws.on("error", () => {});
+
+  // Keepalive ping every 30s
+  const ping = setInterval(() => {
+    if (ws.readyState === 1) ws.send(JSON.stringify({ type: "ping" }));
+    else clearInterval(ping);
+  }, 30000);
 });
 
 // Export broadcaster so bot-manager can push events
@@ -89,7 +92,7 @@ export function broadcastToUser(userId, event) {
   if (!clients) return;
   const msg = JSON.stringify(event);
   for (const ws of clients) {
-    if (ws.readyState === 1) { // OPEN
+    if (ws.readyState === 1) {
       try { ws.send(msg); } catch {}
     }
   }
