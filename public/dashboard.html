@@ -172,8 +172,7 @@ body{
   will-change:transform;
 }
 .glass-card:hover{
-  transform:translateY(-6px) translateZ(8px);
-  box-shadow:0 24px 60px rgba(0,0,0,.5),0 0 40px rgba(56,189,248,0.12);
+  box-shadow:0 24px 60px rgba(0,0,0,.5);
   border-color:rgba(56,189,248,0.4);
 }
 .card-label{
@@ -643,17 +642,7 @@ tr:hover td{background:rgba(56,189,248,0.03)}
 // ═══════════════════════════════════════════════════
 //  3D TILT EFFECT
 // ═══════════════════════════════════════════════════
-document.querySelectorAll(".glass-card").forEach(card=>{
-  card.addEventListener("mousemove",e=>{
-    const r = card.getBoundingClientRect();
-    const x = (e.clientX - r.left)/r.width  - 0.5;
-    const y = (e.clientY - r.top) /r.height - 0.5;
-    card.style.transform = `perspective(800px) rotateX(${-y*10}deg) rotateY(${x*10}deg) translateY(-6px) translateZ(8px)`;
-  });
-  card.addEventListener("mouseleave",()=>{
-    card.style.transform = "";
-  });
-});
+
 
 // ═══════════════════════════════════════════════════
 //  CORE
