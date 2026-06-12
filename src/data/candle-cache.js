@@ -1,67 +1,82 @@
 // ═══════════════════════════════════════════════════════
 //  src/data/candle-cache.js
 //
-//  Shared candle cache — fetches once per symbol
-//  per refresh interval, shared across ALL user bots.
+//  GLOBAL SHARED CANDLE CACHE
 //
-//  This solves the rate limit problem:
-//  Before: 3 users × 11 symbols × 3 timeframes = 99 requests per cycle
-//  After:  11 symbols × 3 timeframes = 33 requests per cycle (shared)
+//  Architecture:
+//    One background scanner fetches ALL symbols once
+//    every 90 seconds using ITS OWN WebSocket connection.
+//    All user bots read from this cache instantly —
+//    they NEVER call the Deriv candle API directly.
+//
+//  Before: 6 users × 22 symbols × 3 TFs = 396 API calls
+//  After:  1 scanner × 22 symbols × 3 TFs = 66 API calls
 // ═══════════════════════════════════════════════════════
 
-const cache     = new Map(); // symbol+granularity → { candles, fetchedAt }
-const CACHE_TTL = 90 * 1000; // 90 seconds — refresh candles every 1.5 minutes
+import { sendMessage, connectWebSocket } from "../utils/ws-client.js";
+import { connectForMode }                from "../auth/deriv-auth.js";
 
-// Request queue to prevent parallel fetches for same symbol
-const pending   = new Map();
+const CACHE_TTL    = 90 * 1000;  // 90 seconds
+const SCAN_INTERVAL = 85 * 1000; // scan every 85s (slightly before TTL)
+
+const cache   = new Map(); // symbol+gran → { candles, fetchedAt }
+const pending = new Map(); // symbol+gran → Promise (dedup concurrent requests)
+
+let scannerRunning = false;
+let scannerWs      = null;
+
+// ── PUBLIC API ────────────────────────────────────────
 
 /**
- * Get candles from cache or fetch fresh ones.
- * If multiple bots request same symbol at same time,
- * only ONE fetch happens — others wait for it.
+ * Get all 3 timeframes for a symbol.
+ * Returns from cache if fresh — never waits for API.
+ * Falls back to direct fetch only if cache is empty.
+ */
+export async function getCachedMultiTf(ws, symbol) {
+  const h4  = await getCachedCandles(ws, symbol, 14400, 200);
+  const m30 = await getCachedCandles(ws, symbol, 1800,  200);
+  const m15 = await getCachedCandles(ws, symbol, 900,   200);
+  return { h4, m30, m15 };
+}
+
+/**
+ * Get cached candles for one symbol+granularity.
+ * Uses shared cache — only fetches if cache is stale/empty.
  */
 export async function getCachedCandles(ws, symbol, granularity, count = 200) {
-  const key     = `${symbol}_${granularity}`;
-  const now     = Date.now();
-  const cached  = cache.get(key);
+  const key    = `${symbol}_${granularity}`;
+  const now    = Date.now();
+  const cached = cache.get(key);
 
-  // Return cached data if still fresh and has data
+  // Return fresh cache immediately
   if (cached && cached.candles.length > 10 && (now - cached.fetchedAt) < CACHE_TTL) {
     return cached.candles;
   }
 
-  // If a fetch is already in progress for this key, wait for it
-  if (pending.has(key)) {
-    return pending.get(key);
-  }
+  // If already fetching this key, wait for it
+  if (pending.has(key)) return pending.get(key);
 
-  // Start a new fetch
-  const fetchPromise = fetchCandles(ws, symbol, granularity, count)
+  // Fetch fresh data
+  const promise = fetchCandles(ws, symbol, granularity, count)
     .then(candles => {
-      // Only cache if we got actual data — don't store empty results
-      if (candles && candles.length > 10) {
-        cache.set(key, { candles, fetchedAt: Date.now() });
-      }
+      if (candles.length > 10) cache.set(key, { candles, fetchedAt: Date.now() });
       pending.delete(key);
       return candles;
     })
     .catch(err => {
       pending.delete(key);
-      // Return stale cache if available rather than crashing
       if (cached) {
-        console.warn(`[cache] Using stale data for ${symbol} g=${granularity}: ${err.message}`);
+        console.warn(`[cache] Stale data for ${symbol} g=${granularity}: ${err.message}`);
         return cached.candles;
       }
       return [];
     });
 
-  pending.set(key, fetchPromise);
-  return fetchPromise;
+  pending.set(key, promise);
+  return promise;
 }
 
 async function fetchCandles(ws, symbol, granularity, count) {
-  const { sendMessage } = await import("../utils/ws-client.js");
-
   const resp = await sendMessage(ws, {
     ticks_history: symbol,
     style:         "candles",
@@ -84,35 +99,68 @@ async function fetchCandles(ws, symbol, granularity, count) {
       epoch: c.epoch,
     }))
     .sort((a, b) => a.epoch - b.epoch)
-    .filter(c => {
-      if (seen.has(c.epoch)) return false;
-      seen.add(c.epoch);
-      return true;
-    });
+    .filter(c => { if (seen.has(c.epoch)) return false; seen.add(c.epoch); return true; });
 }
+
+// ── BACKGROUND SCANNER ────────────────────────────────
 
 /**
- * Get all 3 timeframes using the shared cache.
- * Drop-in replacement for getMultiTf().
+ * Start the global background scanner.
+ * Called ONCE on server startup.
+ * Uses its own WebSocket — user bots never fetch candles directly.
+ *
+ * @param {string[]} symbols  - full symbol list
+ * @param {string}   token    - any valid PAT token (for candle access)
+ * @param {string}   appId    - Deriv App ID
+ * @param {string}   mode     - "demo" or "real"
  */
-export async function getCachedMultiTf(ws, symbol) {
-  // Sequential fetch to avoid rate limit — each TF waits for previous
-  const h4  = await getCachedCandles(ws, symbol, 14400, 200);
-  await new Promise(r => setTimeout(r, 100));
-  const m30 = await getCachedCandles(ws, symbol, 1800,  200);
-  await new Promise(r => setTimeout(r, 100));
-  const m15 = await getCachedCandles(ws, symbol, 900,   200);
-  return { h4, m30, m15 };
-}
+export async function startGlobalScanner(symbols, token, appId, mode = "demo") {
+  if (scannerRunning) return;
+  scannerRunning = true;
+  console.log(`🔭 Global candle scanner starting — ${symbols.length} symbols`);
 
-/** Clear cache for a symbol (call if you need fresh data) */
-export function clearCache(symbol) {
-  for (const key of cache.keys()) {
-    if (key.startsWith(symbol)) cache.delete(key);
+  async function runScan() {
+    try {
+      // Open fresh WS for scanner
+      if (scannerWs) try { scannerWs.close(); } catch {}
+      const wsUrl   = await connectForMode(mode, token, appId);
+      scannerWs     = await connectWebSocket(wsUrl);
+
+      const granularities = [14400, 1800, 900];
+      let fetched = 0;
+
+      for (const symbol of symbols) {
+        for (const gran of granularities) {
+          const key = `${symbol}_${gran}`;
+          try {
+            const candles = await fetchCandles(scannerWs, symbol, gran, 200);
+            if (candles.length > 10) {
+              cache.set(key, { candles, fetchedAt: Date.now() });
+              fetched++;
+            }
+            // Small delay to avoid rate limit
+            await new Promise(r => setTimeout(r, 150));
+          } catch (e) {
+            console.warn(`[scanner] ${symbol} g=${gran}: ${e.message}`);
+            await new Promise(r => setTimeout(r, 500));
+          }
+        }
+      }
+
+      console.log(`✅ [scanner] Refreshed ${fetched}/${symbols.length * 3} candle sets`);
+      scannerWs.close();
+    } catch (e) {
+      console.error(`[scanner] Error:`, e.message);
+    }
   }
+
+  // Initial scan immediately
+  await runScan();
+
+  // Then scan on interval
+  setInterval(runScan, SCAN_INTERVAL);
 }
 
-/** Get cache stats for debugging */
 export function getCacheStats() {
   const now = Date.now();
   let fresh = 0, stale = 0;
@@ -121,4 +169,10 @@ export function getCacheStats() {
     else stale++;
   }
   return { total: cache.size, fresh, stale, pending: pending.size };
+}
+
+export function clearCache(symbol) {
+  for (const key of cache.keys()) {
+    if (key.startsWith(symbol)) cache.delete(key);
+  }
 }

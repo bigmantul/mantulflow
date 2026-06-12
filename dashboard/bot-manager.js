@@ -10,7 +10,7 @@
 
 import { connectForMode }                from "../src/auth/deriv-auth.js";
 import { connectWebSocket, sendMessage } from "../src/utils/ws-client.js";
-import { getCachedMultiTf }              from "../src/data/candle-cache.js";
+import { getCachedMultiTf, startGlobalScanner, getCacheStats } from "../src/data/candle-cache.js";
 import {
   getLatestSignalMtf, getSignalStrength, getVolatilityScalar,
   marketIsTradeable, get15mTrend, getTradeReason,
@@ -381,8 +381,9 @@ async function runUserBot(user, stopSignal) {
       while (!stopSignal.stopped) {
         await sleep(POLL_SECS);
 
-        if ((Date.now() - lastApiCall) / 1000 > MAX_IDLE_SECS) {
-          await log(userId, `[${label}] ⏱️ Idle — reconnecting...`, "warn");
+        // Keep connection alive — candles from global cache, no idle needed
+        if (ws.readyState !== 1) {
+          await log(userId, `[${label}] ⏱️ WebSocket dropped — reconnecting...`, "warn");
           ws.close(); break;
         }
 
@@ -481,10 +482,8 @@ async function runUserBot(user, stopSignal) {
             continue;
           }
 
-          // Update idle timer before fetch so we don't timeout mid-scan
+          // Read from global cache — no API call needed
           lastApiCall = Date.now();
-          // Small delay between symbols to avoid rate limit
-          await new Promise(r => setTimeout(r, 200));
           const tf = await getCachedMultiTf(ws, symbol);
           const { h4: dfH4, m30: dfM30, m15: dfM15 } = tf;
           // Cache 4H candles for trade monitor (trend reversal detection)
@@ -641,6 +640,13 @@ export const botManager = {
     if (runningBots.has(userId)) {
       console.log(`[${user.name}] Already running`); return;
     }
+    // Start global scanner if not already running
+    const { getCacheStats } = await import("../src/data/candle-cache.js");
+    const stats = getCacheStats();
+    if (stats.total === 0) {
+      startGlobalScanner(SYMBOLS, user.derivPAT, user.derivAppId, user.derivMode || "demo")
+        .catch(e => console.error("[scanner] Failed to start:", e.message));
+    }
     const stopSignal = { stopped: false };
     runningBots.set(userId, stopSignal);
     runUserBot(user, stopSignal);
@@ -670,6 +676,24 @@ export const botManager = {
 export async function resumeActiveBots() {
   const activeUsers = await User.find({ botActive: true });
   console.log(`Resuming ${activeUsers.length} active bot(s)...`);
+
+  // Start global scanner using first active user's credentials
+  // Scanner runs independently — all bots read from its cache
+  if (activeUsers.length > 0) {
+    const u = activeUsers[0];
+    startGlobalScanner(SYMBOLS, u.derivPAT, u.derivAppId, u.derivMode || "demo")
+      .catch(e => console.error("[scanner] Failed to start:", e.message));
+  } else {
+    // No active users yet — start scanner with env credentials
+    const token = process.env.DERIV_PAT_TOKEN;
+    const appId = process.env.DERIV_APP_ID;
+    if (token && appId) {
+      startGlobalScanner(SYMBOLS, token, appId, "demo")
+        .catch(e => console.error("[scanner] Failed to start:", e.message));
+    }
+  }
+
+  // Stagger user bot starts
   for (const user of activeUsers) {
     await botManager.startUser(user);
   }
