@@ -22,7 +22,7 @@ import {
   SIG_BUY,
   SIG_SELL,
 } from "../src/strategy/signals.js";
-import { placeTradeWithRetry, startForcedCloseTimer, cancelForcedCloseTimer, closeTrade, restoreTimersFromDB } from "../src/trading/trader.js";
+import { placeTradeWithRetry, startForcedCloseTimer, cancelForcedCloseTimer, closeTrade } from "../src/trading/trader.js";
 import { RiskManager, StopLossTakeProfit } from "../src/risk/risk-manager.js";
 import { Trade, User, BotLog }             from "./db.js";
 
@@ -344,22 +344,6 @@ async function runUserBot(user, stopSignal) {
       const openCount = await portfolio.sync(ws);
       lastApiCall     = Date.now();
       rm.openTrades   = openCount;
-
-      // ── RESTORE TIMERS AFTER REDEPLOY ────────────────
-      // Reads open trades from DB, calculates remaining
-      // time from trade.openedAt, restarts each timer.
-      // Overdue trades (open > 2hrs) close in 5 seconds.
-      try {
-        const openTrades = await Trade.find({ userId: user._id, status: "open" });
-        restoreTimersFromDB(openTrades, {
-          token: user.derivPAT,
-          appId: user.derivAppId,
-          mode:  user.derivMode,
-          label,
-        });
-      } catch (restoreErr) {
-        await log(userId, `[${label}] Timer restore error: ${restoreErr.message}`, "warn");
-      }
 
       let balance = await getBalance(ws);
       lastApiCall = Date.now();
