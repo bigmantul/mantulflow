@@ -515,11 +515,11 @@ async function runUserBot(user, stopSignal) {
 
           cycleResults.push({
             symbol,
-            status:  label2,
-            h4bias:  direction === "MULTUP" ? "bullish" : "bearish",
-            h1trend: direction === "MULTUP" ? "bullish" : "bearish",
+            status:    label2,
             strength,
             breakdown,
+            buyCount,
+            sellCount,
           });
 
           const tradeResult = await placeTradeWithRetry(ws, symbol, direction, stake, limitOrder);
@@ -570,6 +570,9 @@ async function runUserBot(user, stopSignal) {
               symbol, direction, stake, multiplier,
               limitOrder, strength,
               contractId, label, botToken, chatId,
+              breakdown,
+              buyCount,
+              sellCount,
             });
 
             await log(userId,

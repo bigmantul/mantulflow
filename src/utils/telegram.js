@@ -1,5 +1,8 @@
 ﻿// ═══════════════════════════════════════════════════════
 //  src/utils/telegram.js
+//
+//  Notifications fully integrated with Multi-Strategy
+//  Signal Engine (5 strategies + conflict engine)
 // ═══════════════════════════════════════════════════════
 
 const TELEGRAM_BOT_TOKEN = process.env.TELEGRAM_BOT_TOKEN;
@@ -24,30 +27,71 @@ async function sendMessage(text, botToken, chatId) {
   }
 }
 
+// ── HELPERS ───────────────────────────────────────────
+
+function strategyIcon(signal) {
+  if (signal === "BUY")  return "🟢";
+  if (signal === "SELL") return "🔴";
+  return "⬜";
+}
+
+/**
+ * Format a strategy breakdown array into readable lines.
+ * breakdown = [{ name, signal }]
+ */
+function formatBreakdown(breakdown) {
+  if (!breakdown || !breakdown.length) return "";
+  return breakdown
+    .map(s => `  ${strategyIcon(s.signal)} ${s.name.padEnd(16)}: ${s.signal}`)
+    .join("\n");
+}
+
+function voteBar(votes, total = 5) {
+  const filled = Math.round((votes / total) * 5);
+  return "█".repeat(filled) + "░".repeat(5 - filled);
+}
+
 // ── STARTUP ───────────────────────────────────────────
 export function notifyStartup(balance, mode, label, botToken, chatId) {
   return sendMessage(
     `🤖 <b>${label || "Bot"} — Started</b>\n` +
-    `Mode     : ${(mode || "demo").toUpperCase()}\n` +
-    `Balance  : $${balance.toFixed(2)}\n` +
-    `Strategy : Trend Following — 4H bias | 30M confirm | 15M entry\n` +
-    `Exit     : SL/TP or 2hr forced close`,
+    `Mode       : ${(mode || "demo").toUpperCase()}\n` +
+    `Balance    : $${balance.toFixed(2)}\n` +
+    `Engine     : Multi-Strategy (5 strategies)\n` +
+    `Strategies : Trend | S&amp;D | SMC | Breakout | MeanRev\n` +
+    `Timeframes : 4H / 1H / 30M / 15M\n` +
+    `Exit       : SL/TP or 2hr forced close`,
     botToken, chatId
   );
 }
 
 // ── TRADE OPENED ──────────────────────────────────────
-export function notifyTradeOpened({ symbol, direction, stake, multiplier, limitOrder, strength, contractId, label, botToken, chatId }) {
-  const icon   = direction === "MULTUP" ? "🟢 BUY" : "🔴 SELL";
-  const slText = limitOrder ? `\nSL       : $${limitOrder.stop_loss}` : "";
-  const tpText = limitOrder ? `\nTP       : $${limitOrder.take_profit}` : "";
+export function notifyTradeOpened({
+  symbol, direction, stake, multiplier, limitOrder,
+  strength, contractId, label, botToken, chatId,
+  breakdown, buyCount, sellCount,
+}) {
+  const isBuy  = direction === "MULTUP";
+  const icon   = isBuy ? "🟢 BUY" : "🔴 SELL";
+  const votes  = isBuy ? (buyCount ?? 0) : (sellCount ?? 0);
+  const slText = limitOrder ? `\nSL         : $${limitOrder.stop_loss}` : "";
+  const tpText = limitOrder ? `\nTP         : $${limitOrder.take_profit}` : "";
+
+  // Strategy breakdown block
+  const breakdownBlock = breakdown && breakdown.length
+    ? `\n\n<b>Strategy Votes:</b>\n${formatBreakdown(breakdown)}\n` +
+      `  ${"─".repeat(28)}\n` +
+      `  ${isBuy ? "BUY" : "SELL"} votes : ${votes}/5  ${voteBar(votes)}\n` +
+      `  Strength  : ${strength ?? 0}%`
+    : `\nStrength   : ${strength ?? 0}% (${votes}/5 strategies)`;
+
   return sendMessage(
     `${icon} <b>${label || "Bot"} — ${symbol}</b>\n` +
-    `Contract : ${contractId}\n` +
-    `Stake    : $${stake.toFixed(2)} x${multiplier}\n` +
-    `Phases   : P1 ✅ P2 ✅ P3 ✅ — All aligned` +
+    `Contract   : ${contractId}\n` +
+    `Stake      : $${stake.toFixed(2)} x${multiplier}` +
     slText + tpText +
-    `\nFailsafe : ⏱️ Force closes in 2hrs`,
+    `\nFailsafe   : ⏱️ Force closes in 2hrs` +
+    breakdownBlock,
     botToken, chatId
   );
 }
@@ -102,42 +146,62 @@ export function notifyCycleScan({ balance, openTrades, maxTrades, session, resul
   for (const r of results) {
     const sym = r.symbol;
 
+    // ── LOCKED ─────────────────────────────────────────
     if (r.status === "LOCKED") {
+      // countdown comes from portfolio.getCountdown() — do NOT modify it here
       const cd = r.countdown ? r.countdown : "";
       lines.push(`🔒 ${sym} | LOCKED${cd}`);
 
+    // ── MARKET CLOSED ──────────────────────────────────
     } else if (r.status === "CLOSED") {
       lines.push(`🕐 ${sym} | MARKET CLOSED`);
 
+    // ── FILTERED ───────────────────────────────────────
     } else if (r.status === "FILTERED") {
       lines.push(`⛔ ${sym} | FILTERED — poor volatility`);
 
+    // ── HOLD ───────────────────────────────────────────
     } else if (r.status === "HOLD") {
-      const h4    = (r.h4bias || r.trend || "neutral").toUpperCase();
-      const h4icon = h4 !== "NEUTRAL" ? "✅" : "❌";
-      const pct   = parseFloat(r.strength ?? 0);
+      // Show strategy vote breakdown for HOLD
+      const buyVotes  = r.breakdown ? r.breakdown.filter(s => s.signal === "BUY").length  : 0;
+      const sellVotes = r.breakdown ? r.breakdown.filter(s => s.signal === "SELL").length : 0;
 
-      // Phase info based on strength percentage
-      let phaseInfo;
-      if (pct === 0)        phaseInfo = "P1 ❌";
-      else if (pct <= 33)   phaseInfo = "P1 ✅ | P2 ❌";
-      else if (pct <= 67)   phaseInfo = "P1 ✅ | P2 ✅ | P3 ❌";
-      else                  phaseInfo = "P1 ✅ | P2 ✅ | P3 ✅";
+      let holdReason;
+      if (buyVotes > 0 && sellVotes > 0) {
+        holdReason = `⚡ CONFLICT — B:${buyVotes} S:${sellVotes} (signals cancel)`;
+      } else if (buyVotes === 0 && sellVotes === 0) {
+        holdReason = `B:0 S:0 — no setup found`;
+      } else {
+        holdReason = `B:${buyVotes} S:${sellVotes}`;
+      }
 
-      // Reject reason (truncated to keep message short)
-      const reason = r.rejectReason
-        ? r.rejectReason.length > 50
-          ? r.rejectReason.slice(0, 50) + "..."
-          : r.rejectReason
+      // Which strategies fired (if any)
+      const fired = r.breakdown
+        ? r.breakdown.filter(s => s.signal !== "HOLD").map(s => s.name).join(", ")
         : "";
 
-      lines.push(`⏸ ${sym} | 4H: ${h4} ${h4icon} | ${phaseInfo}${reason ? ` — ${reason}` : ""}`);
+      lines.push(
+        `⏸ ${sym} | HOLD | ${holdReason}` +
+        (fired ? ` | [${fired}]` : "")
+      );
 
+    // ── BUY / SELL ─────────────────────────────────────
     } else if (r.status === "BUY" || r.status === "SELL") {
-      const icon = r.status === "BUY" ? "🟢" : "🔴";
-      const h4   = (r.h4bias  || (r.status === "BUY" ? "bullish" : "bearish")).toUpperCase();
-      const m30  = (r.m30trend || "neutral").toUpperCase();
-      lines.push(`${icon} ${sym} | 4H: ${h4} ✅ | 30M: ${m30} ✅ | P1✅ P2✅ P3✅ — ${r.status}!`);
+      const icon      = r.status === "BUY" ? "🟢" : "🔴";
+      const votes     = r.breakdown
+        ? r.breakdown.filter(s => s.signal === r.status).length
+        : 0;
+      const strength  = r.strength ?? Math.round((votes / 5) * 100);
+
+      // Which strategies voted for this direction
+      const voters = r.breakdown
+        ? r.breakdown.filter(s => s.signal === r.status).map(s => s.name).join(", ")
+        : "—";
+
+      lines.push(
+        `${icon} ${sym} | ${r.status} | Votes: ${votes}/5 (${strength}%)\n` +
+        `   Strategies: ${voters}`
+      );
     }
   }
 
