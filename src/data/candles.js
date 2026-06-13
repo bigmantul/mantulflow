@@ -3,7 +3,8 @@
 //
 //  Timeframe stack:
 //    h4  = 14400s  → HTF bias (4H)
-//    m30 = 1800s   → Trend filter (30M)
+//    h1  = 3600s   → Range / zone detection (1H)
+//    m30 = 1800s   → Trend filter / pullback (30M)
 //    m15 = 900s    → Entry + confirmation (15M)
 // ═══════════════════════════════════════════════════════
 
@@ -56,17 +57,19 @@ export async function getCandles(ws, symbol, granularity = 3600, count = 200) {
 }
 
 /**
- * Fetch all three timeframes
+ * Fetch all four timeframes in parallel:
  *
- *   h4  = 14400s  (4H  — HTF bias)
- *   m30 = 1800s   (30M — trend filter)
- *   m15 = 900s    (15M — entry)
+ *   h4  = 14400s  (4H  — HTF bias & structure)
+ *   h1  = 3600s   (1H  — range / zone detection)
+ *   m30 = 1800s   (30M — trend filter / pullback)
+ *   m15 = 900s    (15M — entry & confirmation)
  */
 export async function getMultiTf(ws, symbol) {
-  const [h4, m30, m15] = await Promise.all([
+  const [h4, h1, m30, m15] = await Promise.all([
     getCandles(ws, symbol, 14400, 200),
+    getCandles(ws, symbol, 3600,  200),
     getCandles(ws, symbol, 1800,  200),
     getCandles(ws, symbol, 900,   200),
   ]);
-  return { h4, m30, m15 };
+  return { h4, h1, m30, m15 };
 }

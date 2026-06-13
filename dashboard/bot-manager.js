@@ -1,26 +1,32 @@
 // ═══════════════════════════════════════════════════════
 //  dashboard/bot-manager.js
-//  Fixes:
-//  1. Symbol locking — locks symbol in DB so duplicate
-//     trades are prevented even after reconnect
-//  2. Trade sync — correctly detects open vs closed
-//  3. PnL update — fetches real PnL when trade closes
-//  4. Bot logging — saves logs to MongoDB (72hr TTL)
+//
+//  Multi-strategy signal engine integration:
+//    - Fetches 4 timeframes (4H / 1H / 30M / 15M)
+//    - Runs 5 independent strategies via collectSignals()
+//    - Conflict engine resolves BUY/SELL/HOLD per symbol
+//    - All existing infrastructure unchanged
 // ═══════════════════════════════════════════════════════
 
 import { connectForMode }                from "../src/auth/deriv-auth.js";
 import { connectWebSocket, sendMessage } from "../src/utils/ws-client.js";
 import { getCachedMultiTf, startGlobalScanner, getCacheStats } from "../src/data/candle-cache.js";
 import {
-  getLatestSignalMtf, getSignalStrength, getVolatilityScalar,
-  marketIsTradeable, get15mTrend, getTradeReason,
-  sessionName, isMarketOpen,
+  collectSignals,
+  getTradeReason,
+  getVolatilityScalar,
+  marketIsTradeable,
+  get15mTrend,
+  sessionName,
+  isMarketOpen,
+  SIG_BUY,
+  SIG_SELL,
 } from "../src/strategy/signals.js";
 import { placeTradeWithRetry, startForcedCloseTimer, cancelForcedCloseTimer, closeTrade } from "../src/trading/trader.js";
 import { RiskManager, StopLossTakeProfit } from "../src/risk/risk-manager.js";
 import { Trade, User, BotLog }             from "./db.js";
+
 let _broadcast = null;
-// Lazy import broadcaster to avoid circular dependency
 async function getBroadcast() {
   if (!_broadcast) {
     const mod = await import("./server.js");
@@ -28,6 +34,7 @@ async function getBroadcast() {
   }
   return _broadcast;
 }
+
 import {
   notifyStartup, notifyTradeOpened, notifyRiskBlock,
   notifyReconnecting, notifyMaxTrades, notifyDailySummary,
@@ -46,7 +53,6 @@ const SYMBOLS = [
   // Crypto
   "cryBTCUSD", "cryETHUSD",
 
-
   // Boom & Crash
   "BOOM500",
   "CRASH500",
@@ -57,10 +63,10 @@ const SYMBOLS = [
 
   // Volatility Indices
   "R_75",
-  "R_100"
+  "R_100",
 ];
-const POLL_SECS          = 45; // 45s between scans — reduces rate limit pressure
-const MAX_IDLE_SECS      = 30;
+
+const POLL_SECS          = 45;
 const TELEGRAM_BOT_TOKEN = process.env.TELEGRAM_BOT_TOKEN;
 
 const runningBots = new Map();
@@ -75,13 +81,10 @@ async function getBalance(ws) {
 }
 
 // ── BOT LOGGER ────────────────────────────────────────
-// Saves log messages to MongoDB with 72hr TTL
-// Also prints to console
 async function log(userId, message, level = "info") {
   console.log(message);
   try {
     const entry = await BotLog.create({ userId, message, level });
-    // Broadcast to connected WebSocket clients in real-time
     try {
       const broadcast = await getBroadcast();
       broadcast(String(userId), {
@@ -92,24 +95,18 @@ async function log(userId, message, level = "info") {
         id:        entry._id,
       });
     } catch {}
-  } catch (e) {
-    // Don't crash the bot if logging fails
-  }
+  } catch {}
 }
 
 // ── SYNC TRADE STATUSES ───────────────────────────────
-// Checks all "open" trades in DB against live Deriv portfolio
-// Updates status + PnL for any that have closed
 async function syncTradeStatuses(ws, userId, label) {
   try {
     const openTrades = await Trade.find({ userId, status: "open" });
     if (!openTrades.length) return;
 
-    // Get live portfolio from Deriv
     const resp      = await sendMessage(ws, { portfolio: 1 }, "portfolio");
     const contracts = resp?.portfolio?.contracts ?? [];
 
-    // Map of contractId → contract details for active contracts
     const activeContracts = new Map();
     for (const c of contracts) {
       const status = String(c.status ?? "").toLowerCase();
@@ -122,15 +119,12 @@ async function syncTradeStatuses(ws, userId, label) {
       const contractIdStr = String(trade.contractId);
 
       if (activeContracts.has(contractIdStr)) {
-        // Still open on Deriv — update PnL in real time
         const liveContract = activeContracts.get(contractIdStr);
         const livePnl      = parseFloat(liveContract.profit ?? liveContract.bid_price ?? 0);
         await Trade.findByIdAndUpdate(trade._id, { pnl: livePnl });
         continue;
       }
 
-      // Not in active portfolio — trade has closed
-      // Try to get final details
       let finalPnl    = 0;
       let finalStatus = "closed";
 
@@ -146,7 +140,6 @@ async function syncTradeStatuses(ws, userId, label) {
           finalStatus = finalPnl > 0 ? "won" : "lost";
         }
       } catch {
-        // Contract too old to fetch — mark as closed
         finalStatus = "closed";
       }
 
@@ -155,9 +148,7 @@ async function syncTradeStatuses(ws, userId, label) {
         pnl:      finalPnl,
         closedAt: new Date(),
       });
-      portfolio.unlockSymbol(trade.symbol);
 
-      // Cancel the 2hr timer — trade already closed by SL/TP
       cancelForcedCloseTimer(String(trade.contractId));
       await log(userId,
         `[${label}] [sync] Trade ${trade.contractId} → ${finalStatus} | PnL: $${finalPnl.toFixed(2)}`,
@@ -169,10 +160,7 @@ async function syncTradeStatuses(ws, userId, label) {
   }
 }
 
-
 // ── PORTFOLIO TRACKER ─────────────────────────────────
-// Now uses DB as source of truth for locked symbols
-// so locks persist across reconnects
 async function monitorOpenTrades(ws, userId, label, portfolio, dfH4Cache) {
   try {
     const openTrades = await Trade.find({ userId, status: "open" });
@@ -193,13 +181,11 @@ async function monitorOpenTrades(ws, userId, label, portfolio, dfH4Cache) {
         const takeProfit = trade.takeProfit;
         const direction  = trade.direction;
 
-        // Update live PnL
         await Trade.findByIdAndUpdate(trade._id, { pnl: currentPnl });
 
         // ── EXIT 1: TREND REVERSAL ──────────────────────
         const h4Candles = dfH4Cache.get(trade.symbol);
         if (h4Candles && h4Candles.length >= 50) {
-          const { get15mTrend } = await import("../src/strategy/signals.js");
           const currentBias = get15mTrend(h4Candles);
           const tradeBias   = direction === "MULTUP" ? "bullish" : "bearish";
           const biasFlipped = currentBias !== "neutral" && currentBias !== tradeBias;
@@ -224,7 +210,7 @@ async function monitorOpenTrades(ws, userId, label, portfolio, dfH4Cache) {
         // ── EXIT 2: TRAILING STOP ────────────────────────
         if (takeProfit && currentPnl >= takeProfit * 0.5) {
           const breakevenSL = stake;
-          await log(userId, `[${label}] ${trade.symbol} | 📈 Profit $${currentPnl.toFixed(2)} >= 50% TP — moving SL to breakeven $${breakevenSL}`, "trade");
+          await log(userId, `[${label}] ${trade.symbol} | 📈 Profit $${currentPnl.toFixed(2)} >= 50% TP — moving SL to breakeven`, "trade");
           try {
             await sendMessage(ws, {
               contract_update: 1,
@@ -248,18 +234,16 @@ async function monitorOpenTrades(ws, userId, label, portfolio, dfH4Cache) {
   }
 }
 
+// ── PER-USER PORTFOLIO ────────────────────────────────
 function createPortfolio(userId) {
   let activeSymbols = new Set();
   let openCount     = 0;
-  // Per-user timer map: symbol → { contractId, expiresAt }
-  // Completely isolated — no sharing between users
-  const timers = new Map();
+  const timers      = new Map();
 
   return {
     getActiveSymbols: () => activeSymbols,
     getOpenCount:     () => openCount,
 
-    // Lock symbol and start 2hr countdown timer
     lockSymbol(sym, contractId) {
       activeSymbols.add(sym);
       openCount = activeSymbols.size;
@@ -271,14 +255,12 @@ function createPortfolio(userId) {
       }
     },
 
-    // Unlock symbol and remove its timer
     unlockSymbol(sym) {
       activeSymbols.delete(sym);
       timers.delete(sym);
       openCount = Math.max(0, openCount - 1);
     },
 
-    // Get countdown string for a symbol e.g. " | ⏱️ Expires in 1h 47m"
     getCountdown(sym) {
       const t = timers.get(sym);
       if (!t) return "";
@@ -286,10 +268,7 @@ function createPortfolio(userId) {
       if (remaining <= 0) return " | ⏱️ Expiring soon";
       const hrs  = Math.floor(remaining / 3600000);
       const mins = Math.floor((remaining % 3600000) / 60000);
-      const secs = Math.floor((remaining % 60000) / 1000);
-      return hrs > 0
-        ? ` | ⏱️ Expires in ${hrs}h ${mins}m`
-        : ` | ⏱️ Expires in ${mins}m ${secs}s`;
+      return hrs > 0 ? ` | ⏱️ ${hrs}h ${mins}m` : ` | ⏱️ ${mins}m`;
     },
 
     async sync(ws) {
@@ -311,13 +290,10 @@ function createPortfolio(userId) {
           }
         }
 
-        // Also check DB for open trades — prevents duplicate trades after reconnect
+        // DB check — prevents duplicate trades after reconnect
         const dbOpenTrades = await Trade.find({ userId, status: "open" });
-        for (const t of dbOpenTrades) {
-          activeNow.add(t.symbol);
-        }
+        for (const t of dbOpenTrades) activeNow.add(t.symbol);
 
-        // Remove timers for symbols no longer active
         for (const sym of timers.keys()) {
           if (!activeNow.has(sym)) timers.delete(sym);
         }
@@ -340,13 +316,12 @@ let _userStartOffset = 0;
 async function runUserBot(user, stopSignal) {
   const userId   = user._id.toString();
   const label    = user.name;
-  // Stagger start time so users don't all scan simultaneously
-  const myOffset = (_userStartOffset++ % 4) * 7000; // 7s apart
+  const myOffset = (_userStartOffset++ % 4) * 7000;
   if (myOffset > 0) await new Promise(r => setTimeout(r, myOffset));
   const botToken = TELEGRAM_BOT_TOKEN;
   const chatId   = user.telegramChatId;
 
-  await log(userId, `[${label}] Bot starting...`, "info");
+  await log(userId, `[${label}] Bot starting — Multi-Strategy Engine (5 strategies)`, "info");
 
   const rm = new RiskManager({
     riskPct:              user.risk.riskPct,
@@ -357,7 +332,6 @@ async function runUserBot(user, stopSignal) {
 
   const portfolio     = createPortfolio(user._id);
   let lastSummaryDate = "";
-  // Cache last fetched 4H candles per symbol for trade monitor
   const dfH4Cache     = new Map();
 
   while (!stopSignal.stopped) {
@@ -381,7 +355,6 @@ async function runUserBot(user, stopSignal) {
       while (!stopSignal.stopped) {
         await sleep(POLL_SECS);
 
-        // Keep connection alive — candles from global cache, no idle needed
         if (ws.readyState !== 1) {
           await log(userId, `[${label}] ⏱️ WebSocket dropped — reconnecting...`, "warn");
           ws.close(); break;
@@ -399,11 +372,9 @@ async function runUserBot(user, stopSignal) {
         balance     = await getBalance(ws);
         lastApiCall = Date.now();
 
-        // Sync trade statuses — update lastApiCall after
         await syncTradeStatuses(ws, user._id, label);
         lastApiCall = Date.now();
 
-        // Monitor open trades — update lastApiCall after
         await monitorOpenTrades(ws, user._id, label, portfolio, dfH4Cache);
         lastApiCall = Date.now();
 
@@ -417,8 +388,10 @@ async function runUserBot(user, stopSignal) {
         rm.maxDailyLossPct      = freshUser.risk.maxDailyLossPct;
         rm.riskPct              = freshUser.risk.riskPct;
 
-        const cycleHeader = `[${label}] 📡 Session: ${sessionName()} | Balance: $${balance.toFixed(2)} | Open: ${currentOpen}/${rm.maxOpen}`;
-        await log(userId, cycleHeader, "info");
+        await log(userId,
+          `[${label}] 📡 ${sessionName()} | Balance: $${balance.toFixed(2)} | Open: ${currentOpen}/${rm.maxOpen}`,
+          "info"
+        );
 
         // Daily summary
         const todayStr = new Date().toISOString().slice(0, 10);
@@ -444,18 +417,18 @@ async function runUserBot(user, stopSignal) {
         }
 
         const slotsLeft    = rm.maxOpen - currentOpen;
-        await log(userId, `[${label}] ✅ ${slotsLeft} slot(s) available — scanning...`, "info");
+        await log(userId, `[${label}] ✅ ${slotsLeft} slot(s) available — scanning 5 strategies...`, "info");
 
         const cycleResults = [];
         let   placed       = 0;
 
+        // ── SYMBOL LOOP ───────────────────────────────
         for (const symbol of SYMBOLS) {
           if (stopSignal.stopped) break;
           if (placed >= slotsLeft || portfolio.getOpenCount() >= rm.maxOpen) break;
 
           const activeSymbols = portfolio.getActiveSymbols();
 
-          // Lock check — uses DB-backed symbol set
           if (activeSymbols.has(symbol)) {
             const countdown = portfolio.getCountdown(symbol);
             await log(userId, `[${label}] ${symbol} | 🔒 LOCKED${countdown}`, "info");
@@ -464,80 +437,81 @@ async function runUserBot(user, stopSignal) {
           }
 
           if (!isMarketOpen(symbol)) {
-            await log(userId, `[${label}] ${symbol} | 🕐 MARKET CLOSED — weekend`, "info");
+            await log(userId, `[${label}] ${symbol} | 🕐 MARKET CLOSED`, "info");
             cycleResults.push({ symbol, status: "CLOSED" });
             continue;
           }
 
-          // Extra DB check — prevent duplicate even if in-memory missed it
+          // DB duplicate check
           const existingOpenTrade = await Trade.findOne({
             userId: user._id,
             symbol,
             status: "open",
           });
           if (existingOpenTrade) {
-            await log(userId, `[${label}] ${symbol} | LOCKED (DB check) — skipping`, "info");
             portfolio.lockSymbol(symbol);
             cycleResults.push({ symbol, status: "LOCKED" });
             continue;
           }
 
-          // Read from global cache — no API call needed
-          lastApiCall = Date.now();
-          const tf = await getCachedMultiTf(ws, symbol);
-          const { h4: dfH4, m30: dfM30, m15: dfM15 } = tf;
-          // Cache 4H candles for trade monitor (trend reversal detection)
+          // Read from global cache — 4 timeframes
+          lastApiCall    = Date.now();
+          const tf       = await getCachedMultiTf(ws, symbol);
+          const { h4: dfH4, h1: dfH1, m30: dfM30, m15: dfM15 } = tf;
+
           if (dfH4 && dfH4.length > 0) dfH4Cache.set(symbol, dfH4);
 
           if (!dfM15 || dfM15.length < 2) continue;
 
+          // Global volatility filter
           if (!marketIsTradeable(dfM15)) {
             await log(userId, `[${label}] ${symbol} | ⛔ FILTERED — poor volatility`, "info");
             cycleResults.push({ symbol, status: "FILTERED" });
             continue;
           }
 
-          const signal = getLatestSignalMtf(dfM15, dfM30, dfH4);
+          // ── RUN ALL 5 STRATEGIES ──────────────────────
+          const result = collectSignals({ h4: dfH4, h1: dfH1, m30: dfM30, m15: dfM15 });
+          const { signal, buyCount, sellCount, breakdown, reason } = result;
 
           if (signal === 0) {
-            // Show which phase failed using new strategy engine
-            const strength  = getSignalStrength(dfM15, dfM30, dfH4);
-            const h4trend   = get15mTrend(dfM30);
-            const h4icon    = h4trend !== "neutral" ? "✅" : "❌";
-            const phasePct  = strength.toFixed(0);
-
+            // Build strategy breakdown for logs
+            const breakdownStr = breakdown.map(s => `${s.name}:${s.signal}`).join(" | ");
             await log(userId,
-              `[${label}] ${symbol} | 4H: ${h4trend.toUpperCase()} ${h4icon} | ${phasePct}% | HOLD`,
+              `[${label}] ${symbol} | HOLD | B:${buyCount} S:${sellCount} | ${reason}`,
               "info"
             );
-            await log(userId, getTradeReason(dfM15, dfM30, dfH4), "info");
-
-            // Extract reject reason from getTradeReason output
-            const reasonText  = getTradeReason(dfM15, dfM30, dfH4);
-            const rejectMatch = reasonText.match(/REJECTED at \w+: (.+)/);
-            const rejectReason = rejectMatch ? rejectMatch[1].trim() : "";
-
             cycleResults.push({
               symbol,
               status:       "HOLD",
-              h4bias:       h4trend,
-              h1trend:      get15mTrend(dfM30),
-              strength,
-              rejectReason,
+              h4bias:       get15mTrend(dfM30),
+              strength:     0,
+              rejectReason: reason,
+              breakdown,
             });
             continue;
           }
 
-          const direction  = signal === 1 ? "MULTUP" : "MULTDOWN";
-          const label2     = signal === 1 ? "BUY" : "SELL";
+          // ── SIGNAL FIRED ─────────────────────────────
+          const direction = signal === SIG_BUY ? "MULTUP" : "MULTDOWN";
+          const label2    = signal === SIG_BUY ? "BUY"    : "SELL";
+          const votes     = signal === SIG_BUY ? buyCount : sellCount;
+          const strength  = Math.round((votes / 5) * 100);
+
           // Fixed dollar stake — user sets amount directly (min $1)
           const stake      = parseFloat(Math.max(freshUser.risk.stakeAmount || 1.00, 1.00).toFixed(2));
-          const strength   = getSignalStrength(dfM15, dfM30, dfH4);
           const limitOrder = {
             stop_loss:   parseFloat((stake * freshUser.risk.stopLossPct).toFixed(2)),
             take_profit: parseFloat((stake * freshUser.risk.takeProfitPct).toFixed(2)),
           };
           const multiplier = 100;
+
+          // Log full strategy breakdown
+          await log(userId,
+            `[${label}] ${symbol} | ${label2}! | Votes: ${votes}/5 (${strength}%) | Stake: $${stake} | SL=$${limitOrder.stop_loss} TP=$${limitOrder.take_profit}`,
+            "trade"
+          );
+          await log(userId, getTradeReason({ h4: dfH4, h1: dfH1, m30: dfM30, m15: dfM15 }), "trade");
 
           cycleResults.push({
             symbol,
@@ -545,27 +519,21 @@ async function runUserBot(user, stopSignal) {
             h4bias:  direction === "MULTUP" ? "bullish" : "bearish",
             h1trend: direction === "MULTUP" ? "bullish" : "bearish",
             strength,
+            breakdown,
           });
 
-          const tradeMsg = `[${label}] ${symbol} | ${label2}! | Stake: $${stake.toFixed(2)} | SL=$${limitOrder.stop_loss} TP=$${limitOrder.take_profit} | ⏱️ 2hr failsafe`;
-          await log(userId, tradeMsg, "trade");
-          await log(userId, getTradeReason(dfM15, dfM30, dfH4), "trade");
+          const tradeResult = await placeTradeWithRetry(ws, symbol, direction, stake, limitOrder);
 
-          const result = await placeTradeWithRetry(ws, symbol, direction, stake, limitOrder);
-
-          if (result) {
+          if (tradeResult) {
             lastApiCall = Date.now();
 
-            // Lock symbol immediately in memory AND via DB trade record
-            const contractId = typeof result === "object" ? result.contractId : String(result);
-            const buyPrice   = typeof result === "object" ? result.buyPrice : 0;
+            const contractId = typeof tradeResult === "object" ? tradeResult.contractId : String(tradeResult);
+            const buyPrice   = typeof tradeResult === "object" ? tradeResult.buyPrice : 0;
 
             portfolio.lockSymbol(symbol, contractId);
             rm.tradeOpened();
             placed++;
 
-            // Start 2hr forced close timer with user credentials
-            // Uses fresh WebSocket when it fires — not affected by reconnections
             startForcedCloseTimer({
               contractId,
               symbol,
@@ -577,7 +545,6 @@ async function runUserBot(user, stopSignal) {
               label,
             });
 
-            // Save to DB — contractId is unique so no duplicates possible
             try {
               await Trade.create({
                 userId:     user._id,
@@ -594,7 +561,6 @@ async function runUserBot(user, stopSignal) {
                 pnl:        0,
               });
             } catch (dbErr) {
-              // If duplicate contractId — trade already saved, skip
               if (!dbErr.message.includes("duplicate key")) {
                 await log(userId, `[${label}] DB save error: ${dbErr.message}`, "error");
               }
@@ -607,7 +573,7 @@ async function runUserBot(user, stopSignal) {
             });
 
             await log(userId,
-              `[${label}] ✅ Trade recorded | ${symbol} | ${label2} | $${stake} | ID: ${contractId}`,
+              `[${label}] ✅ Trade saved | ${symbol} | ${label2} | $${stake} | ID: ${contractId}`,
               "trade"
             );
           }
@@ -640,8 +606,6 @@ export const botManager = {
     if (runningBots.has(userId)) {
       console.log(`[${user.name}] Already running`); return;
     }
-    // Start global scanner if not already running
-    const { getCacheStats } = await import("../src/data/candle-cache.js");
     const stats = getCacheStats();
     if (stats.total === 0) {
       startGlobalScanner(SYMBOLS, user.derivPAT, user.derivAppId, user.derivMode || "demo")
@@ -677,14 +641,11 @@ export async function resumeActiveBots() {
   const activeUsers = await User.find({ botActive: true });
   console.log(`Resuming ${activeUsers.length} active bot(s)...`);
 
-  // Start global scanner using first active user's credentials
-  // Scanner runs independently — all bots read from its cache
   if (activeUsers.length > 0) {
     const u = activeUsers[0];
     startGlobalScanner(SYMBOLS, u.derivPAT, u.derivAppId, u.derivMode || "demo")
       .catch(e => console.error("[scanner] Failed to start:", e.message));
   } else {
-    // No active users yet — start scanner with env credentials
     const token = process.env.DERIV_PAT_TOKEN;
     const appId = process.env.DERIV_APP_ID;
     if (token && appId) {
@@ -693,7 +654,6 @@ export async function resumeActiveBots() {
     }
   }
 
-  // Stagger user bot starts
   for (const user of activeUsers) {
     await botManager.startUser(user);
   }

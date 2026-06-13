@@ -9,15 +9,18 @@
 //    All user bots read from this cache instantly —
 //    they NEVER call the Deriv candle API directly.
 //
-//  Before: 6 users × 22 symbols × 3 TFs = 396 API calls
-//  After:  1 scanner × 22 symbols × 3 TFs = 66 API calls
+//  Timeframes cached:
+//    4H (14400), 1H (3600), 30M (1800), 15M (900)
+//
+//  Before: 6 users × 22 symbols × 4 TFs = 528 API calls
+//  After:  1 scanner × 22 symbols × 4 TFs = 88 API calls
 // ═══════════════════════════════════════════════════════
 
 import { sendMessage, connectWebSocket } from "../utils/ws-client.js";
 import { connectForMode }                from "../auth/deriv-auth.js";
 
-const CACHE_TTL    = 90 * 1000;  // 90 seconds
-const SCAN_INTERVAL = 85 * 1000; // scan every 85s (slightly before TTL)
+const CACHE_TTL     = 90 * 1000;  // 90 seconds
+const SCAN_INTERVAL = 85 * 1000;  // scan every 85s (slightly before TTL)
 
 const cache   = new Map(); // symbol+gran → { candles, fetchedAt }
 const pending = new Map(); // symbol+gran → Promise (dedup concurrent requests)
@@ -25,18 +28,22 @@ const pending = new Map(); // symbol+gran → Promise (dedup concurrent requests
 let scannerRunning = false;
 let scannerWs      = null;
 
+// All timeframes needed by the multi-strategy engine
+const GRANULARITIES = [14400, 3600, 1800, 900];
+
 // ── PUBLIC API ────────────────────────────────────────
 
 /**
- * Get all 3 timeframes for a symbol.
+ * Get all 4 timeframes for a symbol.
  * Returns from cache if fresh — never waits for API.
  * Falls back to direct fetch only if cache is empty.
  */
 export async function getCachedMultiTf(ws, symbol) {
   const h4  = await getCachedCandles(ws, symbol, 14400, 200);
+  const h1  = await getCachedCandles(ws, symbol, 3600,  200);
   const m30 = await getCachedCandles(ws, symbol, 1800,  200);
   const m15 = await getCachedCandles(ws, symbol, 900,   200);
-  return { h4, m30, m15 };
+  return { h4, h1, m30, m15 };
 }
 
 /**
@@ -117,7 +124,7 @@ async function fetchCandles(ws, symbol, granularity, count) {
 export async function startGlobalScanner(symbols, token, appId, mode = "demo") {
   if (scannerRunning) return;
   scannerRunning = true;
-  console.log(`🔭 Global candle scanner starting — ${symbols.length} symbols`);
+  console.log(`🔭 Global candle scanner starting — ${symbols.length} symbols × ${GRANULARITIES.length} TFs`);
 
   async function runScan() {
     try {
@@ -126,11 +133,10 @@ export async function startGlobalScanner(symbols, token, appId, mode = "demo") {
       const wsUrl   = await connectForMode(mode, token, appId);
       scannerWs     = await connectWebSocket(wsUrl);
 
-      const granularities = [14400, 1800, 900];
       let fetched = 0;
 
       for (const symbol of symbols) {
-        for (const gran of granularities) {
+        for (const gran of GRANULARITIES) {
           const key = `${symbol}_${gran}`;
           try {
             const candles = await fetchCandles(scannerWs, symbol, gran, 200);
@@ -147,7 +153,7 @@ export async function startGlobalScanner(symbols, token, appId, mode = "demo") {
         }
       }
 
-      console.log(`✅ [scanner] Refreshed ${fetched}/${symbols.length * 3} candle sets`);
+      console.log(`✅ [scanner] Refreshed ${fetched}/${symbols.length * GRANULARITIES.length} candle sets`);
       scannerWs.close();
     } catch (e) {
       console.error(`[scanner] Error:`, e.message);

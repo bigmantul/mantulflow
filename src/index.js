@@ -1,5 +1,5 @@
 // ═══════════════════════════════════════════════════════
-//  src/index.js — Main bot loop
+//  src/index.js — Main bot loop (standalone)
 // ═══════════════════════════════════════════════════════
 
 import "dotenv/config";
@@ -9,13 +9,14 @@ import { connectWebSocket, sendMessage } from "./utils/ws-client.js";
 import { getMultiTf }                    from "./data/candles.js";
 import {
   getLatestSignalMtf,
-  getSignalStrength,
+  getSignalStrengthLegacy,
   getVolatilityScalar,
   marketIsTradeable,
   get15mTrend,
   getTradeReason,
   sessionName,
   isMarketOpen,
+  collectSignals,
 } from "./strategy/signals.js";
 import { placeTradeWithRetry, startForcedCloseTimer } from "./trading/trader.js";
 import {
@@ -53,7 +54,6 @@ const SYMBOLS = [
   // Crypto
   "cryBTCUSD", "cryETHUSD",
 
-
   // Boom & Crash
   "BOOM500",
   "CRASH500",
@@ -64,7 +64,7 @@ const SYMBOLS = [
 
   // Volatility Indices
   "R_75",
-  "R_100"
+  "R_100",
 ];
 
 const POLL_SECS        = 15;
@@ -93,8 +93,9 @@ function sleep(secs) {
 async function main() {
   console.log("═══════════════════════════════════════════════");
   console.log("  Launching bot...");
-  console.log("  Strategy  : Smart Money Concepts (SMC)");
-  console.log("  Timeframes: 5m execution | 15m entry | 4H bias");
+  console.log("  Strategy  : Multi-Strategy Signal Engine");
+  console.log("  Strategies: Trend | S&D | SMC | Breakout | MeanRev");
+  console.log("  Timeframes: 4H / 1H / 30M / 15M");
   console.log("═══════════════════════════════════════════════\n");
 
   initPortfolio(SYMBOLS);
@@ -189,11 +190,10 @@ async function main() {
         const slotsLeft = rm.maxOpen - currentOpen;
         console.log(`✅ ${slotsLeft} slot(s) available — scanning...`);
 
-        // ── SYMBOL LOOP ───────────────────────────────
-        // Collect results for Telegram cycle summary
-        const cycleResults        = [];
+        const cycleResults          = [];
         let   tradesPlacedThisCycle = 0;
 
+        // ── SYMBOL LOOP ───────────────────────────────
         for (const symbol of SYMBOLS) {
 
           if (tradesPlacedThisCycle >= slotsLeft) {
@@ -208,87 +208,78 @@ async function main() {
 
           const activeSymbols = getActiveSymbols();
 
-          // Locked
           if (activeSymbols.has(symbol)) {
             console.log(`${symbol} | LOCKED (trade open) — skipping`);
             cycleResults.push({ symbol, status: "LOCKED" });
             continue;
           }
 
-          // Market closed
           if (!isMarketOpen(symbol)) {
             console.log(`${symbol} | MARKET CLOSED — skipping`);
             cycleResults.push({ symbol, status: "CLOSED" });
             continue;
           }
 
-          // Fetch candles
+          // Fetch all 4 timeframes
           const tf = await getMultiTf(ws, symbol);
-          const { h4: dfH4, m30: dfM30, m15: dfM15 } = tf;
+          const { h4: dfH4, h1: dfH1, m30: dfM30, m15: dfM15 } = tf;
           lastApiCall = Date.now();
-
-          const { h4: dfH4, m30: dfM30, m15: dfM15 } = tf;
 
           if (!dfM15 || dfM15.length < 2) continue;
 
-          // Market quality filter
+          // Global volatility filter
           if (!marketIsTradeable(dfM15)) {
             console.log(`${symbol} | FILTERED (poor market conditions)`);
             cycleResults.push({ symbol, status: "FILTERED" });
             continue;
           }
 
-          // SMC signal
-          const signal = getLatestSignalMtf(dfM15, dfM30, dfH4);
+          // Run all strategies + conflict engine
+          const result = collectSignals({ h4: dfH4, h1: dfH1, m30: dfM30, m15: dfM15 });
+          const { signal, buyCount, sellCount, breakdown, reason } = result;
 
           if (signal === 0) {
-            const trend    = get15mTrend(dfM30);
-            const strength = getSignalStrength(dfM15, dfM30, dfH4);
-            const m30trend   = get15mTrend(dfM30);  // ✅ correct 30M data
-            const h4icon    = trend !== "neutral" ? "✅" : "❌";
-            const m30icon    = m30trend === trend ? "✅" : "❌";
-            const voteCount = Math.round(strength * 7 / 100);
-
-            let holdReason;
-            if (trend === "neutral")       holdReason = "4H neutral — no direction";
-            else if (m30trend !== trend)    holdReason = `30M: ${m30trend.toUpperCase()} ${m30icon} — disagrees with 4H`;
-            else                           holdReason = `30M: ${m30trend.toUpperCase()} ✅ | ${voteCount}/7 votes — need 4`;
-
-            console.log(`${symbol} | 4H: ${trend.toUpperCase()} ${h4icon} | ${holdReason}`);
-            cycleResults.push({ symbol, status: "HOLD", trend, strength });
+            const h4trend = get15mTrend(dfM30);
+            console.log(`${symbol} | HOLD | ${reason}`);
+            cycleResults.push({
+              symbol,
+              status:   "HOLD",
+              trend:    h4trend,
+              strength: 0,
+              reason,
+            });
             continue;
           }
 
           // Signal fired
           const label     = signal === 1 ? "BUY"    : "SELL";
           const direction = signal === 1 ? "MULTUP" : "MULTDOWN";
+          const strength  = Math.round(((signal === 1 ? buyCount : sellCount) / 5) * 100);
 
           const baseStake  = rm.calculateStake(balance);
           const volScalar  = getVolatilityScalar(dfM15);
           const stake      = parseFloat(Math.max(baseStake * volScalar, rm.minStake).toFixed(2));
-          const strength   = getSignalStrength(dfM15, dfM30, dfH4);
           const limitOrder = sltp.getMultiplierLimitOrder(stake);
           const multiplier = 100;
 
           console.log(
-            `\n${symbol} | ${label} | Strength: ${strength.toFixed(0)}% | Stake: $${stake.toFixed(2)} | Expires: 2hr`
+            `\n${symbol} | ${label} | Strength: ${strength}% | Votes: ${signal === 1 ? buyCount : sellCount}/5 | Stake: $${stake.toFixed(2)}`
           );
-          console.log(getTradeReason(dfM15, dfM30, dfH4));
+          console.log(getTradeReason({ h4: dfH4, h1: dfH1, m30: dfM30, m15: dfM15 }));
 
           cycleResults.push({ symbol, status: label, strength });
 
           // Place trade
-          const result = await placeTradeWithRetry(ws, symbol, direction, stake, limitOrder);
+          const tradeResult = await placeTradeWithRetry(ws, symbol, direction, stake, limitOrder);
 
-          if (result) {
+          if (tradeResult) {
             lastApiCall = Date.now();
             lockSymbol(symbol);
             rm.tradeOpened();
             tradesPlacedThisCycle++;
 
-            // Start 2hr forced close timer
             startForcedCloseTimer({
-              contractId: typeof result === "object" ? result.contractId : String(result),
+              contractId: typeof tradeResult === "object" ? tradeResult.contractId : String(tradeResult),
               symbol,
               direction,
               stake,
@@ -305,19 +296,17 @@ async function main() {
               multiplier,
               limitOrder,
               strength,
-              contractId: typeof result === "object" ? result.contractId : "N/A",
+              contractId: typeof tradeResult === "object" ? tradeResult.contractId : "N/A",
             });
 
             console.log(
               `✅ Trade recorded. Open: ${rm.openTrades}/${rm.maxOpen} | ` +
-              `Slots left: ${rm.maxOpen - rm.openTrades} | ` +
               `Locked: ${[...getActiveSymbols()].sort().join(", ")}`
             );
           }
 
         } // end symbol loop
 
-        // Send full cycle summary to Telegram
         if (cycleResults.length > 0) {
           await notifyCycleScan({
             balance,
