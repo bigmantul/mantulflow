@@ -539,82 +539,269 @@ function hasConsolidation(df, lookback = 15) {
 
 
 // ═══════════════════════════════════════════════════════
-//  STRATEGY 1 — TREND FOLLOWING
-//  4H → 1H → 15M (all phases must align)
+//  STRATEGY 1 — TREND FOLLOWING (HIGH-CONFIDENCE)
+//  4H → 1H → 15M — ALL phases must align
+//
+//  Phase 1: 4H — EMA50 + EMA200 dual confirmation,
+//           HH/HL or LH/LL structure, BOS, ATR above avg
+//  Phase 2: 1H — EMA50 + EMA200 alignment, pullback to
+//           EMA50 or swing level, momentum candle (body≥70%)
+//  Phase 3: 15M — pullback, higher low, bullish engulfing
+//           AND break of previous 15M swing high
+//  Filters: ADX≥25, ATR above 20-period average
 // ═══════════════════════════════════════════════════════
+
+// ── ADX CALCULATOR ────────────────────────────────────
+function calcAdx(df, period = 14) {
+  if (!df || df.length < period * 2 + 1) return 0;
+  const plusDM  = [], minusDM = [], tr = [];
+  for (let i = 1; i < df.length; i++) {
+    const upMove   = df[i].high - df[i - 1].high;
+    const downMove = df[i - 1].low - df[i].low;
+    plusDM.push(upMove > downMove && upMove > 0 ? upMove : 0);
+    minusDM.push(downMove > upMove && downMove > 0 ? downMove : 0);
+    tr.push(Math.max(
+      df[i].high - df[i].low,
+      Math.abs(df[i].high - df[i - 1].close),
+      Math.abs(df[i].low  - df[i - 1].close),
+    ));
+  }
+  // Smoothed averages (Wilder)
+  let sTR = tr.slice(0, period).reduce((a, b) => a + b, 0);
+  let sPDM = plusDM.slice(0, period).reduce((a, b) => a + b, 0);
+  let sMDM = minusDM.slice(0, period).reduce((a, b) => a + b, 0);
+  const dxArr = [];
+  for (let i = period; i < tr.length; i++) {
+    sTR  = sTR  - sTR  / period + tr[i];
+    sPDM = sPDM - sPDM / period + plusDM[i];
+    sMDM = sMDM - sMDM / period + minusDM[i];
+    const pdi = sTR > 0 ? (sPDM / sTR) * 100 : 0;
+    const mdi = sTR > 0 ? (sMDM / sTR) * 100 : 0;
+    const sum = pdi + mdi;
+    dxArr.push(sum > 0 ? Math.abs(pdi - mdi) / sum * 100 : 0);
+  }
+  if (dxArr.length < period) return 0;
+  let adx = dxArr.slice(0, period).reduce((a, b) => a + b, 0) / period;
+  for (let i = period; i < dxArr.length; i++) {
+    adx = (adx * (period - 1) + dxArr[i]) / period;
+  }
+  return adx;
+}
+
+// ── ATR AVERAGE FILTER ────────────────────────────────
+// Returns true if current ATR is above its 20-period average
+function atrAboveAverage(df, period = 14, avgPeriod = 20) {
+  if (!df || df.length < period + avgPeriod + 5) return false;
+  const atrs = [];
+  for (let i = period; i < df.length; i++) {
+    atrs.push(calcAtr(df.slice(0, i + 1), period));
+  }
+  if (atrs.length < avgPeriod) return false;
+  const avg     = atrs.slice(-avgPeriod).reduce((a, b) => a + b, 0) / avgPeriod;
+  const current = atrs[atrs.length - 1];
+  return current > avg;
+}
+
+// ── EMA200 ────────────────────────────────────────────
+function getEma200(df) {
+  if (!df || df.length < 205) return null;
+  const closes  = df.map(c => c.close);
+  const emaVals = calcEma(closes, 200);
+  const len     = df.length;
+  const now     = emaVals[len - 2];
+  const prev    = emaVals[len - 7];
+  if (now === null || prev === null) return null;
+  const pct   = Math.abs(now - prev) / now;
+  const slope = pct < 0.00005 ? "flat" : now > prev ? "rising" : "falling";
+  return { value: now, slope, priceAbove: df[len - 2].close > now };
+}
+
+// ── TREND FOLLOWING MOMENTUM CANDLE ──────────────────
+// Spec: body >= 70% of range, close in top/bottom 20%, range >= 1.2 × ATR
+function isTFMomentumCandle(c, atr, direction) {
+  if (!c || !atr) return false;
+  const range = candleRange(c);
+  if (range === 0) return false;
+  const bodyPct = candleBody(c) / range;
+  if (bodyPct < 0.70) return false;
+  if (range < atr * 1.2) return false;
+  if (direction === "bull") {
+    return c.close > c.open && (c.high - c.close) / range <= 0.20;
+  }
+  return c.close < c.open && (c.close - c.low) / range <= 0.20;
+}
+
+// ── PULLBACK TOUCHES EMA50 OR SWING LEVEL ────────────
+function pullbackTouchesEmaOrSwing(df, ema50val, direction) {
+  if (!df || df.length < 15) return false;
+  const lookback = df.slice(-15, -1); // last 15 closed candles
+  const { lows, highs } = getSwings(df, 4);
+
+  if (direction === "bull") {
+    // Bullish pullback: price dipped toward EMA50 or recent swing low
+    const swingLow = lows.length > 0 ? lows[lows.length - 1].price : null;
+    return lookback.some(c =>
+      c.low <= ema50val * 1.002 ||
+      (swingLow && c.low <= swingLow * 1.005)
+    );
+  } else {
+    // Bearish pullback: price bounced toward EMA50 or recent swing high
+    const swingHigh = highs.length > 0 ? highs[highs.length - 1].price : null;
+    return lookback.some(c =>
+      c.high >= ema50val * 0.998 ||
+      (swingHigh && c.high >= swingHigh * 0.995)
+    );
+  }
+}
 
 function strategyTrendFollowing(dfH4, dfH1, dfM15) {
   try {
-    if (!dfH4 || dfH4.length < 60) return SIG_HOLD;
-    if (!dfH1 || dfH1.length < 60) return SIG_HOLD;
-    if (!dfM15 || dfM15.length < 20) return SIG_HOLD;
+    if (!dfH4 || dfH4.length < 210) return SIG_HOLD; // need 200 EMA
+    if (!dfH1 || dfH1.length < 210) return SIG_HOLD;
+    if (!dfM15 || dfM15.length < 30) return SIG_HOLD;
 
     const atr4h = calcAtr(dfH4);
     const atr1h = calcAtr(dfH1);
     const atr15 = calcAtr(dfM15);
 
     // ── PHASE 1: 4H BIAS ─────────────────────────────
-    const ema4h  = getEma50(dfH4);
-    const str4h  = getStructure(dfH4, 4);
-    if (!ema4h || ema4h.slope === "flat" || str4h === "neutral") return SIG_HOLD;
+    const ema50_4h  = getEma50(dfH4);
+    const ema200_4h = getEma200(dfH4);
+    if (!ema50_4h || !ema200_4h) return SIG_HOLD;
 
-    const bullBOS4h = hasBullishBOS(dfH4, atr4h);
-    const bearBOS4h = hasBearishBOS(dfH4, atr4h);
+    // No trade: EMA50 flat, EMA converging, ATR below avg
+    if (ema50_4h.slope === "flat")   return SIG_HOLD;
+    if (ema200_4h.slope === "flat")  return SIG_HOLD;
+    if (!atrAboveAverage(dfH4))      return SIG_HOLD;
 
-    const bull4h = ema4h.priceAbove && ema4h.slope === "rising" && str4h === "bullish" && bullBOS4h;
-    const bear4h = !ema4h.priceAbove && ema4h.slope === "falling" && str4h === "bearish" && bearBOS4h;
+    // No trade: price between EMA50 and EMA200
+    const price4h    = dfH4[dfH4.length - 2].close;
+    const betweenEma = price4h > Math.min(ema50_4h.value, ema200_4h.value) &&
+                       price4h < Math.max(ema50_4h.value, ema200_4h.value);
+    if (betweenEma) return SIG_HOLD;
+
+    // ADX >= 25 required on 4H
+    const adx4h = calcAdx(dfH4);
+    if (adx4h < 25) return SIG_HOLD;
+
+    // EMA50 must be above EMA200 (bull) or below (bear)
+    const str4h      = getStructure(dfH4, 4);
+    if (str4h === "neutral") return SIG_HOLD;
+
+    const ema50Above200 = ema50_4h.value > ema200_4h.value;
+
+    // Bullish 4H bias
+    const bull4h =
+      ema50_4h.priceAbove &&           // price above EMA50
+      ema50Above200 &&                  // EMA50 above EMA200
+      ema50_4h.slope  === "rising" &&   // EMA50 slope positive
+      ema200_4h.slope === "rising" &&   // EMA200 slope positive
+      str4h === "bullish" &&            // HH + HL structure
+      hasBullishBOS(dfH4, atr4h);       // latest swing high broken
+
+    // Bearish 4H bias
+    const bear4h =
+      !ema50_4h.priceAbove &&           // price below EMA50
+      !ema50Above200 &&                 // EMA50 below EMA200
+      ema50_4h.slope  === "falling" &&  // EMA50 slope negative
+      ema200_4h.slope === "falling" &&  // EMA200 slope negative
+      str4h === "bearish" &&            // LH + LL structure
+      hasBearishBOS(dfH4, atr4h);       // latest swing low broken
+
     if (!bull4h && !bear4h) return SIG_HOLD;
 
+    // EMA distance >= 0.5 × ATR (no compression)
+    const emaDist = Math.abs(ema50_4h.value - ema200_4h.value);
+    if (emaDist < atr4h * 0.5) return SIG_HOLD;
+
     // ── PHASE 2: 1H CONFIRMATION ─────────────────────
-    const ema1h = getEma50(dfH1);
-    const str1h = getStructure(dfH1, 4);
-    if (!ema1h) return SIG_HOLD;
+    const ema50_1h  = getEma50(dfH1);
+    const ema200_1h = getEma200(dfH1);
+    if (!ema50_1h || !ema200_1h) return SIG_HOLD;
 
-    const len1h   = dfH1.length;
-    const last1h  = dfH1[len1h - 2]; // last closed 1H candle
-    const prev1h  = dfH1[len1h - 3];
+    const str1h      = getStructure(dfH1, 4);
+    const adx1h      = calcAdx(dfH1);
+    const ema50A200_1h = ema50_1h.value > ema200_1h.value;
 
+    const len1h  = dfH1.length;
+    const last1h = dfH1[len1h - 2];
+    const prev1h = dfH1[len1h - 3];
+
+    // Reject if 1H and 4H are misaligned (alignment engine)
     if (bull4h) {
-      // 4H bearish = no trade (alignment engine)
-      if (!ema1h.priceAbove || ema1h.slope === "falling") return SIG_HOLD;
-      if (str1h !== "bullish") return SIG_HOLD;
+      if (!ema50_1h.priceAbove)     return SIG_HOLD; // price above EMA50 on 1H
+      if (!ema50A200_1h)            return SIG_HOLD; // EMA50 above EMA200 on 1H
+      if (str1h !== "bullish")      return SIG_HOLD; // HH+HL on 1H
+      if (adx1h < 20)               return SIG_HOLD; // min ADX on 1H
+
+      // Pullback must touch EMA50 or swing support
+      if (!pullbackTouchesEmaOrSwing(dfH1, ema50_1h.value, "bull")) return SIG_HOLD;
       if (!hasBullishPullback(dfH1)) return SIG_HOLD;
-      // Valid 1H confirmation candle
-      if (!isValidBullTrigger(last1h, prev1h, atr1h)) return SIG_HOLD;
+
+      // Confirmation candle: engulfing OR pin bar OR momentum (body >= 70%)
+      const isMom1h = isTFMomentumCandle(last1h, atr1h, "bull");
+      if (!isBullishEngulfing(last1h, prev1h) && !isBullishPinBar(last1h) && !isMom1h) return SIG_HOLD;
+
+      // Reject if inside candle or opposing wick > 40%
+      if (isInsideCandle(last1h, prev1h)) return SIG_HOLD;
+      const range1h = candleRange(last1h);
+      if (range1h > 0 && (last1h.open - last1h.low) / range1h > 0.40) return SIG_HOLD;
     }
 
     if (bear4h) {
-      if (ema1h.priceAbove || ema1h.slope === "rising") return SIG_HOLD;
-      if (str1h !== "bearish") return SIG_HOLD;
+      if (ema50_1h.priceAbove)      return SIG_HOLD;
+      if (ema50A200_1h)             return SIG_HOLD;
+      if (str1h !== "bearish")      return SIG_HOLD;
+      if (adx1h < 20)               return SIG_HOLD;
+
+      if (!pullbackTouchesEmaOrSwing(dfH1, ema50_1h.value, "bear")) return SIG_HOLD;
       if (!hasBearishPullback(dfH1)) return SIG_HOLD;
-      if (!isValidBearTrigger(last1h, prev1h, atr1h)) return SIG_HOLD;
+
+      const isMom1h = isTFMomentumCandle(last1h, atr1h, "bear");
+      if (!isBearishEngulfing(last1h, prev1h) && !isBearishPinBar(last1h) && !isMom1h) return SIG_HOLD;
+
+      if (isInsideCandle(last1h, prev1h)) return SIG_HOLD;
+      const range1h = candleRange(last1h);
+      if (range1h > 0 && (last1h.high - last1h.open) / range1h > 0.40) return SIG_HOLD;
     }
 
     // ── PHASE 3: 15M ENTRY ───────────────────────────
+    // Spec: pullback on 15M + higher low + bullish ENGULFING
+    // AND break of previous 15M swing high (BOTH required)
+    const ema50_15 = getEma50(dfM15);
+    if (!ema50_15) return SIG_HOLD;
+
     const { highs: h15, lows: l15 } = getSwings(dfM15, 3);
     const len15  = dfM15.length;
     const last15 = dfM15[len15 - 2];
     const prev15 = dfM15[len15 - 3];
 
     if (bull4h) {
-      // 15M must NOT be bearish (alignment engine)
+      // Price must be above EMA50 on 15M
+      if (!ema50_15.priceAbove) return SIG_HOLD;
+      // 15M alignment: must NOT be bearish structure
       if (getStructure(dfM15, 3) === "bearish") return SIG_HOLD;
+      // Pullback on 15M
       if (!hasBullishPullback(dfM15, 8)) return SIG_HOLD;
-      // Higher low on 15M
+      // Higher low formed on 15M
       if (l15.length < 2 || l15[l15.length - 1].price <= l15[l15.length - 2].price) return SIG_HOLD;
-      // Entry trigger: bullish engulfing OR momentum OR break of 15M swing high
-      const breakSwingHigh = h15.length > 0 && last15.close > h15[h15.length - 1].price;
-      if (!isValidBullTrigger(last15, prev15, atr15) && !breakSwingHigh) return SIG_HOLD;
+      // Entry: bullish engulfing CLOSES (spec: engulfing AND swing high break — both)
+      if (!isBullishEngulfing(last15, prev15)) return SIG_HOLD;
+      // Break of previous 15M swing high
+      if (h15.length === 0 || last15.close <= h15[h15.length - 1].price) return SIG_HOLD;
+      // Reject inside candle on 15M
+      if (isInsideCandle(last15, prev15)) return SIG_HOLD;
       return SIG_BUY;
     }
 
     if (bear4h) {
+      if (ema50_15.priceAbove) return SIG_HOLD;
       if (getStructure(dfM15, 3) === "bullish") return SIG_HOLD;
       if (!hasBearishPullback(dfM15, 8)) return SIG_HOLD;
-      // Lower high on 15M
       if (h15.length < 2 || h15[h15.length - 1].price >= h15[h15.length - 2].price) return SIG_HOLD;
-      const breakSwingLow = l15.length > 0 && last15.close < l15[l15.length - 1].price;
-      if (!isValidBearTrigger(last15, prev15, atr15) && !breakSwingLow) return SIG_HOLD;
+      if (!isBearishEngulfing(last15, prev15)) return SIG_HOLD;
+      if (l15.length === 0 || last15.close >= l15[l15.length - 1].price) return SIG_HOLD;
+      if (isInsideCandle(last15, prev15)) return SIG_HOLD;
       return SIG_SELL;
     }
 
@@ -939,10 +1126,174 @@ function strategyBreakout(dfH4, dfH1, dfM15) {
 
 
 // ═══════════════════════════════════════════════════════
-//  STRATEGY 5 — MEAN REVERSION
-//  4H → 1H → 15M
-//  Trades RSI extremes + BB + structure + candle quality
+//  STRATEGY 5 — MEAN REVERSION (HIGH-CONFIDENCE)
+//  4H → 1H → 15M — ALL conditions must be satisfied
+//
+//  Phase 1: 4H extreme filter — RSI≤25/≥75, price ≥2×ATR
+//           from EMA50, major S/R zone, 3 consecutive
+//           trend candles, exhaustion, ADX≤35
+//  Phase 2: 1H confirmation — RSI≤30/≥70, price inside
+//           S/R zone, divergence, rejection candle
+//  Phase 3: 15M entry — double bottom/top or higher low /
+//           lower high, engulfing + swing break + RSI cross
 // ═══════════════════════════════════════════════════════
+
+// ── MAJOR S/R ZONE DETECTION ─────────────────────────
+// Finds the most recent significant support or resistance
+// zone using swing cluster method (3+ touches within ATR)
+function findMajorSRZone(df, atr) {
+  if (!df || df.length < 30) return { support: null, resistance: null };
+  const lookback = Math.min(100, df.length - 2);
+  const slice    = df.slice(-lookback - 1, -1);
+  const tol      = atr * 1.0; // 1 ATR tolerance for zone clustering
+
+  // Cluster highs → resistance
+  const highs = slice.map(c => c.high);
+  let resistance = null;
+  for (let i = 0; i < highs.length; i++) {
+    const touches = highs.filter(h => Math.abs(h - highs[i]) <= tol);
+    if (touches.length >= 3) { resistance = highs[i]; break; }
+  }
+
+  // Cluster lows → support
+  const lows = slice.map(c => c.low).sort((a, b) => a - b);
+  let support = null;
+  for (let i = 0; i < lows.length; i++) {
+    const touches = lows.filter(l => Math.abs(l - lows[i]) <= tol);
+    if (touches.length >= 3) { support = lows[i]; break; }
+  }
+
+  return { support, resistance };
+}
+
+// ── CONSECUTIVE CANDLE COUNT ──────────────────────────
+function countConsecutiveCandles(df, direction, minCount = 3) {
+  if (!df || df.length < minCount + 1) return 0;
+  let count = 0;
+  for (let i = df.length - 2; i >= 1; i--) {
+    const c = df[i];
+    if (direction === "bear" && c.close < c.open) count++;
+    else if (direction === "bull" && c.close > c.open) count++;
+    else break;
+  }
+  return count;
+}
+
+// ── RSI DIVERGENCE ────────────────────────────────────
+// Bullish divergence: price making lower lows, RSI making higher lows
+// Bearish divergence: price making higher highs, RSI making lower highs
+function detectRsiDivergence(df, rsiValues, direction) {
+  if (!df || df.length < 20 || !rsiValues || rsiValues.length < 20) return false;
+  const lookback = 20;
+  const priceSlice = df.slice(-lookback - 1, -1);
+  const rsiSlice   = rsiValues.slice(-lookback);
+
+  if (direction === "bull") {
+    // Price: lower low; RSI: higher low
+    const priceLow1 = Math.min(...priceSlice.slice(0, 10).map(c => c.low));
+    const priceLow2 = Math.min(...priceSlice.slice(10).map(c => c.low));
+    const rsiLow1   = Math.min(...rsiSlice.slice(0, 10).filter(v => v !== null));
+    const rsiLow2   = Math.min(...rsiSlice.slice(10).filter(v => v !== null));
+    return priceLow2 < priceLow1 && rsiLow2 > rsiLow1;
+  } else {
+    // Price: higher high; RSI: lower high
+    const priceHigh1 = Math.max(...priceSlice.slice(0, 10).map(c => c.high));
+    const priceHigh2 = Math.max(...priceSlice.slice(10).map(c => c.high));
+    const rsiHigh1   = Math.max(...rsiSlice.slice(0, 10).filter(v => v !== null));
+    const rsiHigh2   = Math.max(...rsiSlice.slice(10).filter(v => v !== null));
+    return priceHigh2 > priceHigh1 && rsiHigh2 < rsiHigh1;
+  }
+}
+
+// ── RSI SERIES FOR DIVERGENCE ─────────────────────────
+function calcRsiSeries(closes, period = 14) {
+  const result = new Array(closes.length).fill(null);
+  if (closes.length < period + 1) return result;
+  let gains = 0, losses = 0;
+  for (let i = 1; i <= period; i++) {
+    const d = closes[i] - closes[i - 1];
+    if (d > 0) gains += d; else losses -= d;
+  }
+  let avgG = gains / period, avgL = losses / period;
+  result[period] = avgL === 0 ? 100 : 100 - 100 / (1 + avgG / avgL);
+  for (let i = period + 1; i < closes.length; i++) {
+    const d = closes[i] - closes[i - 1];
+    avgG = (avgG * (period - 1) + Math.max(d, 0)) / period;
+    avgL = (avgL * (period - 1) + Math.max(-d, 0)) / period;
+    result[i] = avgL === 0 ? 100 : 100 - 100 / (1 + avgG / avgL);
+  }
+  return result;
+}
+
+// ── ATR SPIKE DETECTION ───────────────────────────────
+function hasAtrSpike(df, period = 14, avgPeriod = 20) {
+  return atrAboveAverage(df, period, avgPeriod);
+}
+
+// ── LONG WICK DETECTION ───────────────────────────────
+function hasLongLowerWick(c, minWickRatio = 0.5) {
+  if (!c) return false;
+  const range = candleRange(c);
+  if (range === 0) return false;
+  return (Math.min(c.open, c.close) - c.low) / range >= minWickRatio;
+}
+
+function hasLongUpperWick(c, minWickRatio = 0.5) {
+  if (!c) return false;
+  const range = candleRange(c);
+  if (range === 0) return false;
+  return (c.high - Math.max(c.open, c.close)) / range >= minWickRatio;
+}
+
+// ── DOUBLE BOTTOM / TOP ───────────────────────────────
+function hasDoubleBottom(df, atr) {
+  const { lows } = getSwings(df, 4);
+  if (lows.length < 2) return false;
+  const l1 = lows[lows.length - 2].price;
+  const l2 = lows[lows.length - 1].price;
+  // Two lows within 0.5 × ATR of each other
+  return Math.abs(l1 - l2) <= atr * 0.5 && l2 >= l1 * 0.998;
+}
+
+function hasDoubleTop(df, atr) {
+  const { highs } = getSwings(df, 4);
+  if (highs.length < 2) return false;
+  const h1 = highs[highs.length - 2].price;
+  const h2 = highs[highs.length - 1].price;
+  return Math.abs(h1 - h2) <= atr * 0.5 && h2 <= h1 * 1.002;
+}
+
+// ── MR REVERSAL CANDLE FILTER ─────────────────────────
+// Spec: body >= 60%, lower wick >= 2 × body (bull), close above prev high
+// OR bearish: body >= 60%, upper wick >= 2 × body, close below prev low
+function isMRBullReversalCandle(c, prev) {
+  if (!c || !prev) return false;
+  const range = candleRange(c);
+  if (range === 0) return false;
+  const body      = candleBody(c);
+  const lowerWick = Math.min(c.open, c.close) - c.low;
+  // Bullish engulfing OR hammer (lower wick >= 2× body) OR strong pin bar
+  const isEngulf  = isBullishEngulfing(c, prev);
+  const isHammer  = lowerWick >= body * 2 && c.close > c.open;
+  const isPinBar  = isBullishPinBar(c);
+  const validBody = body / range >= 0.60;
+  const closeAbovePrevHigh = c.close > prev.high;
+  return (isEngulf || isHammer || isPinBar) && (validBody || isHammer) && closeAbovePrevHigh;
+}
+
+function isMRBearReversalCandle(c, prev) {
+  if (!c || !prev) return false;
+  const range = candleRange(c);
+  if (range === 0) return false;
+  const body      = candleBody(c);
+  const upperWick = c.high - Math.max(c.open, c.close);
+  const isEngulf  = isBearishEngulfing(c, prev);
+  const isStar    = upperWick >= body * 2 && c.close < c.open;
+  const isPinBar  = isBearishPinBar(c);
+  const validBody = body / range >= 0.60;
+  const closeBelowPrevLow = c.close < prev.low;
+  return (isEngulf || isStar || isPinBar) && (validBody || isStar) && closeBelowPrevLow;
+}
 
 function strategyMeanReversion(dfH4, dfH1, dfM15) {
   try {
@@ -954,63 +1305,170 @@ function strategyMeanReversion(dfH4, dfH1, dfM15) {
     const atr1h = calcAtr(dfH1);
     const atr15 = calcAtr(dfM15);
 
-    // ── PHASE 1: 4H MUST NOT BE STRONGLY TRENDING ────
-    // Mean reversion works best in ranging / extended markets
-    const ema4h = getEma50(dfH4);
-    if (!ema4h) return SIG_HOLD;
-    // Allow if EMA is flat OR price is extremely extended from EMA
-    const h4Closes = dfH4.map(c => c.close);
-    const h4Rsi    = calcRsi(h4Closes, 14);
+    // ── PHASE 1: 4H EXTREME MARKET FILTER ────────────
+    const ema50_4h = getEma50(dfH4);
+    if (!ema50_4h) return SIG_HOLD;
+
+    const h4Closes  = dfH4.map(c => c.close);
+    const h4RsiSeries = calcRsiSeries(h4Closes, 14);
+    const h4Rsi     = h4RsiSeries[h4RsiSeries.length - 2];
     if (h4Rsi === null) return SIG_HOLD;
 
-    // Require extreme RSI on 4H to confirm overextension
-    const h4Oversold   = h4Rsi < 35;
-    const h4Overbought = h4Rsi > 65;
+    // ADX <= 35: not in a strong trend (reject strong trends)
+    const adx4h = calcAdx(dfH4);
+    if (adx4h > 35) return SIG_HOLD;
+
+    // RSI between 40-60: no extreme, no trade
+    if (h4Rsi > 40 && h4Rsi < 60) return SIG_HOLD;
+
+    // Price must be extended from EMA50 by >= 2 × ATR
+    const price4h     = dfH4[dfH4.length - 2].close;
+    const distFromEma = Math.abs(price4h - ema50_4h.value);
+    if (distFromEma < atr4h * 2) return SIG_HOLD;
+
+    // Major S/R zone detection on 4H
+    const sr4h = findMajorSRZone(dfH4, atr4h);
+
+    const h4Oversold   = h4Rsi <= 25;
+    const h4Overbought = h4Rsi >= 75;
     if (!h4Oversold && !h4Overbought) return SIG_HOLD;
 
-    // ── PHASE 2: 1H EXTREME ──────────────────────────
-    const h1Closes = dfH1.map(c => c.close);
-    const h1Rsi    = calcRsi(h1Closes, 14);
-    const h1BB     = calcBB(h1Closes, 20, 2);
-    if (h1Rsi === null || !h1BB) return SIG_HOLD;
+    // ATR above average (volatility expansion after exhaustion)
+    if (!atrAboveAverage(dfH4)) return SIG_HOLD;
 
-    const currentH1Price = h1Closes[h1Closes.length - 2];
-    const len1h          = dfH1.length;
-    const last1h         = dfH1[len1h - 2];
-    const prev1h         = dfH1[len1h - 3];
+    // ── BULLISH REVERSAL SETUP (OVERSOLD) ─────────────
+    if (h4Oversold) {
+      // Price below EMA50
+      if (ema50_4h.priceAbove) return SIG_HOLD;
+      // Major support zone required
+      if (!sr4h.support) return SIG_HOLD;
+      // Price at or near support
+      if (price4h > sr4h.support * 1.01) return SIG_HOLD;
+      // At least 3 consecutive bearish candles
+      if (countConsecutiveCandles(dfH4, "bear") < 3) return SIG_HOLD;
+      // Exhaustion: long lower wick on last closed 4H candle
+      const last4h = dfH4[dfH4.length - 2];
+      const exhaustion = hasLongLowerWick(last4h) || hasAtrSpike(dfH4);
+      if (!exhaustion) return SIG_HOLD;
 
-    // ── PHASE 3: 15M ENTRY ───────────────────────────
-    const m15Closes = dfM15.map(c => c.close);
-    const m15Rsi    = calcRsi(m15Closes, 14);
-    const m15BB     = calcBB(m15Closes, 20, 2);
-    if (m15Rsi === null || !m15BB) return SIG_HOLD;
+      // ── PHASE 2: 1H BUY CONFIRMATION ──────────────
+      const h1Closes    = dfH1.map(c => c.close);
+      const h1RsiSeries = calcRsiSeries(h1Closes, 14);
+      const h1Rsi       = h1RsiSeries[h1RsiSeries.length - 2];
+      const h1BB        = calcBB(h1Closes, 20, 2);
+      if (h1Rsi === null || !h1BB) return SIG_HOLD;
 
-    const currentM15Price = m15Closes[m15Closes.length - 2];
-    const len15           = dfM15.length;
-    const last15          = dfM15[len15 - 2];
-    const prev15          = dfM15[len15 - 3];
+      const currentH1Price = h1Closes[h1Closes.length - 2];
+      const len1h          = dfH1.length;
+      const last1h         = dfH1[len1h - 2];
+      const prev1h         = dfH1[len1h - 3];
 
-    // ── BUY REVERSION (OVERSOLD) ──────────────────────
-    // 4H oversold + 1H RSI < 30 + price below lower BB + 15M RSI < 35 + bullish candle
-    if (
-      h4Oversold &&
-      h1Rsi < 30 &&
-      currentH1Price < h1BB.lower &&
-      m15Rsi < 35 &&
-      currentM15Price < m15BB.lower &&
-      isValidBullTrigger(last15, prev15, atr15)
-    ) return SIG_BUY;
+      // RSI <= 30 on 1H
+      if (h1Rsi > 30) return SIG_HOLD;
+      // Price inside support zone on 1H
+      if (sr4h.support && currentH1Price > sr4h.support * 1.015) return SIG_HOLD;
+      // Bullish divergence on 1H
+      if (!detectRsiDivergence(dfH1, h1RsiSeries, "bull")) return SIG_HOLD;
+      // Selling momentum weakening: last 1H candle range < previous 3 average
+      const last3Avg = dfH1.slice(-5, -2).reduce((s, c) => s + candleRange(c), 0) / 3;
+      if (candleRange(last1h) > last3Avg) return SIG_HOLD; // still strong sell momentum
+      // Valid 1H reversal candle
+      if (!isMRBullReversalCandle(last1h, prev1h)) return SIG_HOLD;
 
-    // ── SELL REVERSION (OVERBOUGHT) ───────────────────
-    // 4H overbought + 1H RSI > 70 + price above upper BB + 15M RSI > 65 + bearish candle
-    if (
-      h4Overbought &&
-      h1Rsi > 70 &&
-      currentH1Price > h1BB.upper &&
-      m15Rsi > 65 &&
-      currentM15Price > m15BB.upper &&
-      isValidBearTrigger(last15, prev15, atr15)
-    ) return SIG_SELL;
+      // ── PHASE 3: 15M BUY ENTRY ────────────────────
+      const m15Closes    = dfM15.map(c => c.close);
+      const m15RsiSeries = calcRsiSeries(m15Closes, 14);
+      const m15RsiPrev   = m15RsiSeries[m15RsiSeries.length - 3]; // bar before last
+      const m15RsiNow    = m15RsiSeries[m15RsiSeries.length - 2];
+      if (m15RsiNow === null || m15RsiPrev === null) return SIG_HOLD;
+
+      const len15  = dfM15.length;
+      const last15 = dfM15[len15 - 2];
+      const prev15 = dfM15[len15 - 3];
+      const { highs: h15, lows: l15 } = getSwings(dfM15, 3);
+
+      // Double bottom OR higher low on 15M
+      const dbottom = hasDoubleBottom(dfM15, atr15);
+      const higherLow = l15.length >= 2 &&
+        l15[l15.length - 1].price > l15[l15.length - 2].price;
+      if (!dbottom && !higherLow) return SIG_HOLD;
+
+      // Bullish engulfing on 15M
+      if (!isBullishEngulfing(last15, prev15)) return SIG_HOLD;
+      // Break of previous 15M swing high
+      if (h15.length === 0 || last15.close <= h15[h15.length - 1].price) return SIG_HOLD;
+      // RSI crosses above 30 on 15M (prev < 30, now >= 30)
+      if (!(m15RsiPrev < 30 && m15RsiNow >= 30)) return SIG_HOLD;
+
+      return SIG_BUY;
+    }
+
+    // ── BEARISH REVERSAL SETUP (OVERBOUGHT) ───────────
+    if (h4Overbought) {
+      // Price above EMA50
+      if (!ema50_4h.priceAbove) return SIG_HOLD;
+      // Major resistance zone required
+      if (!sr4h.resistance) return SIG_HOLD;
+      // Price at or near resistance
+      if (price4h < sr4h.resistance * 0.99) return SIG_HOLD;
+      // At least 3 consecutive bullish candles
+      if (countConsecutiveCandles(dfH4, "bull") < 3) return SIG_HOLD;
+      // Exhaustion: long upper wick on last closed 4H candle
+      const last4h = dfH4[dfH4.length - 2];
+      const exhaustion = hasLongUpperWick(last4h) || hasAtrSpike(dfH4);
+      if (!exhaustion) return SIG_HOLD;
+
+      // ── PHASE 2: 1H SELL CONFIRMATION ─────────────
+      const h1Closes    = dfH1.map(c => c.close);
+      const h1RsiSeries = calcRsiSeries(h1Closes, 14);
+      const h1Rsi       = h1RsiSeries[h1RsiSeries.length - 2];
+      const h1BB        = calcBB(h1Closes, 20, 2);
+      if (h1Rsi === null || !h1BB) return SIG_HOLD;
+
+      const currentH1Price = h1Closes[h1Closes.length - 2];
+      const len1h          = dfH1.length;
+      const last1h         = dfH1[len1h - 2];
+      const prev1h         = dfH1[len1h - 3];
+
+      // RSI >= 70 on 1H
+      if (h1Rsi < 70) return SIG_HOLD;
+      // Price inside resistance zone on 1H
+      if (sr4h.resistance && currentH1Price < sr4h.resistance * 0.985) return SIG_HOLD;
+      // Bearish divergence on 1H
+      if (!detectRsiDivergence(dfH1, h1RsiSeries, "bear")) return SIG_HOLD;
+      // Buying momentum weakening
+      const last3Avg = dfH1.slice(-5, -2).reduce((s, c) => s + candleRange(c), 0) / 3;
+      if (candleRange(last1h) > last3Avg) return SIG_HOLD;
+      // Valid 1H reversal candle
+      if (!isMRBearReversalCandle(last1h, prev1h)) return SIG_HOLD;
+
+      // ── PHASE 3: 15M SELL ENTRY ───────────────────
+      const m15Closes    = dfM15.map(c => c.close);
+      const m15RsiSeries = calcRsiSeries(m15Closes, 14);
+      const m15RsiPrev   = m15RsiSeries[m15RsiSeries.length - 3];
+      const m15RsiNow    = m15RsiSeries[m15RsiSeries.length - 2];
+      if (m15RsiNow === null || m15RsiPrev === null) return SIG_HOLD;
+
+      const len15  = dfM15.length;
+      const last15 = dfM15[len15 - 2];
+      const prev15 = dfM15[len15 - 3];
+      const { highs: h15, lows: l15 } = getSwings(dfM15, 3);
+
+      // Double top OR lower high on 15M
+      const dtop = hasDoubleTop(dfM15, atr15);
+      const lowerHigh = h15.length >= 2 &&
+        h15[h15.length - 1].price < h15[h15.length - 2].price;
+      if (!dtop && !lowerHigh) return SIG_HOLD;
+
+      // Bearish engulfing on 15M
+      if (!isBearishEngulfing(last15, prev15)) return SIG_HOLD;
+      // Break of previous 15M swing low
+      if (l15.length === 0 || last15.close >= l15[l15.length - 1].price) return SIG_HOLD;
+      // RSI crosses below 70 on 15M (prev > 70, now <= 70)
+      if (!(m15RsiPrev > 70 && m15RsiNow <= 70)) return SIG_HOLD;
+
+      return SIG_SELL;
+    }
 
   } catch { return SIG_HOLD; }
   return SIG_HOLD;
