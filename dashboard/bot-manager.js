@@ -1,11 +1,14 @@
 // ═══════════════════════════════════════════════════════
 //  dashboard/bot-manager.js
 //
-//  Multi-strategy signal engine integration:
-//    - Fetches 4 timeframes (4H / 1H / 30M / 15M)
-//    - Runs 5 independent strategies via collectSignals()
-//    - Conflict engine resolves BUY/SELL/HOLD per symbol
-//    - All existing infrastructure unchanged
+//  Daily Bias Strategy integration:
+//    - Fetches 3 timeframes (D1 / H1 / M15)
+//    - Step 1: Daily candle bias (bullish/bearish/none)
+//    - Step 2: Trend alignment check (HH/HL or LH/LL)
+//    - Step 3: 1H confluence check
+//    - Step 4: 15M entry on rejection/engulfing candle
+//    - All existing infrastructure (risk, trailing stop,
+//      forced close, portfolio locking) unchanged
 // ═══════════════════════════════════════════════════════
 
 import { connectForMode }                from "../src/auth/deriv-auth.js";
@@ -161,10 +164,12 @@ async function syncTradeStatuses(ws, userId, label) {
 }
 
 // ── PORTFOLIO TRACKER ─────────────────────────────────
-async function monitorOpenTrades(ws, userId, label, portfolio, dfH4Cache) {
+async function monitorOpenTrades(ws, userId, label, portfolio, dfD1Cache, riskSettings) {
   try {
     const openTrades = await Trade.find({ userId, status: "open" });
     if (!openTrades.length) return;
+
+    const trailingStopPct = riskSettings?.trailingStopPct ?? 0; // 0 = disabled
 
     for (const trade of openTrades) {
       try {
@@ -178,20 +183,19 @@ async function monitorOpenTrades(ws, userId, label, portfolio, dfH4Cache) {
 
         const currentPnl = parseFloat(contract.profit ?? 0);
         const stake      = trade.stake;
-        const takeProfit = trade.takeProfit;
         const direction  = trade.direction;
 
         await Trade.findByIdAndUpdate(trade._id, { pnl: currentPnl });
 
-        // ── EXIT 1: TREND REVERSAL ──────────────────────
-        const h4Candles = dfH4Cache.get(trade.symbol);
-        if (h4Candles && h4Candles.length >= 50) {
-          const currentBias = get15mTrend(h4Candles);
+        // ── EXIT 1: DAILY BIAS REVERSAL ──────────────────
+        const d1Candles = dfD1Cache.get(trade.symbol);
+        if (d1Candles && d1Candles.length >= 3) {
+          const currentBias = get15mTrend(d1Candles); // now reflects D1 bias, see signals.js
           const tradeBias   = direction === "MULTUP" ? "bullish" : "bearish";
           const biasFlipped = currentBias !== "neutral" && currentBias !== tradeBias;
 
           if (biasFlipped) {
-            await log(userId, `[${label}] ${trade.symbol} | 🔄 EXIT: 4H reversed to ${currentBias.toUpperCase()} — closing ${direction}`, "trade");
+            await log(userId, `[${label}] ${trade.symbol} | 🔄 EXIT: Daily bias reversed to ${currentBias.toUpperCase()} — closing ${direction}`, "trade");
             const soldFor = await closeTrade(ws, trade.contractId);
             if (soldFor !== null) {
               const finalPnl = soldFor - stake;
@@ -207,19 +211,73 @@ async function monitorOpenTrades(ws, userId, label, portfolio, dfH4Cache) {
           }
         }
 
-        // ── EXIT 2: TRAILING STOP ────────────────────────
-        if (takeProfit && currentPnl >= takeProfit * 0.5) {
-          const breakevenSL = stake;
-          await log(userId, `[${label}] ${trade.symbol} | 📈 Profit $${currentPnl.toFixed(2)} >= 50% TP — moving SL to breakeven`, "trade");
-          try {
-            await sendMessage(ws, {
-              contract_update: 1,
-              contract_id:     parseInt(trade.contractId),
-              limit_order:     { stop_loss: breakevenSL },
-            }, "contract_update");
-            await Trade.findByIdAndUpdate(trade._id, { stopLoss: breakevenSL });
-          } catch (updateErr) {
-            console.log(`[${label}] Could not update SL: ${updateErr.message}`);
+        // ── EXIT 2: TRAILING STOP (user-configurable) ───
+        // trailingStopPct = % of STAKE profit that activates trailing.
+        // e.g. stake=$1, trailingStopPct=0.005 (0.5%) → activates at $0.005 profit.
+        //
+        // Behavior once active:
+        //   1. First activation: SL moves to BREAKEVEN (stop_loss = stake,
+        //      meaning the contract closes at $0 profit/loss if reversed)
+        //   2. As profit keeps climbing past breakeven, SL keeps trailing
+        //      UP by the same percentage step — i.e. every time profit
+        //      advances by another trailingStopPct-of-stake increment,
+        //      the SL moves up to lock in that new floor.
+        //
+        // 0 / disabled → skip entirely, no behavior change for those users.
+        if (trailingStopPct > 0) {
+          const activationThreshold = stake * trailingStopPct;
+
+          if (currentPnl >= activationThreshold) {
+            // peak profit seen so far for this trade (persisted in DB)
+            const priorPeak = trade.trailingPeakPnl || 0;
+
+            if (currentPnl > priorPeak) {
+              // New peak reached — calculate new trailing SL level.
+              // SL floor = stake + (peak profit rounded down to the nearest
+              // trailingStopPct-of-stake step) — this is what makes it
+              // "follow by the same percentage" rather than jump straight
+              // to current profit.
+              const stepSize   = stake * trailingStopPct;
+              const stepsBanked = Math.floor(currentPnl / stepSize);
+              const lockedProfit = stepsBanked * stepSize;
+
+              // New SL = stake (breakeven) + locked profit so far.
+              // On FIRST activation, stepsBanked >= 1, so lockedProfit >= stepSize,
+              // meaning SL moves to breakeven-or-better immediately.
+              const newStopLoss = parseFloat((stake + lockedProfit - stepSize).toFixed(4));
+              // ^ subtract one step so the trail always sits one step BEHIND
+              //   current profit (true trailing behavior), with breakeven
+              //   (stake + 0) as the floor on first activation.
+              const flooredStopLoss = Math.max(newStopLoss, stake);
+
+              if (!trade.trailingActive || flooredStopLoss > (trade.stopLoss ?? 0)) {
+                try {
+                  await sendMessage(ws, {
+                    contract_update: 1,
+                    contract_id:     parseInt(trade.contractId),
+                    limit_order:     { stop_loss: flooredStopLoss },
+                  }, "contract_update");
+
+                  await Trade.findByIdAndUpdate(trade._id, {
+                    stopLoss:        flooredStopLoss,
+                    trailingActive:  true,
+                    trailingPeakPnl: currentPnl,
+                  });
+
+                  const lockedPnl = flooredStopLoss - stake;
+                  await log(userId,
+                    `[${label}] ${trade.symbol} | 📈 Trailing stop ${trade.trailingActive ? "updated" : "ACTIVATED"} | ` +
+                    `Profit: $${currentPnl.toFixed(4)} | New SL locks in: $${lockedPnl.toFixed(4)}`,
+                    "trade"
+                  );
+                } catch (updateErr) {
+                  console.log(`[${label}] Could not update trailing SL: ${updateErr.message}`);
+                }
+              } else {
+                // Peak ticked up but not enough for a new step yet — just track it
+                await Trade.findByIdAndUpdate(trade._id, { trailingPeakPnl: currentPnl });
+              }
+            }
           }
         }
 
@@ -332,7 +390,7 @@ async function runUserBot(user, stopSignal) {
 
   const portfolio     = createPortfolio(user._id);
   let lastSummaryDate = "";
-  const dfH4Cache     = new Map();
+  const dfD1Cache      = new Map();
 
   while (!stopSignal.stopped) {
     let lastApiCall = Date.now();
@@ -375,7 +433,7 @@ async function runUserBot(user, stopSignal) {
         await syncTradeStatuses(ws, user._id, label);
         lastApiCall = Date.now();
 
-        await monitorOpenTrades(ws, user._id, label, portfolio, dfH4Cache);
+        await monitorOpenTrades(ws, user._id, label, portfolio, dfD1Cache, freshUser.risk);
         lastApiCall = Date.now();
 
         const currentOpen = await portfolio.sync(ws);
@@ -454,12 +512,12 @@ async function runUserBot(user, stopSignal) {
             continue;
           }
 
-          // Read from global cache — 4 timeframes
+          // Read from global cache — 3 timeframes (D1/H1/M15)
           lastApiCall    = Date.now();
           const tf       = await getCachedMultiTf(ws, symbol);
-          const { h4: dfH4, h1: dfH1, m30: dfM30, m15: dfM15 } = tf;
+          const { d1: dfD1, h1: dfH1, m15: dfM15 } = tf;
 
-          if (dfH4 && dfH4.length > 0) dfH4Cache.set(symbol, dfH4);
+          if (dfD1 && dfD1.length > 0) dfD1Cache.set(symbol, dfD1);
 
           if (!dfM15 || dfM15.length < 2) continue;
 
@@ -470,21 +528,19 @@ async function runUserBot(user, stopSignal) {
             continue;
           }
 
-          // ── RUN ALL 5 STRATEGIES ──────────────────────
-          const result = collectSignals({ h4: dfH4, h1: dfH1, m30: dfM30, m15: dfM15 });
-          const { signal, buyCount, sellCount, breakdown, reason } = result;
+          // ── RUN DAILY BIAS STRATEGY ────────────────────
+          const result = collectSignals({ d1: dfD1, h1: dfH1, m15: dfM15 });
+          const { signal, breakdown, reason, dailyBias } = result;
 
           if (signal === 0) {
-            // Build strategy breakdown for logs
-            const breakdownStr = breakdown.map(s => `${s.name}:${s.signal}`).join(" | ");
             await log(userId,
-              `[${label}] ${symbol} | HOLD | B:${buyCount} S:${sellCount} | ${reason}`,
+              `[${label}] ${symbol} | HOLD | Bias: ${(dailyBias || "none").toUpperCase()} | ${reason}`,
               "info"
             );
             cycleResults.push({
               symbol,
               status:       "HOLD",
-              h4bias:       get15mTrend(dfM30),
+              dailyBias:    dailyBias || "none",
               strength:     0,
               rejectReason: reason,
               breakdown,
@@ -495,8 +551,6 @@ async function runUserBot(user, stopSignal) {
           // ── SIGNAL FIRED ─────────────────────────────
           const direction = signal === SIG_BUY ? "MULTUP" : "MULTDOWN";
           const label2    = signal === SIG_BUY ? "BUY"    : "SELL";
-          const votes     = signal === SIG_BUY ? buyCount : sellCount;
-          const strength  = Math.round((votes / 5) * 100);
 
           // Fixed dollar stake — user sets amount directly (min $1)
           const stake      = parseFloat(Math.max(freshUser.risk.stakeAmount || 1.00, 1.00).toFixed(2));
@@ -508,18 +562,16 @@ async function runUserBot(user, stopSignal) {
 
           // Log full strategy breakdown
           await log(userId,
-            `[${label}] ${symbol} | ${label2}! | Votes: ${votes}/5 (${strength}%) | Stake: $${stake} | SL=$${limitOrder.stop_loss} TP=$${limitOrder.take_profit}`,
+            `[${label}] ${symbol} | ${label2}! | Daily Bias: ${dailyBias.toUpperCase()} | Stake: $${stake} | SL=$${limitOrder.stop_loss} TP=$${limitOrder.take_profit}`,
             "trade"
           );
-          await log(userId, getTradeReason({ h4: dfH4, h1: dfH1, m30: dfM30, m15: dfM15 }), "trade");
+          await log(userId, getTradeReason({ d1: dfD1, h1: dfH1, m15: dfM15 }), "trade");
 
           cycleResults.push({
             symbol,
             status:    label2,
-            strength,
+            dailyBias,
             breakdown,
-            buyCount,
-            sellCount,
           });
 
           const tradeResult = await placeTradeWithRetry(ws, symbol, direction, stake, limitOrder);
@@ -539,10 +591,11 @@ async function runUserBot(user, stopSignal) {
               symbol,
               direction,
               stake,
-              token:  user.derivPAT,
-              appId:  user.derivAppId,
-              mode:   user.derivMode,
+              token:        user.derivPAT,
+              appId:        user.derivAppId,
+              mode:         user.derivMode,
               label,
+              durationMins: freshUser.risk.contractDurationMins, // 0/null = OFF, no min/max
             });
 
             try {
@@ -556,7 +609,6 @@ async function runUserBot(user, stopSignal) {
                 buyPrice,
                 stopLoss:   limitOrder.stop_loss,
                 takeProfit: limitOrder.take_profit,
-                strength,
                 status:     "open",
                 pnl:        0,
               });
@@ -568,11 +620,10 @@ async function runUserBot(user, stopSignal) {
 
             await notifyTradeOpened({
               symbol, direction, stake, multiplier,
-              limitOrder, strength,
+              limitOrder,
               contractId, label, botToken, chatId,
               breakdown,
-              buyCount,
-              sellCount,
+              dailyBias,
             });
 
             await log(userId,

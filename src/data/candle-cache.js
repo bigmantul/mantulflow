@@ -9,18 +9,31 @@
 //    All user bots read from this cache instantly —
 //    they NEVER call the Deriv candle API directly.
 //
-//  Timeframes cached:
-//    4H (14400), 1H (3600), 30M (1800), 15M (900)
+//  Timeframes cached (Daily Bias Strategy):
+//    D1 (86400) — daily bias detection
+//    H1 (3600)  — 1H confluence check
+//    M15 (900)  — entry confirmation
 //
-//  Before: 6 users × 22 symbols × 4 TFs = 528 API calls
-//  After:  1 scanner × 22 symbols × 4 TFs = 88 API calls
+//  NOTE ON TTL: Daily candles only change once per day, so
+//  re-fetching them every 90s like 15M candles would be
+//  wasteful and pointless. Each granularity now has its
+//  own TTL — D1 refreshes every 30 minutes (plenty fast
+//  to catch a new daily candle forming), H1/M15 keep the
+//  original fast refresh for timely entries.
 // ═══════════════════════════════════════════════════════
 
 import { sendMessage, connectWebSocket } from "../utils/ws-client.js";
 import { connectForMode }                from "../auth/deriv-auth.js";
 
-const CACHE_TTL     = 90 * 1000;  // 90 seconds
-const SCAN_INTERVAL = 85 * 1000;  // scan every 85s (slightly before TTL)
+// Per-granularity cache TTLs (ms)
+const TTL_BY_GRANULARITY = {
+  86400: 30 * 60 * 1000,  // D1  — refresh every 30 min, plenty for daily bias
+  3600:  90 * 1000,        // H1  — refresh every 90s
+  900:   90 * 1000,        // M15 — refresh every 90s
+};
+const DEFAULT_TTL = 90 * 1000;
+
+const SCAN_INTERVAL = 85 * 1000;  // scanner loop runs every 85s
 
 const cache   = new Map(); // symbol+gran → { candles, fetchedAt }
 const pending = new Map(); // symbol+gran → Promise (dedup concurrent requests)
@@ -28,35 +41,40 @@ const pending = new Map(); // symbol+gran → Promise (dedup concurrent requests
 let scannerRunning = false;
 let scannerWs      = null;
 
-// All timeframes needed by the multi-strategy engine
-const GRANULARITIES = [14400, 3600, 1800, 900];
+// All timeframes needed by the Daily Bias strategy
+const GRANULARITIES = [86400, 3600, 900];
+
+function ttlFor(granularity) {
+  return TTL_BY_GRANULARITY[granularity] ?? DEFAULT_TTL;
+}
 
 // ── PUBLIC API ────────────────────────────────────────
 
 /**
- * Get all 4 timeframes for a symbol.
+ * Get all 3 timeframes for a symbol (Daily Bias strategy).
  * Returns from cache if fresh — never waits for API.
  * Falls back to direct fetch only if cache is empty.
  */
 export async function getCachedMultiTf(ws, symbol) {
-  const h4  = await getCachedCandles(ws, symbol, 14400, 200);
+  const d1  = await getCachedCandles(ws, symbol, 86400, 60);
   const h1  = await getCachedCandles(ws, symbol, 3600,  200);
-  const m30 = await getCachedCandles(ws, symbol, 1800,  200);
   const m15 = await getCachedCandles(ws, symbol, 900,   200);
-  return { h4, h1, m30, m15 };
+  return { d1, h1, m15 };
 }
 
 /**
  * Get cached candles for one symbol+granularity.
  * Uses shared cache — only fetches if cache is stale/empty.
+ * Each granularity has its own TTL (see TTL_BY_GRANULARITY).
  */
 export async function getCachedCandles(ws, symbol, granularity, count = 200) {
   const key    = `${symbol}_${granularity}`;
   const now    = Date.now();
   const cached = cache.get(key);
+  const ttl    = ttlFor(granularity);
 
   // Return fresh cache immediately
-  if (cached && cached.candles.length > 10 && (now - cached.fetchedAt) < CACHE_TTL) {
+  if (cached && cached.candles.length > 10 && (now - cached.fetchedAt) < ttl) {
     return cached.candles;
   }
 
@@ -116,6 +134,10 @@ async function fetchCandles(ws, symbol, granularity, count) {
  * Called ONCE on server startup.
  * Uses its own WebSocket — user bots never fetch candles directly.
  *
+ * D1 candles are skipped on scan cycles where they're still
+ * fresh (per TTL_BY_GRANULARITY), saving API calls — there's
+ * no point re-fetching the daily candle every 85 seconds.
+ *
  * @param {string[]} symbols  - full symbol list
  * @param {string}   token    - any valid PAT token (for candle access)
  * @param {string}   appId    - Deriv App ID
@@ -124,7 +146,7 @@ async function fetchCandles(ws, symbol, granularity, count) {
 export async function startGlobalScanner(symbols, token, appId, mode = "demo") {
   if (scannerRunning) return;
   scannerRunning = true;
-  console.log(`🔭 Global candle scanner starting — ${symbols.length} symbols × ${GRANULARITIES.length} TFs`);
+  console.log(`🔭 Global candle scanner starting — ${symbols.length} symbols × ${GRANULARITIES.length} TFs (D1/H1/M15)`);
 
   async function runScan() {
     try {
@@ -134,12 +156,23 @@ export async function startGlobalScanner(symbols, token, appId, mode = "demo") {
       scannerWs     = await connectWebSocket(wsUrl);
 
       let fetched = 0;
+      let skipped = 0;
 
       for (const symbol of symbols) {
         for (const gran of GRANULARITIES) {
-          const key = `${symbol}_${gran}`;
+          const key    = `${symbol}_${gran}`;
+          const cached = cache.get(key);
+          const ttl    = ttlFor(gran);
+
+          // Skip if still fresh per this granularity's TTL (mainly D1)
+          if (cached && (Date.now() - cached.fetchedAt) < ttl) {
+            skipped++;
+            continue;
+          }
+
           try {
-            const candles = await fetchCandles(scannerWs, symbol, gran, 200);
+            const count = gran === 86400 ? 60 : 200;
+            const candles = await fetchCandles(scannerWs, symbol, gran, count);
             if (candles.length > 10) {
               cache.set(key, { candles, fetchedAt: Date.now() });
               fetched++;
@@ -153,7 +186,7 @@ export async function startGlobalScanner(symbols, token, appId, mode = "demo") {
         }
       }
 
-      console.log(`✅ [scanner] Refreshed ${fetched}/${symbols.length * GRANULARITIES.length} candle sets`);
+      console.log(`✅ [scanner] Refreshed ${fetched} candle sets (${skipped} skipped — still fresh, mostly D1)`);
       scannerWs.close();
     } catch (e) {
       console.error(`[scanner] Error:`, e.message);
@@ -170,8 +203,10 @@ export async function startGlobalScanner(symbols, token, appId, mode = "demo") {
 export function getCacheStats() {
   const now = Date.now();
   let fresh = 0, stale = 0;
-  for (const v of cache.values()) {
-    if (now - v.fetchedAt < CACHE_TTL) fresh++;
+  for (const [key, v] of cache.entries()) {
+    const gran = parseInt(key.split("_").pop());
+    const ttl  = ttlFor(gran);
+    if (now - v.fetchedAt < ttl) fresh++;
     else stale++;
   }
   return { total: cache.size, fresh, stale, pending: pending.size };

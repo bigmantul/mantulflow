@@ -220,9 +220,9 @@ async function main() {
             continue;
           }
 
-          // Fetch all 4 timeframes
+          // Fetch the 3 timeframes used by the Daily Bias strategy
           const tf = await getMultiTf(ws, symbol);
-          const { h4: dfH4, h1: dfH1, m30: dfM30, m15: dfM15 } = tf;
+          const { d1: dfD1, h1: dfH1, m15: dfM15 } = tf;
           lastApiCall = Date.now();
 
           if (!dfM15 || dfM15.length < 2) continue;
@@ -234,18 +234,16 @@ async function main() {
             continue;
           }
 
-          // Run all strategies + conflict engine
-          const result = collectSignals({ h4: dfH4, h1: dfH1, m30: dfM30, m15: dfM15 });
-          const { signal, buyCount, sellCount, breakdown, reason } = result;
+          // Run Daily Bias strategy
+          const result = collectSignals({ d1: dfD1, h1: dfH1, m15: dfM15 });
+          const { signal, breakdown, reason, dailyBias } = result;
 
           if (signal === 0) {
-            const h4trend = get15mTrend(dfM30);
-            console.log(`${symbol} | HOLD | ${reason}`);
+            console.log(`${symbol} | HOLD | Bias: ${(dailyBias || "none").toUpperCase()} | ${reason}`);
             cycleResults.push({
               symbol,
-              status:   "HOLD",
-              trend:    h4trend,
-              strength: 0,
+              status:    "HOLD",
+              dailyBias: dailyBias || "none",
               reason,
             });
             continue;
@@ -254,7 +252,6 @@ async function main() {
           // Signal fired
           const label     = signal === 1 ? "BUY"    : "SELL";
           const direction = signal === 1 ? "MULTUP" : "MULTDOWN";
-          const strength  = Math.round(((signal === 1 ? buyCount : sellCount) / 5) * 100);
 
           const baseStake  = rm.calculateStake(balance);
           const volScalar  = getVolatilityScalar(dfM15);
@@ -263,11 +260,11 @@ async function main() {
           const multiplier = 100;
 
           console.log(
-            `\n${symbol} | ${label} | Strength: ${strength}% | Votes: ${signal === 1 ? buyCount : sellCount}/5 | Stake: $${stake.toFixed(2)}`
+            `\n${symbol} | ${label} | Daily Bias: ${dailyBias.toUpperCase()} | Stake: $${stake.toFixed(2)}`
           );
-          console.log(getTradeReason({ h4: dfH4, h1: dfH1, m30: dfM30, m15: dfM15 }));
+          console.log(getTradeReason({ d1: dfD1, h1: dfH1, m15: dfM15 }));
 
-          cycleResults.push({ symbol, status: label, strength });
+          cycleResults.push({ symbol, status: label, dailyBias });
 
           // Place trade
           const tradeResult = await placeTradeWithRetry(ws, symbol, direction, stake, limitOrder);
@@ -283,10 +280,11 @@ async function main() {
               symbol,
               direction,
               stake,
-              token:  process.env.DERIV_PAT_TOKEN,
-              appId:  process.env.DERIV_APP_ID,
-              mode:   TRADING_MODE,
-              label:  "Bot",
+              token:        process.env.DERIV_PAT_TOKEN,
+              appId:        process.env.DERIV_APP_ID,
+              mode:         TRADING_MODE,
+              label:        "Bot",
+              durationMins: parseFloat(process.env.CONTRACT_DURATION_MINS || "120"),
             });
 
             await notifyTradeOpened({
@@ -295,7 +293,6 @@ async function main() {
               stake,
               multiplier,
               limitOrder,
-              strength,
               contractId: typeof tradeResult === "object" ? tradeResult.contractId : "N/A",
             });
 

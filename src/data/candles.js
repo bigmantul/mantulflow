@@ -1,11 +1,12 @@
 // ═══════════════════════════════════════════════════════
 //  src/data/candles.js
 //
-//  Timeframe stack:
-//    h4  = 14400s  → HTF bias (4H)
-//    h1  = 3600s   → Range / zone detection (1H)
-//    m30 = 1800s   → Trend filter / pullback (30M)
-//    m15 = 900s    → Entry + confirmation (15M)
+//  Timeframe stack (Daily Bias Strategy):
+//    d1  = 86400s  → Daily bias detection
+//    h1  = 3600s   → 1H confluence check
+//    m15 = 900s    → Entry confirmation
+//
+//  4H/30M are no longer used by the current strategy.
 // ═══════════════════════════════════════════════════════
 
 import { sendMessage } from "../utils/ws-client.js";
@@ -57,19 +58,21 @@ export async function getCandles(ws, symbol, granularity = 3600, count = 200) {
 }
 
 /**
- * Fetch all four timeframes in parallel:
+ * Fetch the 3 timeframes used by the Daily Bias strategy:
  *
- *   h4  = 14400s  (4H  — HTF bias & structure)
- *   h1  = 3600s   (1H  — range / zone detection)
- *   m30 = 1800s   (30M — trend filter / pullback)
- *   m15 = 900s    (15M — entry & confirmation)
+ *   d1  = 86400s  (Daily — bias detection)
+ *   h1  = 3600s   (1H — confluence check)
+ *   m15 = 900s    (15M — entry confirmation)
+ *
+ * Daily candles need fewer bars (60 = ~2 months is plenty
+ * for prev-day-high/low + swing structure checks) — no
+ * need to request 200 daily candles.
  */
 export async function getMultiTf(ws, symbol) {
-  const [h4, h1, m30, m15] = await Promise.all([
-    getCandles(ws, symbol, 14400, 200),
+  const [d1, h1, m15] = await Promise.all([
+    getCandles(ws, symbol, 86400, 60),
     getCandles(ws, symbol, 3600,  200),
-    getCandles(ws, symbol, 1800,  200),
     getCandles(ws, symbol, 900,   200),
   ]);
-  return { h4, h1, m30, m15 };
+  return { d1, h1, m15 };
 }
