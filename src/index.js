@@ -8,8 +8,6 @@ import { connectForMode }                from "./auth/deriv-auth.js";
 import { connectWebSocket, sendMessage } from "./utils/ws-client.js";
 import { getMultiTf }                    from "./data/candles.js";
 import {
-  getLatestSignalMtf,
-  getSignalStrengthLegacy,
   getVolatilityScalar,
   marketIsTradeable,
   get15mTrend,
