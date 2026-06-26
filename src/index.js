@@ -42,27 +42,75 @@ import {
 // ═══════════════════════════════════════════════════════
 const SYMBOLS = [
   // Forex
-  "frxEURUSD", "frxGBPUSD", "frxUSDJPY", "frxUSDCHF",
-  "frxAUDUSD", "frxUSDCAD", "frxNZDUSD",
-  "frxGBPJPY", "frxEURGBP", "frxEURCHF", "frxEURCAD", "frxEURAUD",
+  "frxEURUSD",
+  "frxGBPUSD",
+  "frxUSDJPY",
+  "frxUSDCHF",
+  "frxAUDUSD",
+  "frxUSDCAD",
+  "frxNZDUSD",
+  "frxGBPJPY",
+  "frxEURGBP",
+  "frxEURCHF",
+  "frxEURCAD",
+  "frxEURAUD",
 
   // Metals
-  "frxXAUUSD", "frxXAGUSD",
+  "frxXAUUSD",
+  "frxXAGUSD",
 
   // Crypto
-  "cryBTCUSD", "cryETHUSD",
+  "cryBTCUSD",
+  "cryETHUSD",
 
-  // Boom & Crash
+  // Boom Indices
+  "BOOM50",
+  "BOOM150",
+  "BOOM300",
   "BOOM500",
+  "BOOM600",
+  "BOOM900",
+  "BOOM1000",
+
+  // Crash Indices
+  "CRASH50",
+  "CRASH150",
+  "CRASH300",
   "CRASH500",
+  "CRASH600",
+  "CRASH900",
+  "CRASH1000",
 
   // Jump Indices
+  "JD10",
+  "JD25",
+  "JD50",
   "JD75",
   "JD100",
 
+  // Step Indices
+  "STPRNG",
+  "STPRNG2",
+  "STPRNG3",
+  "STPRNG4",
+  "STPRNG5",
+
   // Volatility Indices
+  "R_10",
+  "R_25",
+  "R_50",
   "R_75",
   "R_100",
+
+  // 1Hz Volatility Indices
+  "1HZ10V",
+  "1HZ15V",
+  "1HZ25V",
+  "1HZ30",
+  "1HZ50V",
+  "1HZ75V",
+  "1HZ90V",
+  "1HZ100V",
 ];
 
 const POLL_SECS        = 15;
