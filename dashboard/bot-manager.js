@@ -529,7 +529,7 @@ async function runUserBot(user, stopSignal) {
           }
 
           // ── RUN DAILY BIAS STRATEGY ────────────────────
-          const result = collectSignals({ d1: dfD1, h1: dfH1, m15: dfM15 });
+          const result = collectSignals({ d1: dfD1, h1: dfH1, m15: dfM15, symbol });
           const { signal, breakdown, reason, dailyBias } = result;
 
           if (signal === 0) {
@@ -565,7 +565,7 @@ async function runUserBot(user, stopSignal) {
             `[${label}] ${symbol} | ${label2}! | Daily Bias: ${dailyBias.toUpperCase()} | Stake: $${stake} | SL=$${limitOrder.stop_loss} TP=$${limitOrder.take_profit}`,
             "trade"
           );
-          await log(userId, getTradeReason({ d1: dfD1, h1: dfH1, m15: dfM15 }), "trade");
+          await log(userId, getTradeReason({ d1: dfD1, h1: dfH1, m15: dfM15, symbol }), "trade");
 
           cycleResults.push({
             symbol,

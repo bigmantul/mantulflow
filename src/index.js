@@ -233,7 +233,7 @@ async function main() {
           }
 
           // Run Daily Bias strategy
-          const result = collectSignals({ d1: dfD1, h1: dfH1, m15: dfM15 });
+          const result = collectSignals({ d1: dfD1, h1: dfH1, m15: dfM15, symbol });
           const { signal, breakdown, reason, dailyBias } = result;
 
           if (signal === 0) {
@@ -260,7 +260,7 @@ async function main() {
           console.log(
             `\n${symbol} | ${label} | Daily Bias: ${dailyBias.toUpperCase()} | Stake: $${stake.toFixed(2)}`
           );
-          console.log(getTradeReason({ d1: dfD1, h1: dfH1, m15: dfM15 }));
+          console.log(getTradeReason({ d1: dfD1, h1: dfH1, m15: dfM15, symbol }));
 
           cycleResults.push({ symbol, status: label, dailyBias });
 

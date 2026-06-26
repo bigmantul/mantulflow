@@ -1,8 +1,8 @@
 ﻿// ═══════════════════════════════════════════════════════
 //  src/utils/telegram.js
 //
-//  Notifications fully integrated with Multi-Strategy
-//  Signal Engine (5 strategies + conflict engine)
+//  Notifications fully integrated with the Daily Bias
+//  Strategy (4-stage state machine: D1 -> Trend -> 1H -> 15M)
 // ═══════════════════════════════════════════════════════
 
 const TELEGRAM_BOT_TOKEN = process.env.TELEGRAM_BOT_TOKEN;
@@ -29,26 +29,26 @@ async function sendMessage(text, botToken, chatId) {
 
 // ── HELPERS ───────────────────────────────────────────
 
-function strategyIcon(signal) {
-  if (signal === "BUY")  return "🟢";
-  if (signal === "SELL") return "🔴";
+// breakdown items now look like: { step, result, reason }
+// e.g. { step: "Stage1 DailyBias", result: "BULLISH", reason: "..." }
+function stageIcon(result) {
+  if (!result) return "⬜";
+  const r = result.toUpperCase();
+  if (r.includes("BUY") || r.includes("BULLISH") || r.includes("AGREES") || r.includes("ENTRY MODE")) return "🟢";
+  if (r.includes("SELL") || r.includes("BEARISH") || r.includes("MISMATCH")) return "🔴";
+  if (r.includes("OUTSIDE SESSION")) return "🌙";
   return "⬜";
 }
 
 /**
- * Format a strategy breakdown array into readable lines.
- * breakdown = [{ name, signal }]
+ * Format the 4-stage breakdown into readable Telegram lines.
+ * breakdown = [{ step, result, reason }]
  */
 function formatBreakdown(breakdown) {
   if (!breakdown || !breakdown.length) return "";
   return breakdown
-    .map(s => `  ${strategyIcon(s.signal)} ${s.name.padEnd(16)}: ${s.signal}`)
+    .map(s => `  ${stageIcon(s.result)} <b>${s.step}</b>: ${s.result}\n     <i>${s.reason}</i>`)
     .join("\n");
-}
-
-function voteBar(votes, total = 5) {
-  const filled = Math.round((votes / total) * 5);
-  return "█".repeat(filled) + "░".repeat(5 - filled);
 }
 
 // ── STARTUP ───────────────────────────────────────────
@@ -57,10 +57,11 @@ export function notifyStartup(balance, mode, label, botToken, chatId) {
     `🤖 <b>${label || "Bot"} — Started</b>\n` +
     `Mode       : ${(mode || "demo").toUpperCase()}\n` +
     `Balance    : $${balance.toFixed(2)}\n` +
-    `Engine     : Multi-Strategy (5 strategies)\n` +
-    `Strategies : Trend | S&amp;D | SMC | Breakout | MeanRev\n` +
-    `Timeframes : 4H / 1H / 30M / 15M\n` +
-    `Exit       : SL/TP or 2hr forced close`,
+    `Engine     : Daily Bias Strategy (4-stage)\n` +
+    `Stages     : Daily Bias → Trend Check → 1H Confirm → 15M Entry\n` +
+    `Timeframes : D1 / H1 / M15\n` +
+    `FX Session : London + New York + overlap only\n` +
+    `Synthetics : 24/7, no session restriction`,
     botToken, chatId
   );
 }
@@ -68,29 +69,24 @@ export function notifyStartup(balance, mode, label, botToken, chatId) {
 // ── TRADE OPENED ──────────────────────────────────────
 export function notifyTradeOpened({
   symbol, direction, stake, multiplier, limitOrder,
-  strength, contractId, label, botToken, chatId,
-  breakdown, buyCount, sellCount,
+  contractId, label, botToken, chatId,
+  breakdown, dailyBias,
 }) {
   const isBuy  = direction === "MULTUP";
   const icon   = isBuy ? "🟢 BUY" : "🔴 SELL";
-  const votes  = isBuy ? (buyCount ?? 0) : (sellCount ?? 0);
   const slText = limitOrder ? `\nSL         : $${limitOrder.stop_loss}` : "";
   const tpText = limitOrder ? `\nTP         : $${limitOrder.take_profit}` : "";
 
-  // Strategy breakdown block
   const breakdownBlock = breakdown && breakdown.length
-    ? `\n\n<b>Strategy Votes:</b>\n${formatBreakdown(breakdown)}\n` +
-      `  ${"─".repeat(28)}\n` +
-      `  ${isBuy ? "BUY" : "SELL"} votes : ${votes}/5  ${voteBar(votes)}\n` +
-      `  Strength  : ${strength ?? 0}%`
-    : `\nStrength   : ${strength ?? 0}% (${votes}/5 strategies)`;
+    ? `\n\n<b>4-Stage Breakdown:</b>\n${formatBreakdown(breakdown)}`
+    : "";
 
   return sendMessage(
     `${icon} <b>${label || "Bot"} — ${symbol}</b>\n` +
+    `Daily Bias : ${(dailyBias || "—").toUpperCase()}\n` +
     `Contract   : ${contractId}\n` +
     `Stake      : $${stake.toFixed(2)} x${multiplier}` +
     slText + tpText +
-    `\nFailsafe   : ⏱️ Force closes in 2hrs` +
     breakdownBlock,
     botToken, chatId
   );
@@ -134,6 +130,12 @@ export function notifyDailySummary({ balance, dailyPnl, openTrades, consecutiveL
 }
 
 // ── CYCLE SCAN ────────────────────────────────────────
+//
+// r.status: "LOCKED" | "CLOSED" | "FILTERED" | "HOLD" | "BUY" | "SELL"
+// r.dailyBias: "bullish" | "bearish" | "none" (present on HOLD/BUY/SELL)
+// r.breakdown: [{ step, result, reason }] (present on HOLD/BUY/SELL)
+// r.rejectReason: short reason string (present on HOLD)
+//
 export function notifyCycleScan({ balance, openTrades, maxTrades, session, results, label, botToken, chatId }) {
   const lines = [
     `📊 <b>${label || "Bot"} — Scan Cycle</b>`,
@@ -148,7 +150,6 @@ export function notifyCycleScan({ balance, openTrades, maxTrades, session, resul
 
     // ── LOCKED ─────────────────────────────────────────
     if (r.status === "LOCKED") {
-      // countdown comes from portfolio.getCountdown() — do NOT modify it here
       const cd = r.countdown ? r.countdown : "";
       lines.push(`🔒 ${sym} | LOCKED${cd}`);
 
@@ -162,46 +163,24 @@ export function notifyCycleScan({ balance, openTrades, maxTrades, session, resul
 
     // ── HOLD ───────────────────────────────────────────
     } else if (r.status === "HOLD") {
-      // Show strategy vote breakdown for HOLD
-      const buyVotes  = r.breakdown ? r.breakdown.filter(s => s.signal === "BUY").length  : 0;
-      const sellVotes = r.breakdown ? r.breakdown.filter(s => s.signal === "SELL").length : 0;
+      const bias = (r.dailyBias || "none").toUpperCase();
+      const biasIcon = bias === "BULLISH" ? "🟢" : bias === "BEARISH" ? "🔴" : "⬜";
 
-      let holdReason;
-      if (buyVotes > 0 && sellVotes > 0) {
-        holdReason = `⚡ CONFLICT — B:${buyVotes} S:${sellVotes} (signals cancel)`;
-      } else if (buyVotes === 0 && sellVotes === 0) {
-        holdReason = `B:0 S:0 — no setup found`;
-      } else {
-        holdReason = `B:${buyVotes} S:${sellVotes}`;
-      }
+      // Find which stage is currently blocking, for a quick one-line summary
+      const lastStage = r.breakdown && r.breakdown.length
+        ? r.breakdown[r.breakdown.length - 1]
+        : null;
+      const stageLabel = lastStage ? lastStage.step.replace(/^Stage\d /, "") : "—";
+      const shortReason = r.rejectReason || (lastStage ? lastStage.reason : "no data");
 
-      // Which strategies fired (if any)
-      const fired = r.breakdown
-        ? r.breakdown.filter(s => s.signal !== "HOLD").map(s => s.name).join(", ")
-        : "";
-
-      lines.push(
-        `⏸ ${sym} | HOLD | ${holdReason}` +
-        (fired ? ` | [${fired}]` : "")
-      );
+      lines.push(`⏸ ${sym} | HOLD | Bias: ${biasIcon} ${bias} | ${stageLabel}: ${shortReason}`);
 
     // ── BUY / SELL ─────────────────────────────────────
     } else if (r.status === "BUY" || r.status === "SELL") {
-      const icon      = r.status === "BUY" ? "🟢" : "🔴";
-      const votes     = r.breakdown
-        ? r.breakdown.filter(s => s.signal === r.status).length
-        : 0;
-      const strength  = r.strength ?? Math.round((votes / 5) * 100);
+      const icon = r.status === "BUY" ? "🟢" : "🔴";
+      const bias = (r.dailyBias || "—").toUpperCase();
 
-      // Which strategies voted for this direction
-      const voters = r.breakdown
-        ? r.breakdown.filter(s => s.signal === r.status).map(s => s.name).join(", ")
-        : "—";
-
-      lines.push(
-        `${icon} ${sym} | ${r.status} | Votes: ${votes}/5 (${strength}%)\n` +
-        `   Strategies: ${voters}`
-      );
+      lines.push(`${icon} ${sym} | ${r.status} | Daily Bias: ${bias}`);
     }
   }
 
