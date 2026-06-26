@@ -1,234 +1,286 @@
 // ═══════════════════════════════════════════════════════
-//  src/utils/telegram.js
+//  src/trading/trader.js
 //
-//  Notifications fully integrated with the Daily Bias
-//  Strategy (4-stage state machine: D1 -> Trend -> 1H -> 15M)
+//  Multiplier trades (MULTUP/MULTDOWN) with:
+//    - SL/TP as primary exit
+//    - Configurable forced close duration as failsafe
+//      (per-user setting, can be turned OFF entirely)
 // ═══════════════════════════════════════════════════════
 
-const TELEGRAM_BOT_TOKEN = process.env.TELEGRAM_BOT_TOKEN;
-const TELEGRAM_CHAT_ID   = process.env.TELEGRAM_CHAT_ID;
+import { sendMessage, connectWebSocket } from "../utils/ws-client.js";
+import { connectForMode }                from "../auth/deriv-auth.js";
 
-async function sendMessage(text, botToken, chatId) {
-  const token = botToken || TELEGRAM_BOT_TOKEN;
-  const chat  = chatId   || TELEGRAM_CHAT_ID;
+// Timer registry: contractId → timeoutHandle
+const openTimers = new Map();
 
-  if (!token || !chat) return;
-  if (token === "your_telegram_bot_token_here") return;
+// Fallback multipliers per symbol
+const FALLBACK_MULTIPLIERS = {
+  frxEURUSD: 100, frxGBPUSD: 100, frxUSDJPY: 100,
+  frxUSDCHF: 100, frxAUDUSD: 100, frxUSDCAD: 100,
+  frxNZDUSD: 100, frxGBPJPY: 80,
+  frxEURGBP: 80, frxEURCHF: 80, frxEURCAD: 80, frxEURAUD: 80,
+  frxXAUUSD: 60, frxXAGUSD: 60,
+  cryBTCUSD: 40, cryETHUSD: 40,
+  BOOM500: 30,   CRASH500: 30,
+  JD75: 25,      JD100: 25,
+  R_75: 25,      R_100: 20,
+};
+
+const multiplierCache = new Map();
+
+function cacheKey(symbol, direction) {
+  return `${symbol}|${direction}`;
+}
+
+function pickMultiplier(symbol, direction) {
+  const key    = cacheKey(symbol, direction);
+  const cached = multiplierCache.get(key);
+  if (cached) return { value: cached[0], source: "cached" };
+  return { value: FALLBACK_MULTIPLIERS[symbol] ?? 50, source: "fallback" };
+}
+
+function parseMultipliersFromError(errorText) {
+  const match = errorText.match(/(?:Accepts|Allowed)[:\s\[]*[\d,\s\[\]\.]+/i);
+  if (!match) return [];
+  return [...match[0].matchAll(/\d+/g)]
+    .map(m => parseInt(m[0]))
+    .sort((a, b) => a - b);
+}
+
+
+// ═══════════════════════════════════════════════════════
+//  CORE FORCED CLOSE
+// ═══════════════════════════════════════════════════════
+
+async function forceCloseContract({ contractId, symbol, direction, stake, token, appId, mode, label }) {
+  const contractIdStr = String(contractId);
+  let ws = null;
+  try {
+    const wsUrl = await connectForMode(mode, token, appId);
+    ws          = await connectWebSocket(wsUrl);
+
+    const response = await sendMessage(ws, {
+      sell:  parseInt(contractIdStr),
+      price: 0,
+    }, "sell");
+
+    const soldFor  = parseFloat(response.sell.sold_for);
+    const finalPnl = soldFor - stake;
+    const result   = finalPnl >= 0 ? "✅ WON" : "❌ LOST";
+    console.log(`   [${label}] ${result} | ${symbol} | Sold: $${soldFor.toFixed(2)} | PnL: $${finalPnl.toFixed(2)}`);
+
+  } catch (e) {
+    if (e.message.includes("sold") || e.message.includes("closed") || e.message.includes("expired")) {
+      console.log(`   [${label}] Contract ${contractIdStr} already closed by SL/TP before forced close.`);
+    } else {
+      console.error(`   [${label}] Force close error: ${e.message}`);
+    }
+  } finally {
+    if (ws) try { ws.close(); } catch {}
+    openTimers.delete(contractIdStr);
+  }
+}
+
+
+// ═══════════════════════════════════════════════════════
+//  START FORCED CLOSE TIMER
+//
+//  durationMins: number of minutes until forced close.
+//  null, 0, or undefined = OFF — no timer is started at
+//  all, and the trade relies entirely on SL/TP/trailing
+//  stop to close. This is per-user configurable, with NO
+//  minimum or maximum enforced.
+// ═══════════════════════════════════════════════════════
+
+export function startForcedCloseTimer(tradeInfo) {
+  const { contractId, symbol, direction, stake, token, appId, mode, label, durationMins } = tradeInfo;
+  const contractIdStr = String(contractId);
+
+  cancelForcedCloseTimer(contractIdStr);
+
+  // OFF — no forced close timer, SL/TP/trailing stop are the only exits
+  if (!durationMins || durationMins <= 0) {
+    console.log(`⏱️  [${label}] Forced close OFF for contract ${contractIdStr} (${symbol} ${direction}) — SL/TP/trailing only`);
+    return;
+  }
+
+  const durationMs = durationMins * 60 * 1000;
+  const display = durationMins >= 60
+    ? `${Math.floor(durationMins / 60)}h ${durationMins % 60}m`
+    : `${durationMins}m`;
+
+  console.log(`⏱️  [${label}] Forced close timer started for contract ${contractIdStr} (${symbol} ${direction}) — ${display}`);
+
+  const timer = setTimeout(async () => {
+    console.log(`\n⏰ [${label}] Forced close timer expired for ${contractIdStr} (${symbol} ${direction})`);
+    console.log(`   Opening fresh connection to close trade...`);
+    await forceCloseContract({ contractId: contractIdStr, symbol, direction, stake, token, appId, mode, label });
+  }, durationMs);
+
+  openTimers.set(contractIdStr, timer);
+}
+
+
+// ═══════════════════════════════════════════════════════
+//  CANCEL TIMER
+// ═══════════════════════════════════════════════════════
+
+export function cancelForcedCloseTimer(contractId) {
+  const contractIdStr = String(contractId);
+  const timer = openTimers.get(contractIdStr);
+  if (timer) {
+    clearTimeout(timer);
+    openTimers.delete(contractIdStr);
+    console.log(`⏱️  Timer cancelled for contract ${contractIdStr}`);
+  }
+}
+
+export function getActiveTimerCount() {
+  return openTimers.size;
+}
+
+
+// ═══════════════════════════════════════════════════════
+//  PLACE MULTIPLIER TRADE
+// ═══════════════════════════════════════════════════════
+
+export async function placeMultiplierTrade(ws, symbol, direction, stake, multiplier, limitOrder) {
+
+  const proposalPayload = {
+    proposal:          1,
+    contract_type:     direction,
+    underlying_symbol: symbol,
+    amount:            parseFloat(stake),
+    basis:             "stake",
+    currency:          "USD",
+    multiplier,
+  };
+
+  if (limitOrder) {
+    proposalPayload.limit_order = limitOrder;
+    console.log(`   SL: $${limitOrder.stop_loss} | TP: $${limitOrder.take_profit}`);
+  }
+
+  const proposalResp = await sendMessage(ws, proposalPayload, "proposal");
+  const proposalId   = proposalResp.proposal.id;
+  const askPrice     = proposalResp.proposal.ask_price;
+
+  const buyResp    = await sendMessage(ws, { buy: proposalId, price: askPrice }, "buy");
+  const contract   = buyResp.buy;
+  const contractId = contract.contract_id;
+  const buyPrice   = parseFloat(contract.buy_price);
+
+  console.log(`✅ Trade opened | ID: ${contractId} | ${direction} | $${buyPrice.toFixed(2)} | x${multiplier}`);
+
+  return { contractId, buyPrice };
+}
+
+
+// ═══════════════════════════════════════════════════════
+//  UPDATE CONTRACT SL/TP (used by trailing stop)
+// ═══════════════════════════════════════════════════════
+
+export async function updateContractSL(ws, contractId, newStopLoss) {
+  try {
+    await sendMessage(ws, {
+      contract_update: 1,
+      contract_id:     parseInt(contractId),
+      limit_order:     { stop_loss: newStopLoss },
+    }, "contract_update");
+    return true;
+  } catch (e) {
+    console.log(`Could not update SL for ${contractId}: ${e.message}`);
+    return false;
+  }
+}
+
+
+// ═══════════════════════════════════════════════════════
+//  CLOSE TRADE
+// ═══════════════════════════════════════════════════════
+
+export async function closeTrade(ws, contractId) {
+  console.log(`Closing contract ${contractId}...`);
+  try {
+    const response = await sendMessage(ws, {
+      sell:  parseInt(contractId),
+      price: 0,
+    }, "sell");
+    const soldFor = parseFloat(response.sell.sold_for);
+    console.log(`Trade closed | ID: ${contractId} | Sold For: $${soldFor.toFixed(2)}`);
+    cancelForcedCloseTimer(contractId);
+    return soldFor;
+  } catch (e) {
+    console.log(`Close failed for ${contractId}: ${e.message} — already closed by SL/TP.`);
+    cancelForcedCloseTimer(contractId);
+    return null;
+  }
+}
+
+
+// ═══════════════════════════════════════════════════════
+//  PLACE TRADE WITH AUTO-LEARN MULTIPLIER RETRY
+// ═══════════════════════════════════════════════════════
+
+export async function placeTradeWithRetry(ws, symbol, direction, stake, limitOrder) {
+  const key                           = cacheKey(symbol, direction);
+  const { value: multiplier, source } = pickMultiplier(symbol, direction);
+
+  console.log(`${symbol} | Multiplier: ${multiplier} (${source})`);
 
   try {
-    const res = await fetch(`https://api.telegram.org/bot${token}/sendMessage`, {
-      method:  "POST",
-      headers: { "Content-Type": "application/json" },
-      body:    JSON.stringify({ chat_id: chat, text, parse_mode: "HTML" }),
-    });
-    if (!res.ok) console.error("Telegram failed:", await res.text());
+    return await placeMultiplierTrade(ws, symbol, direction, stake, multiplier, limitOrder);
   } catch (e) {
-    console.error("Telegram error:", e.message);
-  }
-}
+    const isMultiplierError = /multiplier|Accepts|Allowed|acceptable range/i.test(e.message);
+    if (!isMultiplierError) throw e;
 
-// ── HELPERS ───────────────────────────────────────────
-
-// breakdown items now look like: { step, result, reason }
-// e.g. { step: "Stage1 DailyBias", result: "BULLISH", reason: "..." }
-function stageIcon(result) {
-  if (!result) return "⬜";
-  const r = result.toUpperCase();
-  if (r.includes("BUY") || r.includes("BULLISH") || r.includes("AGREES") || r.includes("ENTRY MODE")) return "🟢";
-  if (r.includes("SELL") || r.includes("BEARISH") || r.includes("MISMATCH")) return "🔴";
-  if (r.includes("OUTSIDE SESSION")) return "🌙";
-  return "⬜";
-}
-
-/**
- * Format the 4-stage breakdown into readable Telegram lines.
- * breakdown = [{ step, result, reason }]
- */
-function formatBreakdown(breakdown) {
-  if (!breakdown || !breakdown.length) return "";
-  return breakdown
-    .map(s => `  ${stageIcon(s.result)} <b>${s.step}</b>: ${s.result}\n     <i>${s.reason}</i>`)
-    .join("\n");
-}
-
-// ── STARTUP ───────────────────────────────────────────
-export function notifyStartup(balance, mode, label, botToken, chatId) {
-  return sendMessage(
-    `🤖 <b>${label || "Bot"} — Started</b>\n` +
-    `Mode       : ${(mode || "demo").toUpperCase()}\n` +
-    `Balance    : $${balance.toFixed(2)}\n` +
-    `Engine     : Daily Bias Strategy (4-stage)\n` +
-    `Stages     : Daily Bias → Trend Check → 1H Confirm → 15M Entry\n` +
-    `Timeframes : D1 / H1 / M15\n` +
-    `FX Session : London + New York + overlap only\n` +
-    `Synthetics : 24/7, no session restriction`,
-    botToken, chatId
-  );
-}
-
-// ── TRADE OPENED ──────────────────────────────────────
-export function notifyTradeOpened({
-  symbol, direction, stake, multiplier, limitOrder,
-  contractId, label, botToken, chatId,
-  breakdown, dailyBias,
-}) {
-  const isBuy  = direction === "MULTUP";
-  const icon   = isBuy ? "🟢 BUY" : "🔴 SELL";
-  const slText = limitOrder ? `\nSL         : $${limitOrder.stop_loss}` : "";
-  const tpText = limitOrder ? `\nTP         : $${limitOrder.take_profit}` : "";
-
-  const breakdownBlock = breakdown && breakdown.length
-    ? `\n\n<b>4-Stage Breakdown:</b>\n${formatBreakdown(breakdown)}`
-    : "";
-
-  return sendMessage(
-    `${icon} <b>${label || "Bot"} — ${symbol}</b>\n` +
-    `Daily Bias : ${(dailyBias || "—").toUpperCase()}\n` +
-    `Contract   : ${contractId}\n` +
-    `Stake      : $${stake.toFixed(2)} x${multiplier}` +
-    slText + tpText +
-    breakdownBlock,
-    botToken, chatId
-  );
-}
-
-// ── RISK BLOCK ────────────────────────────────────────
-export function notifyRiskBlock(reason, label, botToken, chatId) {
-  return sendMessage(
-    `⚠️ <b>${label || "Bot"} — Risk Block</b>\n${reason}`,
-    botToken, chatId
-  );
-}
-
-// ── RECONNECTING ──────────────────────────────────────
-export function notifyReconnecting(error, label, botToken, chatId) {
-  return sendMessage(
-    `🔌 <b>${label || "Bot"} — Reconnecting...</b>\nReason: ${error}`,
-    botToken, chatId
-  );
-}
-
-// ── MAX TRADES ────────────────────────────────────────
-export function notifyMaxTrades(current, max, label, botToken, chatId) {
-  return sendMessage(
-    `🔒 <b>${label || "Bot"} — Max trades reached</b>\nOpen: ${current}/${max} — waiting for a trade to close`,
-    botToken, chatId
-  );
-}
-
-// ── DAILY SUMMARY ─────────────────────────────────────
-export function notifyDailySummary({ balance, dailyPnl, openTrades, consecutiveLosses, label, botToken, chatId }) {
-  const icon = dailyPnl >= 0 ? "📈" : "📉";
-  return sendMessage(
-    `${icon} <b>${label || "Bot"} — Daily Summary</b>\n` +
-    `Balance    : $${balance.toFixed(2)}\n` +
-    `Daily PnL  : ${dailyPnl >= 0 ? "+" : ""}$${dailyPnl.toFixed(2)}\n` +
-    `Open trades: ${openTrades}\n` +
-    `Loss streak: ${consecutiveLosses}`,
-    botToken, chatId
-  );
-}
-
-// ── CYCLE SCAN ────────────────────────────────────────
-//
-// r.status: "LOCKED" | "CLOSED" | "FILTERED" | "HOLD" | "BUY" | "SELL"
-// r.dailyBias: "bullish" | "bearish" | "none" (present on HOLD/BUY/SELL)
-// r.breakdown: [{ step, result, reason }] (present on HOLD/BUY/SELL)
-// r.rejectReason: short reason string (present on HOLD)
-//
-// Telegram's hard limit is 4096 chars per message. Leave headroom
-// for HTML tags/emoji byte-length quirks.
-const TELEGRAM_MAX_CHARS = 3500;
-
-/**
- * Splits an array of text lines into chunks that each stay
- * under TELEGRAM_MAX_CHARS when joined with newlines, then
- * sends each chunk as a separate message in order.
- */
-async function sendChunked(headerLines, bodyLines, botToken, chatId) {
-  const header = headerLines.join("\n");
-
-  if (!bodyLines.length) {
-    return sendMessage(header, botToken, chatId);
-  }
-
-  const chunks = [];
-  let current = [];
-  let currentLen = header.length + 1;
-
-  for (const line of bodyLines) {
-    const lineLen = line.length + 1;
-    if (currentLen + lineLen > TELEGRAM_MAX_CHARS && current.length > 0) {
-      chunks.push(current);
-      current = [];
-      currentLen = 0;
+    const allowed = parseMultipliersFromError(e.message);
+    if (!allowed.length) {
+      console.log(`${symbol} | Cannot parse multipliers from error`);
+      throw e;
     }
-    current.push(line);
-    currentLen += lineLen;
-  }
-  if (current.length) chunks.push(current);
 
-  for (let i = 0; i < chunks.length; i++) {
-    const partLabel = chunks.length > 1 ? `\n<i>(part ${i + 1}/${chunks.length})</i>` : "";
-    const text = i === 0
-      ? `${header}\n${chunks[i].join("\n")}${partLabel}`
-      : `${chunks[i].join("\n")}${partLabel}`;
-    await sendMessage(text, botToken, chatId);
-  }
-}
+    multiplierCache.set(key, allowed);
+    const m2 = allowed[0];
+    console.log(`${symbol} | Retrying with multiplier ${m2}`);
 
-export function notifyCycleScan({ balance, openTrades, maxTrades, session, results, label, botToken, chatId }) {
-  const headerLines = [
-    `📊 <b>${label || "Bot"} — Scan Cycle</b>`,
-    `Session : ${session}`,
-    `Balance : $${balance.toFixed(2)}`,
-    `Open    : ${openTrades}/${maxTrades}`,
-    ``,
-  ];
-
-  const bodyLines = [];
-
-  for (const r of results) {
-    const sym = r.symbol;
-
-    // ── LOCKED ─────────────────────────────────────────
-    if (r.status === "LOCKED") {
-      const cd = r.countdown ? r.countdown : "";
-      bodyLines.push(`🔒 ${sym} | LOCKED${cd}`);
-
-    // ── MARKET CLOSED ──────────────────────────────────
-    } else if (r.status === "CLOSED") {
-      bodyLines.push(`🕐 ${sym} | MARKET CLOSED`);
-
-    // ── FILTERED ───────────────────────────────────────
-    } else if (r.status === "FILTERED") {
-      bodyLines.push(`⛔ ${sym} | FILTERED — poor volatility`);
-
-    // ── HOLD ───────────────────────────────────────────
-    } else if (r.status === "HOLD") {
-      const bias = (r.dailyBias || "none").toUpperCase();
-      const biasIcon = bias === "BULLISH" ? "🟢" : bias === "BEARISH" ? "🔴" : "⬜";
-
-      // Find which stage is currently blocking, for a quick one-line summary
-      const lastStage = r.breakdown && r.breakdown.length
-        ? r.breakdown[r.breakdown.length - 1]
-        : null;
-      const stageLabel = lastStage ? lastStage.step.replace(/^Stage\d /, "") : "—";
-      // Keep the reason short — long Rule A/B explanations get truncated
-      // here so one symbol's line can't blow up the whole message.
-      let shortReason = r.rejectReason || (lastStage ? lastStage.reason : "no data");
-      if (shortReason.length > 90) shortReason = shortReason.slice(0, 87) + "...";
-
-      bodyLines.push(`⏸ ${sym} | HOLD | Bias: ${biasIcon} ${bias} | ${stageLabel}: ${shortReason}`);
-
-    // ── BUY / SELL ─────────────────────────────────────
-    } else if (r.status === "BUY" || r.status === "SELL") {
-      const icon = r.status === "BUY" ? "🟢" : "🔴";
-      const bias = (r.dailyBias || "—").toUpperCase();
-
-      bodyLines.push(`${icon} ${sym} | ${r.status} | Daily Bias: ${bias}`);
+    try {
+      return await placeMultiplierTrade(ws, symbol, direction, stake, m2, limitOrder);
+    } catch (e2) {
+      const newAllowed = parseMultipliersFromError(e2.message);
+      if (newAllowed.length) {
+        const common = allowed.filter(x => newAllowed.includes(x));
+        if (common.length) {
+          multiplierCache.set(key, common);
+          const m3 = common[0];
+          console.log(`${symbol} | Final retry with multiplier ${m3}`);
+          try {
+            return await placeMultiplierTrade(ws, symbol, direction, stake, m3, limitOrder);
+          } catch (e3) {
+            console.log(`${symbol} | All retries failed: ${e3.message}`);
+            multiplierCache.delete(key);
+            return null;
+          }
+        }
+      }
+      console.log(`${symbol} | Retry failed: ${e2.message}`);
+      return null;
     }
   }
+}
 
-  return sendChunked(headerLines, bodyLines, botToken, chatId);
+
+// ── WATCH CONTRACT ─────────────────────────────────────
+export function watchContract(ws, contractId, onUpdate) {
+  ws.send(JSON.stringify({
+    proposal_open_contract: 1,
+    contract_id: contractId,
+    subscribe:   1,
+  }));
+  ws.on("message", (data) => {
+    const response = JSON.parse(data);
+    if (response.msg_type === "proposal_open_contract") {
+      onUpdate(response.proposal_open_contract);
+    }
+  });
 }
