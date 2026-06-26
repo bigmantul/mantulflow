@@ -42,7 +42,18 @@ export const SIG_HOLD =  0;
 // Mon-Fri (closed Fri ~21:00 UTC -> Sun ~21:00 UTC).
 // Synthetics/crypto trade 24/7 with no weekend close.
 const SYNTHETIC_SYMBOLS = new Set([
-  "BOOM500","CRASH500","JD75","JD100","R_75","R_100",
+  // Boom Indices
+  "BOOM50","BOOM500","BOOM600","BOOM900","BOOM1000",
+  // Crash Indices
+  "CRASH50","CRASH500","CRASH600","CRASH900","CRASH1000",
+  // Jump Indices
+  "JD10","JD25","JD50","JD75","JD100",
+  // Step Indices
+  "STPRNG","STPRNG2","STPRNG3","STPRNG4","STPRNG5",
+  // Volatility Indices
+  "R_10","R_25","R_50","R_75","R_100",
+  // 1Hz Volatility Indices
+  "1HZ10V","1HZ15V","1HZ25V","1HZ50V","1HZ75V","1HZ90V","1HZ100V",
 ]);
 const CRYPTO_SYMBOLS = new Set(["cryBTCUSD","cryETHUSD"]);
 
@@ -206,14 +217,19 @@ function priceAboveSwingLows(df, lookback = 4) {
   const { lows } = getSwings(df, lookback);
   if (!lows.length) return false;
   const price = df[df.length - 2].close;
-  return price > lows[lows.length - 1].price;
+  // Use the LOWEST of the last 2 swing lows rather than just the most
+  // recent one — a minor pullback below the latest swing low doesn't
+  // necessarily break the broader bullish structure.
+  const recentLows = lows.slice(-2).map(l => l.price);
+  return price > Math.min(...recentLows);
 }
 
 function priceBelowSwingHighs(df, lookback = 4) {
   const { highs } = getSwings(df, lookback);
   if (!highs.length) return false;
   const price = df[df.length - 2].close;
-  return price < highs[highs.length - 1].price;
+  const recentHighs = highs.slice(-2).map(h => h.price);
+  return price < Math.max(...recentHighs);
 }
 
 
@@ -377,17 +393,27 @@ function checkTrendAgreement(dailyBias, dfD1) {
   const structure = getStructure(dfD1, 3);
 
   if (dailyBias === "bullish") {
-    const ok = structure === "bullish" && priceAboveSwingLows(dfD1, 3);
-    return ok
-      ? { agrees: true, reason: "Trend agrees — HH/HL structure, price above swing lows" }
-      : { agrees: false, reason: `Daily bias bullish but trend is ${structure} — STOP, no trading today` };
+    const structureOk = structure === "bullish";
+    const priceOk      = priceAboveSwingLows(dfD1, 3);
+    if (structureOk && priceOk) {
+      return { agrees: true, reason: "Trend agrees — HH/HL structure, price above swing lows" };
+    }
+    if (!structureOk) {
+      return { agrees: false, reason: `Daily bias bullish but trend structure is ${structure} — STOP, no trading today` };
+    }
+    return { agrees: false, reason: "Daily bias bullish, trend structure is bullish, but price closed below recent swing lows — STOP, no trading today" };
   }
 
   if (dailyBias === "bearish") {
-    const ok = structure === "bearish" && priceBelowSwingHighs(dfD1, 3);
-    return ok
-      ? { agrees: true, reason: "Trend agrees — LH/LL structure, price below swing highs" }
-      : { agrees: false, reason: `Daily bias bearish but trend is ${structure} — STOP, no trading today` };
+    const structureOk = structure === "bearish";
+    const priceOk       = priceBelowSwingHighs(dfD1, 3);
+    if (structureOk && priceOk) {
+      return { agrees: true, reason: "Trend agrees — LH/LL structure, price below swing highs" };
+    }
+    if (!structureOk) {
+      return { agrees: false, reason: `Daily bias bearish but trend structure is ${structure} — STOP, no trading today` };
+    }
+    return { agrees: false, reason: "Daily bias bearish, trend structure is bearish, but price closed above recent swing highs — STOP, no trading today" };
   }
 
   return { agrees: false, reason: "Unknown bias state" };
