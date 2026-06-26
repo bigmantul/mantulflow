@@ -136,8 +136,49 @@ export function notifyDailySummary({ balance, dailyPnl, openTrades, consecutiveL
 // r.breakdown: [{ step, result, reason }] (present on HOLD/BUY/SELL)
 // r.rejectReason: short reason string (present on HOLD)
 //
+// Telegram's hard limit is 4096 chars per message. Leave headroom
+// for HTML tags/emoji byte-length quirks.
+const TELEGRAM_MAX_CHARS = 3500;
+
+/**
+ * Splits an array of text lines into chunks that each stay
+ * under TELEGRAM_MAX_CHARS when joined with newlines, then
+ * sends each chunk as a separate message in order.
+ */
+async function sendChunked(headerLines, bodyLines, botToken, chatId) {
+  const header = headerLines.join("\n");
+
+  if (!bodyLines.length) {
+    return sendMessage(header, botToken, chatId);
+  }
+
+  const chunks = [];
+  let current = [];
+  let currentLen = header.length + 1;
+
+  for (const line of bodyLines) {
+    const lineLen = line.length + 1;
+    if (currentLen + lineLen > TELEGRAM_MAX_CHARS && current.length > 0) {
+      chunks.push(current);
+      current = [];
+      currentLen = 0;
+    }
+    current.push(line);
+    currentLen += lineLen;
+  }
+  if (current.length) chunks.push(current);
+
+  for (let i = 0; i < chunks.length; i++) {
+    const partLabel = chunks.length > 1 ? `\n<i>(part ${i + 1}/${chunks.length})</i>` : "";
+    const text = i === 0
+      ? `${header}\n${chunks[i].join("\n")}${partLabel}`
+      : `${chunks[i].join("\n")}${partLabel}`;
+    await sendMessage(text, botToken, chatId);
+  }
+}
+
 export function notifyCycleScan({ balance, openTrades, maxTrades, session, results, label, botToken, chatId }) {
-  const lines = [
+  const headerLines = [
     `📊 <b>${label || "Bot"} — Scan Cycle</b>`,
     `Session : ${session}`,
     `Balance : $${balance.toFixed(2)}`,
@@ -145,21 +186,23 @@ export function notifyCycleScan({ balance, openTrades, maxTrades, session, resul
     ``,
   ];
 
+  const bodyLines = [];
+
   for (const r of results) {
     const sym = r.symbol;
 
     // ── LOCKED ─────────────────────────────────────────
     if (r.status === "LOCKED") {
       const cd = r.countdown ? r.countdown : "";
-      lines.push(`🔒 ${sym} | LOCKED${cd}`);
+      bodyLines.push(`🔒 ${sym} | LOCKED${cd}`);
 
     // ── MARKET CLOSED ──────────────────────────────────
     } else if (r.status === "CLOSED") {
-      lines.push(`🕐 ${sym} | MARKET CLOSED`);
+      bodyLines.push(`🕐 ${sym} | MARKET CLOSED`);
 
     // ── FILTERED ───────────────────────────────────────
     } else if (r.status === "FILTERED") {
-      lines.push(`⛔ ${sym} | FILTERED — poor volatility`);
+      bodyLines.push(`⛔ ${sym} | FILTERED — poor volatility`);
 
     // ── HOLD ───────────────────────────────────────────
     } else if (r.status === "HOLD") {
@@ -171,18 +214,21 @@ export function notifyCycleScan({ balance, openTrades, maxTrades, session, resul
         ? r.breakdown[r.breakdown.length - 1]
         : null;
       const stageLabel = lastStage ? lastStage.step.replace(/^Stage\d /, "") : "—";
-      const shortReason = r.rejectReason || (lastStage ? lastStage.reason : "no data");
+      // Keep the reason short — long Rule A/B explanations get truncated
+      // here so one symbol's line can't blow up the whole message.
+      let shortReason = r.rejectReason || (lastStage ? lastStage.reason : "no data");
+      if (shortReason.length > 90) shortReason = shortReason.slice(0, 87) + "...";
 
-      lines.push(`⏸ ${sym} | HOLD | Bias: ${biasIcon} ${bias} | ${stageLabel}: ${shortReason}`);
+      bodyLines.push(`⏸ ${sym} | HOLD | Bias: ${biasIcon} ${bias} | ${stageLabel}: ${shortReason}`);
 
     // ── BUY / SELL ─────────────────────────────────────
     } else if (r.status === "BUY" || r.status === "SELL") {
       const icon = r.status === "BUY" ? "🟢" : "🔴";
       const bias = (r.dailyBias || "—").toUpperCase();
 
-      lines.push(`${icon} ${sym} | ${r.status} | Daily Bias: ${bias}`);
+      bodyLines.push(`${icon} ${sym} | ${r.status} | Daily Bias: ${bias}`);
     }
   }
 
-  return sendMessage(lines.join("\n"), botToken, chatId);
+  return sendChunked(headerLines, bodyLines, botToken, chatId);
 }
