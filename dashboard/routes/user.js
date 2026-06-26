@@ -26,6 +26,7 @@ router.put("/risk", protect, async (req, res) => {
     const {
       stakeAmount, maxOpenTrades, maxDailyLossPct,
       maxConsecutiveLosses, stopLossPct, takeProfitPct,
+      trailingStopPct, contractDurationMins,
     } = req.body;
 
     const user = await User.findById(req.user._id);
@@ -37,6 +38,19 @@ router.put("/risk", protect, async (req, res) => {
     if (maxConsecutiveLosses !== undefined) user.risk.maxConsecutiveLosses = Math.min(Math.max(maxConsecutiveLosses, 1), 10);
     if (stopLossPct          !== undefined) user.risk.stopLossPct          = Math.min(Math.max(stopLossPct, 0.10), 2.0);
     if (takeProfitPct        !== undefined) user.risk.takeProfitPct        = Math.min(Math.max(takeProfitPct, 0.10), 10.0);
+
+    // trailingStopPct: % of stake profit that activates trailing stop.
+    // 0 = disabled. Bounded 0–1.0 (0%–100% of stake) — sane safety range.
+    if (trailingStopPct      !== undefined) user.risk.trailingStopPct      = Math.min(Math.max(parseFloat(trailingStopPct), 0), 1.0);
+
+    // contractDurationMins: forced close duration in minutes.
+    // 0 or null = OFF (no forced close — only SL/TP/trailing closes the trade).
+    // NO minimum or maximum enforced — user's explicit choice.
+    if (contractDurationMins !== undefined) {
+      user.risk.contractDurationMins = contractDurationMins === null || contractDurationMins === ""
+        ? 0
+        : parseFloat(contractDurationMins);
+    }
 
     await user.save();
 

@@ -379,7 +379,7 @@ async function runUserBot(user, stopSignal) {
   const botToken = TELEGRAM_BOT_TOKEN;
   const chatId   = user.telegramChatId;
 
-  await log(userId, `[${label}] Bot starting — Multi-Strategy Engine (5 strategies)`, "info");
+  await log(userId, `[${label}] Bot starting — Daily Bias Strategy (D1 -> H1 -> M15)`, "info");
 
   const rm = new RiskManager({
     riskPct:              user.risk.riskPct,
@@ -475,7 +475,7 @@ async function runUserBot(user, stopSignal) {
         }
 
         const slotsLeft    = rm.maxOpen - currentOpen;
-        await log(userId, `[${label}] ✅ ${slotsLeft} slot(s) available — scanning 5 strategies...`, "info");
+        await log(userId, `[${label}] ✅ ${slotsLeft} slot(s) available — scanning (Daily Bias)...`, "info");
 
         const cycleResults = [];
         let   placed       = 0;

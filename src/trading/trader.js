@@ -3,66 +3,27 @@
 //
 //  Multiplier trades (MULTUP/MULTDOWN) with:
 //    - SL/TP as primary exit
-//    - 2hr forced close as failsafe for EVERY trade
-//
-//  Timer fix:
-//    Each trade gets its own independent timer.
-//    Timer stores user credentials so it can open a
-//    FRESH WebSocket connection when it fires —
-//    not relying on the original ws reference which
-//    may have changed due to reconnection.
+//    - Configurable forced close duration as failsafe
+//      (per-user setting, can be turned OFF entirely)
 // ═══════════════════════════════════════════════════════
 
 import { sendMessage, connectWebSocket } from "../utils/ws-client.js";
 import { connectForMode }                from "../auth/deriv-auth.js";
 
-const TWO_HOURS_MS = 2 * 60 * 60 * 1000; // ← change here to adjust time
-
 // Timer registry: contractId → timeoutHandle
-// Kept so we can cancel if SL/TP closes the trade first
 const openTimers = new Map();
 
 // Fallback multipliers per symbol
 const FALLBACK_MULTIPLIERS = {
-
-  // =========================
-  // FOREX (LOW VOLATILITY)
-  // =========================
   frxEURUSD: 100, frxGBPUSD: 100, frxUSDJPY: 100,
   frxUSDCHF: 100, frxAUDUSD: 100, frxUSDCAD: 100,
   frxNZDUSD: 100, frxGBPJPY: 80,
   frxEURGBP: 80, frxEURCHF: 80, frxEURCAD: 80, frxEURAUD: 80,
-
-  // =========================
-  // METALS (MEDIUM VOLATILITY)
-  // =========================
-  frxXAUUSD: 60,  // Gold
-  frxXAGUSD: 60,  // Silver
-
-  // =========================
-  // CRYPTO (HIGH VOLATILITY)
-  // =========================
-  cryBTCUSD: 40,
-  cryETHUSD: 40,
-
-  // =========================
-  // BOOM & CRASH (HIGH RISK)
-  // =========================
-  BOOM500: 30,
-  CRASH500: 30,
-
-  // =========================
-  // JUMP INDICES (VERY HIGH RISK)
-  // =========================
-  JD75: 25,
-  JD100: 25,
-
-  // =========================
-  // VOLATILITY INDICES (EXTREME RISK)
-  // =========================
-  R_75: 25,
-  R_100: 20,
- 
+  frxXAUUSD: 60, frxXAGUSD: 60,
+  cryBTCUSD: 40, cryETHUSD: 40,
+  BOOM500: 30,   CRASH500: 30,
+  JD75: 25,      JD100: 25,
+  R_75: 25,      R_100: 20,
 };
 
 const multiplierCache = new Map();
@@ -79,89 +40,91 @@ function pickMultiplier(symbol, direction) {
 }
 
 function parseMultipliersFromError(errorText) {
-  const match = errorText.match(/(?:Accepts|Allowed)[:\s\[]*([\d,\s\[\]\.]+)/i);
+  const match = errorText.match(/(?:Accepts|Allowed)[:\s\[]*[\d,\s\[\]\.]+/i);
   if (!match) return [];
-  return [...match[1].matchAll(/\d+/g)]
+  return [...match[0].matchAll(/\d+/g)]
     .map(m => parseInt(m[0]))
     .sort((a, b) => a - b);
 }
 
 
 // ═══════════════════════════════════════════════════════
-//  2HR FORCED CLOSE TIMER
-//  Each trade gets its own timer with its own credentials
-//  so reconnections don't affect other trades
+//  CORE FORCED CLOSE
 // ═══════════════════════════════════════════════════════
 
-/**
- * Start a 2hr forced close timer for a specific contract.
- *
- * Stores the user's credentials so when the timer fires
- * it opens a FRESH connection — completely independent
- * of whatever the main bot loop is doing.
- *
- * @param {object} tradeInfo
- * @param {string} tradeInfo.contractId
- * @param {string} tradeInfo.symbol
- * @param {string} tradeInfo.direction
- * @param {number} tradeInfo.stake
- * @param {string} tradeInfo.token     - user's PAT token
- * @param {string} tradeInfo.appId     - user's App ID
- * @param {string} tradeInfo.mode      - "demo" or "real"
- * @param {string} tradeInfo.label     - user's name for logs
- */
+async function forceCloseContract({ contractId, symbol, direction, stake, token, appId, mode, label }) {
+  const contractIdStr = String(contractId);
+  let ws = null;
+  try {
+    const wsUrl = await connectForMode(mode, token, appId);
+    ws          = await connectWebSocket(wsUrl);
+
+    const response = await sendMessage(ws, {
+      sell:  parseInt(contractIdStr),
+      price: 0,
+    }, "sell");
+
+    const soldFor  = parseFloat(response.sell.sold_for);
+    const finalPnl = soldFor - stake;
+    const result   = finalPnl >= 0 ? "✅ WON" : "❌ LOST";
+    console.log(`   [${label}] ${result} | ${symbol} | Sold: $${soldFor.toFixed(2)} | PnL: $${finalPnl.toFixed(2)}`);
+
+  } catch (e) {
+    if (e.message.includes("sold") || e.message.includes("closed") || e.message.includes("expired")) {
+      console.log(`   [${label}] Contract ${contractIdStr} already closed by SL/TP before forced close.`);
+    } else {
+      console.error(`   [${label}] Force close error: ${e.message}`);
+    }
+  } finally {
+    if (ws) try { ws.close(); } catch {}
+    openTimers.delete(contractIdStr);
+  }
+}
+
+
+// ═══════════════════════════════════════════════════════
+//  START FORCED CLOSE TIMER
+//
+//  durationMins: number of minutes until forced close.
+//  null, 0, or undefined = OFF — no timer is started at
+//  all, and the trade relies entirely on SL/TP/trailing
+//  stop to close. This is per-user configurable, with NO
+//  minimum or maximum enforced.
+// ═══════════════════════════════════════════════════════
+
 export function startForcedCloseTimer(tradeInfo) {
-  const { contractId, symbol, direction, stake, token, appId, mode, label } = tradeInfo;
+  const { contractId, symbol, direction, stake, token, appId, mode, label, durationMins } = tradeInfo;
   const contractIdStr = String(contractId);
 
-  // Cancel existing timer for this contract if any
   cancelForcedCloseTimer(contractIdStr);
 
-  console.log(`⏱️  [${label}] 2hr timer started for contract ${contractIdStr} (${symbol} ${direction})`);
+  // OFF — no forced close timer, SL/TP/trailing stop are the only exits
+  if (!durationMins || durationMins <= 0) {
+    console.log(`⏱️  [${label}] Forced close OFF for contract ${contractIdStr} (${symbol} ${direction}) — SL/TP/trailing only`);
+    return;
+  }
+
+  const durationMs = durationMins * 60 * 1000;
+  const display = durationMins >= 60
+    ? `${Math.floor(durationMins / 60)}h ${durationMins % 60}m`
+    : `${durationMins}m`;
+
+  console.log(`⏱️  [${label}] Forced close timer started for contract ${contractIdStr} (${symbol} ${direction}) — ${display}`);
 
   const timer = setTimeout(async () => {
-    console.log(`\n⏰ [${label}] 2hr timer expired for ${contractIdStr} (${symbol} ${direction})`);
+    console.log(`\n⏰ [${label}] Forced close timer expired for ${contractIdStr} (${symbol} ${direction})`);
     console.log(`   Opening fresh connection to close trade...`);
-
-    let ws = null;
-    try {
-      // Open a FRESH WebSocket — independent of the main bot loop
-      const wsUrl = await connectForMode(mode, token, appId);
-      ws          = await connectWebSocket(wsUrl);
-
-      // Try to sell the contract at market price
-      const response = await sendMessage(ws, {
-        sell:  parseInt(contractIdStr),
-        price: 0,
-      }, "sell");
-
-      const soldFor  = parseFloat(response.sell.sold_for);
-      const finalPnl = soldFor - stake;
-      const result   = finalPnl >= 0 ? "✅ WON" : "❌ LOST";
-
-      console.log(`   [${label}] ${result} | ${symbol} | Sold: $${soldFor.toFixed(2)} | PnL: $${finalPnl.toFixed(2)}`);
-
-    } catch (e) {
-      // Contract already closed by SL/TP — this is normal
-      if (e.message.includes("sold") || e.message.includes("closed") || e.message.includes("expired")) {
-        console.log(`   [${label}] Contract ${contractIdStr} already closed by SL/TP before 2hr timer.`);
-      } else {
-        console.error(`   [${label}] Force close error: ${e.message}`);
-      }
-    } finally {
-      if (ws) ws.close();
-      openTimers.delete(contractIdStr);
-    }
-  }, TWO_HOURS_MS);
+    await forceCloseContract({ contractId: contractIdStr, symbol, direction, stake, token, appId, mode, label });
+  }, durationMs);
 
   openTimers.set(contractIdStr, timer);
 }
 
-/**
- * Cancel the 2hr timer for a contract.
- * Call this when SL/TP closes the trade so the timer
- * doesn't try to close an already-closed contract.
- */
+
+// ═══════════════════════════════════════════════════════
+//  CANCEL TIMER
+// ═══════════════════════════════════════════════════════
+
 export function cancelForcedCloseTimer(contractId) {
   const contractIdStr = String(contractId);
   const timer = openTimers.get(contractIdStr);
@@ -183,7 +146,6 @@ export function getActiveTimerCount() {
 
 export async function placeMultiplierTrade(ws, symbol, direction, stake, multiplier, limitOrder) {
 
-  // Step 1: Get proposal
   const proposalPayload = {
     proposal:          1,
     contract_type:     direction,
@@ -196,14 +158,13 @@ export async function placeMultiplierTrade(ws, symbol, direction, stake, multipl
 
   if (limitOrder) {
     proposalPayload.limit_order = limitOrder;
-    console.log(`   SL: $${limitOrder.stop_loss} | TP: $${limitOrder.take_profit} | Failsafe: 2hr forced close`);
+    console.log(`   SL: $${limitOrder.stop_loss} | TP: $${limitOrder.take_profit}`);
   }
 
   const proposalResp = await sendMessage(ws, proposalPayload, "proposal");
   const proposalId   = proposalResp.proposal.id;
   const askPrice     = proposalResp.proposal.ask_price;
 
-  // Step 2: Buy
   const buyResp    = await sendMessage(ws, { buy: proposalId, price: askPrice }, "buy");
   const contract   = buyResp.buy;
   const contractId = contract.contract_id;
@@ -212,6 +173,25 @@ export async function placeMultiplierTrade(ws, symbol, direction, stake, multipl
   console.log(`✅ Trade opened | ID: ${contractId} | ${direction} | $${buyPrice.toFixed(2)} | x${multiplier}`);
 
   return { contractId, buyPrice };
+}
+
+
+// ═══════════════════════════════════════════════════════
+//  UPDATE CONTRACT SL/TP (used by trailing stop)
+// ═══════════════════════════════════════════════════════
+
+export async function updateContractSL(ws, contractId, newStopLoss) {
+  try {
+    await sendMessage(ws, {
+      contract_update: 1,
+      contract_id:     parseInt(contractId),
+      limit_order:     { stop_loss: newStopLoss },
+    }, "contract_update");
+    return true;
+  } catch (e) {
+    console.log(`Could not update SL for ${contractId}: ${e.message}`);
+    return false;
+  }
 }
 
 
@@ -243,12 +223,11 @@ export async function closeTrade(ws, contractId) {
 // ═══════════════════════════════════════════════════════
 
 export async function placeTradeWithRetry(ws, symbol, direction, stake, limitOrder) {
-  const key                          = cacheKey(symbol, direction);
+  const key                           = cacheKey(symbol, direction);
   const { value: multiplier, source } = pickMultiplier(symbol, direction);
 
   console.log(`${symbol} | Multiplier: ${multiplier} (${source})`);
 
-  // Attempt 1
   try {
     return await placeMultiplierTrade(ws, symbol, direction, stake, multiplier, limitOrder);
   } catch (e) {
@@ -265,7 +244,6 @@ export async function placeTradeWithRetry(ws, symbol, direction, stake, limitOrd
     const m2 = allowed[0];
     console.log(`${symbol} | Retrying with multiplier ${m2}`);
 
-    // Attempt 2
     try {
       return await placeMultiplierTrade(ws, symbol, direction, stake, m2, limitOrder);
     } catch (e2) {
