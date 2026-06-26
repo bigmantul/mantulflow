@@ -65,8 +65,6 @@ const SYMBOLS = [
 
   // Boom Indices
   "BOOM50",
-  "BOOM150",
-  "BOOM300",
   "BOOM500",
   "BOOM600",
   "BOOM900",
@@ -74,8 +72,6 @@ const SYMBOLS = [
 
   // Crash Indices
   "CRASH50",
-  "CRASH150",
-  "CRASH300",
   "CRASH500",
   "CRASH600",
   "CRASH900",
@@ -106,7 +102,6 @@ const SYMBOLS = [
   "1HZ10V",
   "1HZ15V",
   "1HZ25V",
-  "1HZ30",
   "1HZ50V",
   "1HZ75V",
   "1HZ90V",
