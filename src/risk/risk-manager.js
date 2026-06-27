@@ -9,7 +9,7 @@ export class RiskManager {
 
   constructor({
     riskPct              = 10,
-    maxDailyLossPct      = 30,
+    maxDailyLossPct      = 0.30,
     maxOpenTrades        = 3,
     maxConsecutiveLosses = 3,
   } = {}) {
@@ -49,7 +49,7 @@ export class RiskManager {
 
   calculateStake(currentBalance) {
     this._checkDailyReset();
-    const rawStake = currentBalance * this.riskPct;
+    const rawStake = currentBalance * (this.riskPct / 100);
     const stake    = Math.min(
       Math.max(rawStake, RiskManager.MIN_STAKE),
       RiskManager.MAX_STAKE_CAP
