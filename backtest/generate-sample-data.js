@@ -70,8 +70,30 @@ function aggregate(m15, barsPer) {
   return out;
 }
 
-export function generateSample({ symbol = "frxEURUSD", days = 365, startPrice = 1.1000, seed = 42 } = {}) {
-  const { m15 } = generateM15(symbol, days, startPrice, seed);
+function hashSeed(str) {
+  let h = 0;
+  for (let i = 0; i < str.length; i++) h = (h * 31 + str.charCodeAt(i)) >>> 0;
+  return h || 1;
+}
+
+function guessStartPrice(symbol) {
+  if (symbol.startsWith("frxXAUUSD")) return 2350;
+  if (symbol.startsWith("frxXAGUSD")) return 28;
+  if (symbol.includes("JPY")) return 148;
+  if (symbol.startsWith("frx")) return 1.08;
+  if (symbol === "cryBTCUSD") return 64000;
+  if (symbol === "cryETHUSD") return 3200;
+  if (/^(BOOM|CRASH)/.test(symbol)) return 9500;
+  if (/^JD/.test(symbol)) return 1500;
+  if (/^STPRNG/.test(symbol)) return 5500;
+  if (/^R_|^1HZ/.test(symbol)) return 850;
+  return 100;
+}
+
+export function generateSample({ symbol = "frxEURUSD", days = 365, startPrice, seed } = {}) {
+  const resolvedPrice = startPrice ?? guessStartPrice(symbol);
+  const resolvedSeed = seed ?? hashSeed(symbol);
+  const { m15 } = generateM15(symbol, days, resolvedPrice, resolvedSeed);
   const h1 = aggregate(m15, 4);   // 4 * 15m = 1h
   const d1 = aggregate(m15, 96);  // 96 * 15m = 1 day
   return { symbol, d1, h1, m15 };

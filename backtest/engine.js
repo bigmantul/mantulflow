@@ -40,18 +40,26 @@ import { RiskManager, StopLossTakeProfit } from "../src/risk/risk-manager.js";
 import { FALLBACK_MULTIPLIERS } from "../src/trading/multipliers.js";
 
 // ── Date mocking (scoped to a single call) ─────────────
+// Class is defined ONCE; only the captured `simulatedMs` box
+// changes per call. Recreating a class expression on every
+// bar (tens of thousands of times per symbol) was the actual
+// bottleneck in earlier profiling — this version just flips
+// a mutable box instead.
+const _clockBox = { ms: Date.now() };
+const RealDate = Date;
+class FakeDate extends RealDate {
+  constructor(...args) {
+    if (args.length === 0) return new RealDate(_clockBox.ms);
+    return new RealDate(...args);
+  }
+  static now() {
+    return _clockBox.ms;
+  }
+}
+
 function withFakeNow(simulatedMs, fn) {
-  const RealDate = Date;
-  // eslint-disable-next-line no-global-assign
-  globalThis.Date = class extends RealDate {
-    constructor(...args) {
-      if (args.length === 0) return new RealDate(simulatedMs);
-      return new RealDate(...args);
-    }
-    static now() {
-      return simulatedMs;
-    }
-  };
+  _clockBox.ms = simulatedMs;
+  globalThis.Date = FakeDate;
   try {
     return fn();
   } finally {
@@ -71,19 +79,20 @@ function makeClosedCounter(arr) {
   };
 }
 
-// Builds the array shape collectSignals() expects: real
-// closed bars [0..n) plus ONE placeholder appended so that
+// Appends ONE placeholder bar in-place (no array copy) so that
 // `len-2` lands on the last real closed bar (mirrors how
 // production always has a still-forming candle as the last
 // array element). The placeholder's OHLC values are never
 // read by any function in signals.js — only bar[len-2] and
 // earlier are read — but we still avoid leaking the *next*
 // real bar into the array, since that would be lookahead.
-function withPlaceholder(closedBars) {
-  if (closedBars.length === 0) return closedBars;
-  const last = closedBars[closedBars.length - 1];
+// Caller is responsible for popping it back off afterward.
+function pushPlaceholder(arr) {
+  if (arr.length === 0) return null;
+  const last = arr[arr.length - 1];
   const placeholder = { ...last, epoch: last.epoch + 1, open: last.close, high: last.close, low: last.close, close: last.close };
-  return [...closedBars, placeholder];
+  arr.push(placeholder);
+  return placeholder;
 }
 
 function pnlAtPrice({ entryPrice, stake, multiplier, direction }, price) {
@@ -172,6 +181,19 @@ export function runBacktest(opts) {
   const trades = [];
   let openPosition = null; // single position at a time for this symbol
 
+  // Incrementally-grown "closed bars so far" arrays. Avoids the O(n^2)
+  // cost of re-slicing the full history on every bar — instead we push
+  // newly-closed bars on as we go (O(1) amortized) and temporarily push
+  // a placeholder for the duration of each collectSignals() call, then
+  // pop it back off. None of signals.js's helpers mutate their input
+  // arrays (verified — only .slice()/.map()/index reads), so reusing
+  // one growing array across iterations is safe.
+  const growingD1 = [];
+  const growingH1 = [];
+  const growingM15 = [];
+  let d1Pushed = 0;
+  let h1Pushed = 0;
+
   for (let i = minStartIndex; i < m15.length; i++) {
     const bar = m15[i];
 
@@ -205,15 +227,28 @@ export function runBacktest(opts) {
       }
     }
 
-    // ── Build the closed-bar windows visible at this point in time, no lookahead ──
-    const d1Closed = withPlaceholder(d1.slice(0, d1Counter(bar.epoch)));
-    const h1Closed = withPlaceholder(h1.slice(0, h1Counter(bar.epoch)));
-    const m15Closed = withPlaceholder(m15.slice(0, i + 1));
+    // ── Grow the closed-bar windows incrementally, no lookahead ──
+    const targetD1Count = d1Counter(bar.epoch);
+    while (d1Pushed < targetD1Count) growingD1.push(d1[d1Pushed++]);
+    const targetH1Count = h1Counter(bar.epoch);
+    while (h1Pushed < targetH1Count) growingH1.push(h1[h1Pushed++]);
+    growingM15.push(bar);
 
-    if (d1Closed.length < 4 || h1Closed.length < 20) return; // not enough warm-up yet
+    if (growingD1.length < 4 || growingH1.length < 20) return; // not enough warm-up yet
 
-    const tf = { d1: d1Closed, h1: h1Closed, m15: m15Closed, symbol };
-    const result = collectSignals(tf);
+    const d1Placeholder = pushPlaceholder(growingD1);
+    const h1Placeholder = pushPlaceholder(growingH1);
+    const m15Placeholder = pushPlaceholder(growingM15);
+
+    let result;
+    try {
+      const tf = { d1: growingD1, h1: growingH1, m15: growingM15, symbol };
+      result = collectSignals(tf);
+    } finally {
+      growingD1.pop();
+      growingH1.pop();
+      growingM15.pop();
+    }
 
     // ── Symbol lock: while a position is open on this symbol, ignore new signals ──
     if (openPosition) return;
