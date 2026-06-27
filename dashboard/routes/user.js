@@ -39,8 +39,9 @@ router.put("/risk", protect, async (req, res) => {
     if (stopLossPct          !== undefined) user.risk.stopLossPct          = Math.min(Math.max(stopLossPct, 0.10), 2.0);
     if (takeProfitPct        !== undefined) user.risk.takeProfitPct        = Math.min(Math.max(takeProfitPct, 0.10), 10.0);
 
-    // trailingStopPct: % of stake profit that activates trailing stop.
-    // 0 = disabled. Bounded 0–1.0 (0%–100% of stake) — sane safety range.
+    // trailingStopPct: % of TAKE PROFIT that must be reached before
+    // trailing stop activates. Default 0.5 (50%). 0 = disabled.
+    // Bounded 0-1.0 (0%-100% of TP) — sane safety range.
     if (trailingStopPct      !== undefined) user.risk.trailingStopPct      = Math.min(Math.max(parseFloat(trailingStopPct), 0), 1.0);
 
     // contractDurationMins: forced close duration in minutes.
