@@ -42,7 +42,18 @@ export const SIG_HOLD =  0;
 // Mon-Fri (closed Fri ~21:00 UTC -> Sun ~21:00 UTC).
 // Synthetics/crypto trade 24/7 with no weekend close.
 const SYNTHETIC_SYMBOLS = new Set([
-  "BOOM500","CRASH500","JD75","JD100","R_75","R_100",
+  // Boom Indices
+  "BOOM50","BOOM500","BOOM600","BOOM900","BOOM1000",
+  // Crash Indices
+  "CRASH50","CRASH500","CRASH600","CRASH900","CRASH1000",
+  // Jump Indices
+  "JD10","JD25","JD50","JD75","JD100",
+  // Step Indices
+  "STPRNG","STPRNG2","STPRNG3","STPRNG4","STPRNG5",
+  // Volatility Indices
+  "R_10","R_25","R_50","R_75","R_100",
+  // 1Hz Volatility Indices
+  "1HZ10V","1HZ15V","1HZ25V","1HZ50V","1HZ75V","1HZ90V","1HZ100V",
 ]);
 const CRYPTO_SYMBOLS = new Set(["cryBTCUSD","cryETHUSD"]);
 
@@ -118,6 +129,7 @@ function getState(symbol) {
       dailyBiasDate: null,
       dailyBias:     "none",
       dailyBiasMeta: null,
+      invalidatedReason: null, // set when Stage 2 invalidates a valid Stage 1 bias
       entryMode:     false,
       entryModeReason: "",
       pendingEntry:  null,   // { direction, signalEpoch } or null
@@ -205,74 +217,169 @@ function priceAboveSwingLows(df, lookback = 4) {
   const { lows } = getSwings(df, lookback);
   if (!lows.length) return false;
   const price = df[df.length - 2].close;
-  return price > lows[lows.length - 1].price;
+  // Use the LOWEST of the last 2 swing lows rather than just the most
+  // recent one — a minor pullback below the latest swing low doesn't
+  // necessarily break the broader bullish structure.
+  const recentLows = lows.slice(-2).map(l => l.price);
+  return price > Math.min(...recentLows);
 }
 
 function priceBelowSwingHighs(df, lookback = 4) {
   const { highs } = getSwings(df, lookback);
   if (!highs.length) return false;
   const price = df[df.length - 2].close;
-  return price < highs[highs.length - 1].price;
+  const recentHighs = highs.slice(-2).map(h => h.price);
+  return price < Math.max(...recentHighs);
 }
 
 
 // ═══════════════════════════════════════════════════════
 //  STAGE 1 — DAILY BIAS (computed once per trading day)
+//
+//  NEW RULES (replaces prev-high/low break requirement):
+//
+//  Step 1 — Validate each daily candle independently:
+//    Valid Bullish: Close > Open, closes near high,
+//                   Upper Wick% = (High-Close)/(Close-Open) <= 40%
+//    Valid Bearish: Close < Open, closes near low,
+//                   Lower Wick% = (Close-Low)/(Open-Close) <= 40%
+//
+//  Step 2 — Count consecutive valid candles of the SAME
+//    direction. ANY invalid candle (wrong direction, not
+//    closing near high/low, or wick% > 40%) resets count
+//    to zero. Never count an invalid candle toward the
+//    3-candle confirmation.
+//
+//  Step 3 — Determine bias:
+//    Bearish if (Rule A: yesterday valid bearish AND
+//                completes 3 consecutive valid bearish)
+//             OR (Rule B: HTF trend is bearish)
+//    Bullish if (Rule A: yesterday valid bullish AND
+//                completes 3 consecutive valid bullish)
+//             OR (Rule B: HTF trend is bullish)
+//    Otherwise: HOLD (no bias)
 // ═══════════════════════════════════════════════════════
 
-function computeDailyBias(dfD1) {
-  if (!dfD1 || dfD1.length < 3) {
-    return { bias: "none", reason: "Insufficient daily data" };
-  }
-
-  const candle  = dfD1[dfD1.length - 2]; // last fully CLOSED daily candle
-  const prevDay = dfD1[dfD1.length - 3];
-
-  const body  = candleBody(candle);
+/**
+ * Validates a single daily candle per the new rules.
+ * Returns { valid: bool, direction: "bullish"|"bearish"|null, wickPct, reason }
+ */
+function validateDailyCandle(candle) {
+  const body  = candle.close - candle.open; // signed: positive = bullish, negative = bearish
   const range = candleRange(candle);
+
   if (range === 0 || body === 0) {
-    return { bias: "none", reason: "Zero-range/zero-body daily candle" };
+    return { valid: false, direction: null, reason: "Zero-range/zero-body candle" };
   }
 
-  const isBullishCandle = candle.close > candle.open;
-  const isBearishCandle = candle.close < candle.open;
-
-  const upperWick = candle.high - Math.max(candle.open, candle.close);
-  const lowerWick = Math.min(candle.open, candle.close) - candle.low;
-  const upperWickPct = upperWick / body;
-  const lowerWickPct = lowerWick / body;
-
-  if (isBullishCandle) {
-    const breaksPrevHigh = candle.high > prevDay.high;
+  if (body > 0) {
+    // Bullish candle
+    const bodyAbs        = body; // Close - Open
+    const upperWick       = candle.high - candle.close;
+    const upperWickPct    = (upperWick / bodyAbs) * 100;
     const closesNearHigh  = (candle.high - candle.close) / range <= 0.25;
-    const wickValid        = upperWickPct <= 0.40;
+    const wickValid        = upperWickPct <= 40;
 
-    if (breaksPrevHigh && closesNearHigh && wickValid) {
-      return {
-        bias: "bullish",
-        reason: `Bullish daily: broke prev high, closed near high, upper wick ${(upperWickPct*100).toFixed(0)}% of body`,
-      };
+    if (closesNearHigh && wickValid) {
+      return { valid: true, direction: "bullish", wickPct: upperWickPct, reason: `Valid bullish — upper wick ${upperWickPct.toFixed(0)}% of body` };
     }
-    if (!wickValid) return { bias: "none", reason: `Rejected — upper wick ${(upperWickPct*100).toFixed(0)}% of body (>40%)` };
-    return { bias: "none", reason: "Bullish candle but doesn't break prev high / close near high" };
+    if (!wickValid) return { valid: false, direction: "bullish", wickPct: upperWickPct, reason: `Invalid bullish — upper wick ${upperWickPct.toFixed(0)}% of body (>40%)` };
+    return { valid: false, direction: "bullish", wickPct: upperWickPct, reason: "Invalid bullish — doesn't close near high" };
   }
 
-  if (isBearishCandle) {
-    const breaksPrevLow  = candle.low < prevDay.low;
-    const closesNearLow   = (candle.close - candle.low) / range <= 0.25;
-    const wickValid         = lowerWickPct <= 0.40;
+  if (body < 0) {
+    // Bearish candle
+    const bodyAbs        = -body; // Open - Close
+    const lowerWick       = candle.close - candle.low;
+    const lowerWickPct    = (lowerWick / bodyAbs) * 100;
+    const closesNearLow    = (candle.close - candle.low) / range <= 0.25;
+    const wickValid         = lowerWickPct <= 40;
 
-    if (breaksPrevLow && closesNearLow && wickValid) {
-      return {
-        bias: "bearish",
-        reason: `Bearish daily: broke prev low, closed near low, lower wick ${(lowerWickPct*100).toFixed(0)}% of body`,
-      };
+    if (closesNearLow && wickValid) {
+      return { valid: true, direction: "bearish", wickPct: lowerWickPct, reason: `Valid bearish — lower wick ${lowerWickPct.toFixed(0)}% of body` };
     }
-    if (!wickValid) return { bias: "none", reason: `Rejected — lower wick ${(lowerWickPct*100).toFixed(0)}% of body (>40%)` };
-    return { bias: "none", reason: "Bearish candle but doesn't break prev low / close near low" };
+    if (!wickValid) return { valid: false, direction: "bearish", wickPct: lowerWickPct, reason: `Invalid bearish — lower wick ${lowerWickPct.toFixed(0)}% of body (>40%)` };
+    return { valid: false, direction: "bearish", wickPct: lowerWickPct, reason: "Invalid bearish — doesn't close near low" };
   }
 
-  return { bias: "none", reason: "Doji / indecisive daily candle" };
+  return { valid: false, direction: null, reason: "Doji / indecisive candle" };
+}
+
+/**
+ * Counts consecutive valid candles of the SAME direction,
+ * walking backward from the most recent CLOSED daily candle.
+ * Stops counting the moment any candle is invalid OR flips
+ * direction — per spec, invalid candles must never count
+ * toward the 3-candle confirmation and reset the sequence.
+ *
+ * Returns { count, direction, yesterdayValid, yesterdayDirection }
+ */
+function countConsecutiveValidCandles(dfD1) {
+  // dfD1[len-1] is today's still-forming candle (excluded);
+  // dfD1[len-2] is "yesterday" — the most recent CLOSED candle.
+  const len = dfD1.length;
+  if (len < 3) return { count: 0, direction: null, yesterdayValid: false, yesterdayDirection: null };
+
+  const yesterday = validateDailyCandle(dfD1[len - 2]);
+
+  if (!yesterday.valid) {
+    // Yesterday itself is invalid — sequence count is 0 regardless
+    // of what came before (an invalid candle resets the count).
+    return { count: 0, direction: null, yesterdayValid: false, yesterdayDirection: yesterday.direction, yesterdayReason: yesterday.reason };
+  }
+
+  // Walk backward counting consecutive valid candles of the SAME direction as yesterday
+  let count = 0;
+  const direction = yesterday.direction;
+  for (let i = len - 2; i >= 0; i--) {
+    const v = validateDailyCandle(dfD1[i]);
+    if (v.valid && v.direction === direction) {
+      count++;
+    } else {
+      break; // any invalid candle OR direction flip stops the count
+    }
+  }
+
+  return { count, direction, yesterdayValid: true, yesterdayDirection: direction, yesterdayReason: yesterday.reason };
+}
+
+function computeDailyBias(dfD1) {
+  if (!dfD1 || dfD1.length < 5) {
+    return { bias: "none", reason: "Insufficient daily data (need at least 5 candles)" };
+  }
+
+  const seq = countConsecutiveValidCandles(dfD1);
+  const htfTrend = getStructure(dfD1, 3); // "bullish" | "bearish" | "neutral"
+
+  // ── Rule A check: yesterday valid + completes 3 consecutive ──
+  const ruleA_bearish = seq.yesterdayValid && seq.yesterdayDirection === "bearish" && seq.count >= 3;
+  const ruleA_bullish = seq.yesterdayValid && seq.yesterdayDirection === "bullish" && seq.count >= 3;
+
+  // ── Rule B check: higher-timeframe trend ──
+  const ruleB_bearish = htfTrend === "bearish";
+  const ruleB_bullish = htfTrend === "bullish";
+
+  // ── BEARISH BIAS ──
+  if (ruleA_bearish || ruleB_bearish) {
+    const parts = [];
+    if (ruleA_bearish) parts.push(`Rule A: ${seq.count} consecutive valid bearish candles`);
+    if (ruleB_bearish) parts.push(`Rule B: HTF trend is bearish (LH/LL)`);
+    return { bias: "bearish", reason: `Bearish bias — ${parts.join(" + ")}` };
+  }
+
+  // ── BULLISH BIAS ──
+  if (ruleA_bullish || ruleB_bullish) {
+    const parts = [];
+    if (ruleA_bullish) parts.push(`Rule A: ${seq.count} consecutive valid bullish candles`);
+    if (ruleB_bullish) parts.push(`Rule B: HTF trend is bullish (HH/HL)`);
+    return { bias: "bullish", reason: `Bullish bias — ${parts.join(" + ")}` };
+  }
+
+  // ── NEITHER RULE SATISFIED → HOLD ──
+  const yReason = seq.yesterdayValid
+    ? `yesterday valid ${seq.yesterdayDirection} but only ${seq.count} consecutive (need 3)`
+    : (seq.yesterdayReason || "yesterday's candle is invalid");
+  return { bias: "none", reason: `HOLD — Rule A failed (${yReason}), Rule B failed (HTF trend is ${htfTrend})` };
 }
 
 
@@ -286,17 +393,27 @@ function checkTrendAgreement(dailyBias, dfD1) {
   const structure = getStructure(dfD1, 3);
 
   if (dailyBias === "bullish") {
-    const ok = structure === "bullish" && priceAboveSwingLows(dfD1, 3);
-    return ok
-      ? { agrees: true, reason: "Trend agrees — HH/HL structure, price above swing lows" }
-      : { agrees: false, reason: `Daily bias bullish but trend is ${structure} — STOP, no trading today` };
+    const structureOk = structure === "bullish";
+    const priceOk      = priceAboveSwingLows(dfD1, 3);
+    if (structureOk && priceOk) {
+      return { agrees: true, reason: "Trend agrees — HH/HL structure, price above swing lows" };
+    }
+    if (!structureOk) {
+      return { agrees: false, reason: `Daily bias bullish but trend structure is ${structure} — STOP, no trading today` };
+    }
+    return { agrees: false, reason: "Daily bias bullish, trend structure is bullish, but price closed below recent swing lows — STOP, no trading today" };
   }
 
   if (dailyBias === "bearish") {
-    const ok = structure === "bearish" && priceBelowSwingHighs(dfD1, 3);
-    return ok
-      ? { agrees: true, reason: "Trend agrees — LH/LL structure, price below swing highs" }
-      : { agrees: false, reason: `Daily bias bearish but trend is ${structure} — STOP, no trading today` };
+    const structureOk = structure === "bearish";
+    const priceOk       = priceBelowSwingHighs(dfD1, 3);
+    if (structureOk && priceOk) {
+      return { agrees: true, reason: "Trend agrees — LH/LL structure, price below swing highs" };
+    }
+    if (!structureOk) {
+      return { agrees: false, reason: `Daily bias bearish but trend structure is ${structure} — STOP, no trading today` };
+    }
+    return { agrees: false, reason: "Daily bias bearish, trend structure is bearish, but price closed above recent swing highs — STOP, no trading today" };
   }
 
   return { agrees: false, reason: "Unknown bias state" };
@@ -515,10 +632,20 @@ export function collectSignals(tf) {
     state.dailyBiasDate = today;
     state.dailyBias      = result.bias;
     state.dailyBiasMeta  = result.reason;
+    state.invalidatedReason = null; // fresh day, no invalidation yet
     // New trading day — reset entry mode / pending entry from yesterday
     state.entryMode      = false;
     state.entryModeReason = "";
     state.pendingEntry    = null;
+  }
+
+  // If a PRIOR cycle today invalidated the bias (Stage 2 mismatch),
+  // state.dailyBias is "none" but state.dailyBiasMeta still holds the
+  // original Stage 1 SUCCESS message. Show the actual invalidation
+  // reason instead, so the log doesn't contradict itself.
+  if (state.dailyBias === "none" && state.invalidatedReason) {
+    breakdown.push({ step: "Stage1 DailyBias", result: "NONE (invalidated)", reason: state.invalidatedReason });
+    return { signal: SIG_HOLD, breakdown, reason: `NO TRADE TODAY — ${state.invalidatedReason}`, dailyBias: "none" };
   }
 
   breakdown.push({ step: "Stage1 DailyBias", result: state.dailyBias.toUpperCase(), reason: state.dailyBiasMeta });
@@ -532,8 +659,11 @@ export function collectSignals(tf) {
   breakdown.push({ step: "Stage2 TrendCheck", result: trendCheck.agrees ? "AGREES" : "MISMATCH", reason: trendCheck.reason });
 
   if (!trendCheck.agrees) {
-    // Per spec — mismatch invalidates today's bias entirely
+    // Per spec — mismatch invalidates today's bias entirely.
+    // Store the REAL reason separately so future cycles today
+    // show this instead of the stale Stage 1 success message.
     state.dailyBias = "none";
+    state.invalidatedReason = trendCheck.reason;
     return { signal: SIG_HOLD, breakdown, reason: `NO TRADE TODAY — ${trendCheck.reason}`, dailyBias: "none" };
   }
 
