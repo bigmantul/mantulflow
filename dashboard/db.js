@@ -29,10 +29,11 @@ const userSchema = new mongoose.Schema({
     maxConsecutiveLosses: { type: Number, default: 3 },
     stopLossPct:          { type: Number, default: 0.80 },
     takeProfitPct:        { type: Number, default: 2.00 },
-    // Trailing stop: % of stake profit that activates trailing (e.g. 0.005 = 0.5%)
-    // Once activated, SL moves to breakeven, then keeps trailing by the same %
-    // step as price continues moving in favor. 0 = disabled.
-    trailingStopPct:      { type: Number, default: 0 },
+    // Trailing stop: % of TAKE PROFIT that must be reached before
+    // trailing activates (e.g. 0.5 = 50% of TP). Once activated, SL
+    // moves to breakeven, then trails behind peak profit by the same
+    // percentage step. Default 50%. Set to 0 to disable entirely.
+    trailingStopPct:      { type: Number, default: 0.5 },
     // Forced contract close duration in minutes. null = OFF (no forced close,
     // only SL/TP/trailing stop closes the trade). No min/max enforced.
     contractDurationMins: { type: Number, default: 120 },
