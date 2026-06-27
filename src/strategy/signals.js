@@ -359,20 +359,34 @@ function computeDailyBias(dfD1) {
   const ruleB_bearish = htfTrend === "bearish";
   const ruleB_bullish = htfTrend === "bullish";
 
-  // ── BEARISH BIAS ──
-  if (ruleA_bearish || ruleB_bearish) {
-    const parts = [];
-    if (ruleA_bearish) parts.push(`Rule A: ${seq.count} consecutive valid bearish candles`);
-    if (ruleB_bearish) parts.push(`Rule B: HTF trend is bearish (LH/LL)`);
+  // ── PRECEDENCE: Rule A (fresh 3-candle reversal) OVERRIDES Rule B
+  // (broader HTF trend) whenever they conflict. A confirmed 3-candle
+  // reversal is more current evidence than the older trend reading —
+  // e.g. trend is bullish, but the last 3 daily candles are all valid
+  // bearish -> bias flips to bearish. Same logic in reverse.
+
+  // ── Rule A fired bearish: bias is bearish, regardless of Rule B ──
+  if (ruleA_bearish) {
+    const parts = [`Rule A: ${seq.count} consecutive valid bearish candles (overrides HTF trend if conflicting)`];
+    if (ruleB_bearish) parts.push(`Rule B also agrees: HTF trend is bearish (LH/LL)`);
+    else if (ruleB_bullish) parts.push(`NOTE: HTF trend is bullish (HH/HL) but Rule A reversal takes precedence`);
     return { bias: "bearish", reason: `Bearish bias — ${parts.join(" + ")}` };
   }
 
-  // ── BULLISH BIAS ──
-  if (ruleA_bullish || ruleB_bullish) {
-    const parts = [];
-    if (ruleA_bullish) parts.push(`Rule A: ${seq.count} consecutive valid bullish candles`);
-    if (ruleB_bullish) parts.push(`Rule B: HTF trend is bullish (HH/HL)`);
+  // ── Rule A fired bullish: bias is bullish, regardless of Rule B ──
+  if (ruleA_bullish) {
+    const parts = [`Rule A: ${seq.count} consecutive valid bullish candles (overrides HTF trend if conflicting)`];
+    if (ruleB_bullish) parts.push(`Rule B also agrees: HTF trend is bullish (HH/HL)`);
+    else if (ruleB_bearish) parts.push(`NOTE: HTF trend is bearish (LH/LL) but Rule A reversal takes precedence`);
     return { bias: "bullish", reason: `Bullish bias — ${parts.join(" + ")}` };
+  }
+
+  // ── Rule A did NOT fire either direction — fall back to Rule B alone ──
+  if (ruleB_bearish) {
+    return { bias: "bearish", reason: `Bearish bias — Rule B: HTF trend is bearish (LH/LL)` };
+  }
+  if (ruleB_bullish) {
+    return { bias: "bullish", reason: `Bullish bias — Rule B: HTF trend is bullish (HH/HL)` };
   }
 
   // ── NEITHER RULE SATISFIED → HOLD ──

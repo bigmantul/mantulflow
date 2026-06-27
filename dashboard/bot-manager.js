@@ -212,7 +212,13 @@ async function monitorOpenTrades(ws, userId, label, portfolio, dfD1Cache, riskSe
     const openTrades = await Trade.find({ userId, status: "open" });
     if (!openTrades.length) return;
 
-    const trailingStopPct = riskSettings?.trailingStopPct ?? 0; // 0 = disabled
+    // trailingStopPct = % of TAKE PROFIT that must be reached to activate
+    // trailing stop. Defaults to 0.5 (50%) if the user has never set this
+    // (covers both brand-new users AND existing users whose DB document
+    // predates this field / still has the old stake-based default of 0).
+    const trailingStopPct = (riskSettings?.trailingStopPct === undefined || riskSettings?.trailingStopPct === null)
+      ? 0.5
+      : riskSettings.trailingStopPct;
 
     for (const trade of openTrades) {
       try {
@@ -254,44 +260,40 @@ async function monitorOpenTrades(ws, userId, label, portfolio, dfD1Cache, riskSe
           }
         }
 
-        // ── EXIT 2: TRAILING STOP (user-configurable) ───
-        // trailingStopPct = % of STAKE profit that activates trailing.
-        // e.g. stake=$1, trailingStopPct=0.005 (0.5%) → activates at $0.005 profit.
+        // ── EXIT 2: TRAILING STOP (user-configurable, default 50% of TP) ───
+        // trailingStopPct = % of TAKE PROFIT that must be reached before
+        // trailing activates. e.g. TP=$2.00, trailingStopPct=0.5 (50%)
+        // → activates once profit reaches $1.00.
         //
         // Behavior once active:
         //   1. First activation: SL moves to BREAKEVEN (stop_loss = stake,
         //      meaning the contract closes at $0 profit/loss if reversed)
         //   2. As profit keeps climbing past breakeven, SL keeps trailing
-        //      UP by the same percentage step — i.e. every time profit
-        //      advances by another trailingStopPct-of-stake increment,
-        //      the SL moves up to lock in that new floor.
+        //      UP — every time profit advances by another
+        //      (takeProfit * trailingStopPct) step, SL moves up to lock
+        //      in that new floor, always sitting one step behind peak profit.
         //
         // 0 / disabled → skip entirely, no behavior change for those users.
-        if (trailingStopPct > 0) {
-          const activationThreshold = stake * trailingStopPct;
+        const takeProfit = trade.takeProfit;
+
+        if (trailingStopPct > 0 && takeProfit > 0) {
+          const stepSize           = takeProfit * trailingStopPct;
+          const activationThreshold = stepSize; // first step = activation point
 
           if (currentPnl >= activationThreshold) {
             // peak profit seen so far for this trade (persisted in DB)
             const priorPeak = trade.trailingPeakPnl || 0;
 
             if (currentPnl > priorPeak) {
-              // New peak reached — calculate new trailing SL level.
-              // SL floor = stake + (peak profit rounded down to the nearest
-              // trailingStopPct-of-stake step) — this is what makes it
-              // "follow by the same percentage" rather than jump straight
-              // to current profit.
-              const stepSize   = stake * trailingStopPct;
-              const stepsBanked = Math.floor(currentPnl / stepSize);
+              // Calculate new trailing SL level — SL floor = stake (breakeven)
+              // + locked profit so far, where locked profit is the highest
+              // FULL step reached, MINUS one step, so the trail always sits
+              // one step BEHIND current profit (true trailing behavior).
+              const stepsBanked  = Math.floor(currentPnl / stepSize);
               const lockedProfit = stepsBanked * stepSize;
 
-              // New SL = stake (breakeven) + locked profit so far.
-              // On FIRST activation, stepsBanked >= 1, so lockedProfit >= stepSize,
-              // meaning SL moves to breakeven-or-better immediately.
-              const newStopLoss = parseFloat((stake + lockedProfit - stepSize).toFixed(4));
-              // ^ subtract one step so the trail always sits one step BEHIND
-              //   current profit (true trailing behavior), with breakeven
-              //   (stake + 0) as the floor on first activation.
-              const flooredStopLoss = Math.max(newStopLoss, stake);
+              const newStopLoss     = parseFloat((stake + lockedProfit - stepSize).toFixed(4));
+              const flooredStopLoss = Math.max(newStopLoss, stake); // never below breakeven
 
               if (!trade.trailingActive || flooredStopLoss > (trade.stopLoss ?? 0)) {
                 try {
@@ -310,7 +312,8 @@ async function monitorOpenTrades(ws, userId, label, portfolio, dfD1Cache, riskSe
                   const lockedPnl = flooredStopLoss - stake;
                   await log(userId,
                     `[${label}] ${trade.symbol} | 📈 Trailing stop ${trade.trailingActive ? "updated" : "ACTIVATED"} | ` +
-                    `Profit: $${currentPnl.toFixed(4)} | New SL locks in: $${lockedPnl.toFixed(4)}`,
+                    `Profit: $${currentPnl.toFixed(4)} (${((currentPnl / takeProfit) * 100).toFixed(0)}% of TP) | ` +
+                    `New SL locks in: $${lockedPnl.toFixed(4)}`,
                     "trade"
                   );
                 } catch (updateErr) {
@@ -629,6 +632,14 @@ async function runUserBot(user, stopSignal) {
             rm.tradeOpened();
             placed++;
 
+            // Default to 120 mins (2hrs) if the user has never set this
+            // (covers existing user documents created before this field
+            // existed in the schema). Explicit 0 from the dashboard toggle
+            // still correctly means OFF.
+            const durationMins = (freshUser.risk.contractDurationMins === undefined || freshUser.risk.contractDurationMins === null)
+              ? 120
+              : freshUser.risk.contractDurationMins;
+
             startForcedCloseTimer({
               contractId,
               symbol,
@@ -638,7 +649,7 @@ async function runUserBot(user, stopSignal) {
               appId:        user.derivAppId,
               mode:         user.derivMode,
               label,
-              durationMins: freshUser.risk.contractDurationMins, // 0/null = OFF, no min/max
+              durationMins, // 0 = OFF (explicit user choice), no min/max otherwise
             });
 
             try {

@@ -547,9 +547,9 @@ tr:hover td{background:rgba(56,189,248,0.03)}
         <div class="field"><label>STOP LOSS %</label><input type="number" id="rSL" min="10" max="200" placeholder="80"/></div>
         <div class="field"><label>TAKE PROFIT %</label><input type="number" id="rTP" min="10" max="1000" placeholder="200"/></div>
         <div class="field">
-          <label>TRAILING STOP % (0 = off)</label>
-          <input type="number" id="rTrail" min="0" max="100" step="0.1" placeholder="0.5"/>
-          <small style="opacity:0.6;font-size:0.75em;">% of stake profit to activate</small>
+          <label>TRAILING STOP % OF TP (0 = off)</label>
+          <input type="number" id="rTrail" min="0" max="100" step="1" placeholder="50"/>
+          <small style="opacity:0.6;font-size:0.75em;">% of take profit to activate (default 50%)</small>
         </div>
         <div class="field">
           <label>
@@ -1111,7 +1111,7 @@ async function init(){
   document.getElementById("rMax").value=r.maxOpenTrades||3;
   document.getElementById("rSL").value=Math.round((r.stopLossPct||.8)*100);
   document.getElementById("rTP").value=Math.round((r.takeProfitPct||2)*100);
-  document.getElementById("rTrail").value=((r.trailingStopPct||0)*100).toFixed(1);
+  document.getElementById("rTrail").value=(r.trailingStopPct===undefined||r.trailingStopPct===null ? 50 : (r.trailingStopPct*100)).toFixed(1);
   const durationOff = !r.contractDurationMins || r.contractDurationMins <= 0;
   document.getElementById("rDurationOff").checked = durationOff;
   document.getElementById("rDuration").disabled = durationOff;
