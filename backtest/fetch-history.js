@@ -47,13 +47,21 @@ function normalize(rawCandles) {
 
 /**
  * Pages backward in time until `targetCount` bars are collected
- * or Deriv stops returning new (older) data.
+ * or Deriv stops returning new (older) data. IMPORTANT: a batch
+ * smaller than DERIV_MAX_COUNT does NOT mean history is exhausted
+ * — it just means that particular request was capped. We keep
+ * paging until a request comes back genuinely empty or yields zero
+ * NEW (non-duplicate) bars, which are the only reliable signals
+ * that we've hit the actual floor of available history.
  */
 async function fetchDeepHistory(ws, symbol, granularity, targetCount) {
   let allBars = [];
   let end = "latest";
+  let requestNum = 0;
+  const MAX_REQUESTS = 200; // safety valve against runaway loops
 
-  while (allBars.length < targetCount) {
+  while (allBars.length < targetCount && requestNum < MAX_REQUESTS) {
+    requestNum++;
     const resp = await sendMessage(ws, {
       ticks_history: symbol,
       style: "candles",
@@ -63,12 +71,18 @@ async function fetchDeepHistory(ws, symbol, granularity, targetCount) {
     }, "candles");
 
     const batch = normalize(resp?.candles ?? []);
-    if (!batch.length) break;
+    if (!batch.length) {
+      console.log(`  ${symbol} g=${granularity}: no more data returned — stopping at ${allBars.length} bars`);
+      break;
+    }
 
     // Dedup against what we already have, then prepend (batch is older data)
     const seen = new Set(allBars.map(b => b.epoch));
     const fresh = batch.filter(b => !seen.has(b.epoch));
-    if (!fresh.length) break; // no progress — stop to avoid infinite loop
+    if (!fresh.length) {
+      console.log(`  ${symbol} g=${granularity}: no new bars in latest page — reached actual history floor at ${allBars.length} bars`);
+      break;
+    }
 
     allBars = [...fresh, ...allBars].sort((a, b) => a.epoch - b.epoch);
 
@@ -76,8 +90,6 @@ async function fetchDeepHistory(ws, symbol, granularity, targetCount) {
     end = oldestEpoch - granularity; // page further back next request
 
     console.log(`  ${symbol} g=${granularity}: ${allBars.length}/${targetCount} bars (oldest: ${new Date(allBars[0].epoch * 1000).toISOString().slice(0, 10)})`);
-
-    if (batch.length < DERIV_MAX_COUNT) break; // Deriv has no more history before this
   }
 
   // Trim to the most recent `targetCount` if we overshot
