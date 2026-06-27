@@ -382,18 +382,43 @@ function computeDailyBias(dfD1) {
   }
 
   // ── Rule A did NOT fire either direction — fall back to Rule B alone ──
+  // NEW REQUIREMENT: before Rule B can validate a bias on its own, the
+  // LAST daily candle (yesterday) must independently be a VALID candle
+  // matching that same trend direction. If trend is bullish, yesterday
+  // must be a valid bullish candle. If trend is bearish, yesterday must
+  // be a valid bearish candle. If yesterday is invalid, or valid but in
+  // the WRONG direction (e.g. trend bullish but yesterday is a valid
+  // bearish candle that just didn't complete 3 in a row for Rule A),
+  // Rule B does NOT validate and bias falls through to HOLD.
+  // (Rule A's precedence above is completely untouched by this.)
   if (ruleB_bearish) {
-    return { bias: "bearish", reason: `Bearish bias — Rule B: HTF trend is bearish (LH/LL)` };
+    const yesterdayConfirms = seq.yesterdayValid && seq.yesterdayDirection === "bearish";
+    if (yesterdayConfirms) {
+      return { bias: "bearish", reason: `Bearish bias — Rule B: HTF trend is bearish (LH/LL) + yesterday is a valid bearish candle` };
+    }
+    // Rule B trend exists but yesterday doesn't confirm it — fall through to HOLD below
   }
   if (ruleB_bullish) {
-    return { bias: "bullish", reason: `Bullish bias — Rule B: HTF trend is bullish (HH/HL)` };
+    const yesterdayConfirms = seq.yesterdayValid && seq.yesterdayDirection === "bullish";
+    if (yesterdayConfirms) {
+      return { bias: "bullish", reason: `Bullish bias — Rule B: HTF trend is bullish (HH/HL) + yesterday is a valid bullish candle` };
+    }
+    // Rule B trend exists but yesterday doesn't confirm it — fall through to HOLD below
   }
 
   // ── NEITHER RULE SATISFIED → HOLD ──
   const yReason = seq.yesterdayValid
     ? `yesterday valid ${seq.yesterdayDirection} but only ${seq.count} consecutive (need 3)`
     : (seq.yesterdayReason || "yesterday's candle is invalid");
-  return { bias: "none", reason: `HOLD — Rule A failed (${yReason}), Rule B failed (HTF trend is ${htfTrend})` };
+
+  let ruleBReason;
+  if (ruleB_bearish || ruleB_bullish) {
+    ruleBReason = `HTF trend is ${htfTrend} but yesterday's candle doesn't confirm it (${yReason})`;
+  } else {
+    ruleBReason = `HTF trend is ${htfTrend}`;
+  }
+
+  return { bias: "none", reason: `HOLD — Rule A failed (${yReason}), Rule B failed (${ruleBReason})` };
 }
 
 
