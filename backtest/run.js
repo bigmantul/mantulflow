@@ -3,6 +3,14 @@
 //
 //  Usage:
 //    node backtest/run.js <SYMBOL> [--equity=1000] [--risk=0.02]
+//      [--trailing=0.5] [--duration=120]
+//
+//  --trailing : trailingStopPct, fraction of TP that activates
+//               trailing stop (default 0.5 = 50%, matches db.js
+//               default). Set to 0 to disable.
+//  --duration : contractDurationMins, forced close timer in
+//               minutes (default 120 = 2hrs, matches db.js
+//               default). Set to 0 to disable.
 //
 //  Reads backtest/data/<SYMBOL>.json (produced either by
 //  fetch-history.js against real Deriv data, or by
@@ -26,7 +34,7 @@ function parseArgs(argv) {
 const { symbol, opts } = parseArgs(process.argv);
 
 if (!symbol) {
-  console.error("Usage: node backtest/run.js <SYMBOL> [--equity=1000] [--risk=0.02]");
+  console.error("Usage: node backtest/run.js <SYMBOL> [--equity=1000] [--risk=0.02] [--trailing=0.5] [--duration=120]");
   process.exit(1);
 }
 
@@ -50,6 +58,8 @@ const result = runBacktest({
   riskPct: opts.risk ?? 0.02,
   slPct: opts.sl ?? 0.80,
   tpPct: opts.tp ?? 2.00,
+  trailingStopPct: opts.trailing ?? 0.5,
+  contractDurationMins: opts.duration ?? 120,
 });
 
 console.log(`\n══════════════════════════════════════════`);
