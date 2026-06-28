@@ -260,6 +260,36 @@ async function monitorOpenTrades(ws, userId, label, portfolio, dfD1Cache, riskSe
           }
         }
 
+        // ── EXIT 1B: NO-PROFIT 20-MINUTE CUTOFF ──────────
+        // If a trade has been open for >= 20 minutes and is NOT in
+        // profit (currentPnl <= 0), close it immediately and lock
+        // the symbol for a 2-hour cooldown (separate from the normal
+        // unlock-on-close — this is a deliberate "stay away" period
+        // after a stalled/losing setup, even though no trade remains
+        // open on this symbol).
+        const openedAtMs   = new Date(trade.openedAt).getTime();
+        const minutesOpen  = (Date.now() - openedAtMs) / 60000;
+
+        if (minutesOpen >= 20 && currentPnl <= 0) {
+          await log(userId,
+            `[${label}] ${trade.symbol} | ⏱️ EXIT: ${minutesOpen.toFixed(0)}min open, no profit ($${currentPnl.toFixed(2)}) — closing + 2hr cooldown lock`,
+            "trade"
+          );
+          const soldFor = await closeTrade(ws, trade.contractId);
+          if (soldFor !== null) {
+            const finalPnl = soldFor - stake;
+            await Trade.findByIdAndUpdate(trade._id, {
+              status:   finalPnl >= 0 ? "won" : "lost",
+              pnl:      finalPnl,
+              closedAt: new Date(),
+            });
+            portfolio.unlockSymbol(trade.symbol);
+            portfolio.lockSymbolForCooldown(trade.symbol, 2 * 60 * 60 * 1000); // 2hr cooldown
+            await log(userId, `[${label}] ${trade.symbol} | Closed $${soldFor.toFixed(2)} | PnL: $${finalPnl.toFixed(2)} | 🧊 locked 2hrs`, "trade");
+          }
+          continue;
+        }
+
         // ── EXIT 2: TRAILING STOP (user-configurable, default 50% of TP) ───
         // trailingStopPct = % of TAKE PROFIT that must be reached before
         // trailing activates. e.g. TP=$2.00, trailingStopPct=0.5 (50%)
@@ -343,6 +373,7 @@ function createPortfolio(userId) {
   let activeSymbols = new Set();
   let openCount     = 0;
   const timers      = new Map();
+  const cooldowns   = new Map(); // symbol -> expiresAt (ms epoch) — survives sync()
 
   return {
     getActiveSymbols: () => activeSymbols,
@@ -363,6 +394,32 @@ function createPortfolio(userId) {
       activeSymbols.delete(sym);
       timers.delete(sym);
       openCount = Math.max(0, openCount - 1);
+    },
+
+    // Locks a symbol for a fixed cooldown window WITHOUT requiring an
+    // open trade — used by the 20-min-no-profit auto-close rule so the
+    // symbol stays off-limits for 2hrs after that specific exit, even
+    // though no trade is open anymore. Independent of timers/activeSymbols
+    // so portfolio.sync() rebuilding those from Deriv/DB doesn't erase it.
+    lockSymbolForCooldown(sym, durationMs = 2 * 60 * 60 * 1000) {
+      cooldowns.set(sym, Date.now() + durationMs);
+    },
+
+    isOnCooldown(sym) {
+      const expiresAt = cooldowns.get(sym);
+      if (!expiresAt) return false;
+      if (Date.now() >= expiresAt) { cooldowns.delete(sym); return false; }
+      return true;
+    },
+
+    getCooldownRemaining(sym) {
+      const expiresAt = cooldowns.get(sym);
+      if (!expiresAt) return "";
+      const remaining = expiresAt - Date.now();
+      if (remaining <= 0) return "";
+      const hrs  = Math.floor(remaining / 3600000);
+      const mins = Math.floor((remaining % 3600000) / 60000);
+      return hrs > 0 ? ` | 🧊 cooldown ${hrs}h ${mins}m` : ` | 🧊 cooldown ${mins}m`;
     },
 
     getCountdown(sym) {
@@ -537,6 +594,13 @@ async function runUserBot(user, stopSignal) {
             const countdown = portfolio.getCountdown(symbol);
             await log(userId, `[${label}] ${symbol} | 🔒 LOCKED${countdown}`, "info");
             cycleResults.push({ symbol, status: "LOCKED", countdown });
+            continue;
+          }
+
+          if (portfolio.isOnCooldown(symbol)) {
+            const cooldownText = portfolio.getCooldownRemaining(symbol);
+            await log(userId, `[${label}] ${symbol} | 🧊 COOLDOWN${cooldownText}`, "info");
+            cycleResults.push({ symbol, status: "LOCKED", countdown: cooldownText });
             continue;
           }
 
