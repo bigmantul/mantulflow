@@ -1,27 +1,24 @@
 // ═══════════════════════════════════════════════════════
 //  src/strategy/signals.js
 //
-//  DAILY BIAS STRATEGY — 4-STAGE STATE MACHINE
+//  DAILY BIAS STRATEGY — 3-STAGE STATE MACHINE
 //
 //  Stage 1: Daily Bias — computed ONCE per trading day,
 //           after the previous daily candle closes.
-//  Stage 2: Trend Check — daily bias must agree with the
-//           broader trend structure. Mismatch = no trading
-//           today.
-//  Stage 3: 1H Confirmation — NOT an entry signal. Once
+//  Stage 2: 1H Confirmation — NOT an entry signal. Once
 //           enough bullish/bearish evidence appears on 1H,
 //           the symbol enters "Entry Mode" (permission to
 //           look for an entry granted, but no trade yet).
-//  Stage 4: 15M Entry — only checked once in Entry Mode.
+//  Stage 3: 15M Entry — only checked once in Entry Mode.
 //           Waits for a pullback + rejection/engulfing
 //           candle to CLOSE, then enters at the OPEN of
 //           the NEXT 15M candle (not immediately on close).
 //
-//  SESSION RULE: Daily bias (Stage 1/2) is computed any
-//  time of day. Stage 3 + Stage 4 only run for FX/Metals
-//  during London, New York, or the overlap — outside that
-//  window the bias is held and re-checked next session.
-//  Synthetics/Crypto run all 4 stages 24/7, unaffected.
+//  SESSION RULE: Daily bias (Stage 1) is computed any time
+//  of day. Stage 2 + Stage 3 only run for FX/Metals during
+//  London, New York, or the overlap — outside that window
+//  the bias is held and re-checked next session.
+//  Synthetics/Crypto run all 3 stages 24/7, unaffected.
 //
 //  STATE PERSISTENCE: Entry Mode must persist across scan
 //  cycles per symbol (the bot "remembers" that 1H gave
@@ -129,7 +126,6 @@ function getState(symbol) {
       dailyBiasDate: null,
       dailyBias:     "none",
       dailyBiasMeta: null,
-      invalidatedReason: null, // set when Stage 2 invalidates a valid Stage 1 bias
       entryMode:     false,
       entryModeReason: "",
       pendingEntry:  null,   // { direction, signalEpoch } or null
@@ -201,35 +197,24 @@ function getSwings(df, lookback = 5) {
   return { highs, lows };
 }
 
-function getStructure(df, lookback = 4) {
-  const { highs, lows } = getSwings(df, lookback);
-  if (highs.length < 2 || lows.length < 2) return "neutral";
-  const hh = highs[highs.length - 1].price > highs[highs.length - 2].price;
-  const hl = lows[lows.length - 1].price   > lows[lows.length - 2].price;
-  const lh = highs[highs.length - 1].price < highs[highs.length - 2].price;
-  const ll = lows[lows.length - 1].price   < lows[lows.length - 2].price;
-  if (hh && hl) return "bullish";
-  if (lh && ll) return "bearish";
+// Simple majority-vote HTF trend: among the most recent `lookback`
+// CLOSED daily candles (excludes the still-forming last array
+// element), count bullish (close > open) vs bearish (close < open).
+// Whichever has more candles determines the trend; a tie is neutral.
+// Used by Rule B in computeDailyBias.
+function getSimpleTrend(dfD1, lookback = 30) {
+  if (!dfD1 || dfD1.length < 2) return "neutral";
+  const closed = dfD1.slice(0, dfD1.length - 1); // exclude still-forming candle
+  const recent = closed.slice(-lookback);
+  let bullishCount = 0, bearishCount = 0;
+  for (const c of recent) {
+    if (c.close > c.open) bullishCount++;
+    else if (c.close < c.open) bearishCount++;
+    // c.close === c.open (doji) counts toward neither
+  }
+  if (bearishCount > bullishCount) return "bearish";
+  if (bullishCount > bearishCount) return "bullish";
   return "neutral";
-}
-
-function priceAboveSwingLows(df, lookback = 4) {
-  const { lows } = getSwings(df, lookback);
-  if (!lows.length) return false;
-  const price = df[df.length - 2].close;
-  // Use the LOWEST of the last 2 swing lows rather than just the most
-  // recent one — a minor pullback below the latest swing low doesn't
-  // necessarily break the broader bullish structure.
-  const recentLows = lows.slice(-2).map(l => l.price);
-  return price > Math.min(...recentLows);
-}
-
-function priceBelowSwingHighs(df, lookback = 4) {
-  const { highs } = getSwings(df, lookback);
-  if (!highs.length) return false;
-  const price = df[df.length - 2].close;
-  const recentHighs = highs.slice(-2).map(h => h.price);
-  return price < Math.max(...recentHighs);
 }
 
 
@@ -355,7 +340,7 @@ function computeDailyBias(dfD1) {
   }
 
   const seq = countConsecutiveValidCandles(dfD1);
-  const htfTrend = getStructure(dfD1, 3); // "bullish" | "bearish" | "neutral"
+  const htfTrend = getSimpleTrend(dfD1, 30); // "bullish" | "bearish" | "neutral" — majority of last 30 closed candles
 
   // ── Rule A check: yesterday valid + completes 3 consecutive ──
   const ruleA_bearish = seq.yesterdayValid && seq.yesterdayDirection === "bearish" && seq.count >= 3;
@@ -374,28 +359,29 @@ function computeDailyBias(dfD1) {
   // ── Rule A fired bearish: bias is bearish, regardless of Rule B ──
   if (ruleA_bearish) {
     const parts = [`Rule A: ${seq.count} consecutive valid bearish candles (overrides HTF trend if conflicting)`];
-    if (ruleB_bearish) parts.push(`Rule B also agrees: HTF trend is bearish (LH/LL)`);
-    else if (ruleB_bullish) parts.push(`NOTE: HTF trend is bullish (HH/HL) but Rule A reversal takes precedence`);
+    if (ruleB_bearish) parts.push(`Rule B also agrees: more bearish than bullish candles in last 30`);
+    else if (ruleB_bullish) parts.push(`NOTE: more bullish than bearish candles in last 30, but Rule A reversal takes precedence`);
     return { bias: "bearish", reason: `Bearish bias — ${parts.join(" + ")}` };
   }
 
   // ── Rule A fired bullish: bias is bullish, regardless of Rule B ──
   if (ruleA_bullish) {
     const parts = [`Rule A: ${seq.count} consecutive valid bullish candles (overrides HTF trend if conflicting)`];
-    if (ruleB_bullish) parts.push(`Rule B also agrees: HTF trend is bullish (HH/HL)`);
-    else if (ruleB_bearish) parts.push(`NOTE: HTF trend is bearish (LH/LL) but Rule A reversal takes precedence`);
+    if (ruleB_bullish) parts.push(`Rule B also agrees: more bullish than bearish candles in last 30`);
+    else if (ruleB_bearish) parts.push(`NOTE: more bearish than bullish candles in last 30, but Rule A reversal takes precedence`);
     return { bias: "bullish", reason: `Bullish bias — ${parts.join(" + ")}` };
   }
 
   // ── Rule A did NOT fire either direction — fall back to Rule B alone ──
   // GATE: Rule B only counts as a real bias if the LAST daily candle
   // (yesterday) is itself a VALID candle matching that trend direction.
-  // e.g. HTF trend is bullish (HH/HL) but yesterday's candle is invalid
-  // OR is a valid bearish candle -> Rule B does NOT fire. This does not
-  // touch Rule A's override priority above — only gates the fallback.
+  // e.g. trend is bullish (more bullish than bearish in last 30) but
+  // yesterday's candle is invalid OR is a valid bearish candle -> Rule B
+  // does NOT fire. This does not touch Rule A's override priority above
+  // — only gates the fallback.
   if (ruleB_bearish) {
     if (seq.yesterdayValid && seq.yesterdayDirection === "bearish") {
-      return { bias: "bearish", reason: `Bearish bias — Rule B: HTF trend is bearish (LH/LL), confirmed by valid bearish daily candle` };
+      return { bias: "bearish", reason: `Bearish bias — Rule B: more bearish than bullish candles in last 30, confirmed by valid bearish daily candle` };
     }
     const why = !seq.yesterdayValid
       ? (seq.yesterdayReason || "yesterday's candle is invalid")
@@ -404,7 +390,7 @@ function computeDailyBias(dfD1) {
   }
   if (ruleB_bullish) {
     if (seq.yesterdayValid && seq.yesterdayDirection === "bullish") {
-      return { bias: "bullish", reason: `Bullish bias — Rule B: HTF trend is bullish (HH/HL), confirmed by valid bullish daily candle` };
+      return { bias: "bullish", reason: `Bullish bias — Rule B: more bullish than bearish candles in last 30, confirmed by valid bullish daily candle` };
     }
     const why = !seq.yesterdayValid
       ? (seq.yesterdayReason || "yesterday's candle is invalid")
@@ -417,43 +403,6 @@ function computeDailyBias(dfD1) {
     ? `yesterday valid ${seq.yesterdayDirection} but only ${seq.count} consecutive (need 3)`
     : (seq.yesterdayReason || "yesterday's candle is invalid");
   return { bias: "none", reason: `HOLD — Rule A failed (${yReason}), Rule B failed (HTF trend is ${htfTrend})` };
-}
-
-
-// ═══════════════════════════════════════════════════════
-//  STAGE 2 — TREND CHECK
-// ═══════════════════════════════════════════════════════
-
-function checkTrendAgreement(dailyBias, dfD1) {
-  if (dailyBias === "none") return { agrees: false, reason: "No daily bias" };
-
-  const structure = getStructure(dfD1, 3);
-
-  if (dailyBias === "bullish") {
-    const structureOk = structure === "bullish";
-    const priceOk      = priceAboveSwingLows(dfD1, 3);
-    if (structureOk && priceOk) {
-      return { agrees: true, reason: "Trend agrees — HH/HL structure, price above swing lows" };
-    }
-    if (!structureOk) {
-      return { agrees: false, reason: `Daily bias bullish but trend structure is ${structure} — STOP, no trading today` };
-    }
-    return { agrees: false, reason: "Daily bias bullish, trend structure is bullish, but price closed below recent swing lows — STOP, no trading today" };
-  }
-
-  if (dailyBias === "bearish") {
-    const structureOk = structure === "bearish";
-    const priceOk       = priceBelowSwingHighs(dfD1, 3);
-    if (structureOk && priceOk) {
-      return { agrees: true, reason: "Trend agrees — LH/LL structure, price below swing highs" };
-    }
-    if (!structureOk) {
-      return { agrees: false, reason: `Daily bias bearish but trend structure is ${structure} — STOP, no trading today` };
-    }
-    return { agrees: false, reason: "Daily bias bearish, trend structure is bearish, but price closed above recent swing highs — STOP, no trading today" };
-  }
-
-  return { agrees: false, reason: "Unknown bias state" };
 }
 
 
@@ -528,7 +477,7 @@ function hasConsecutiveLowerHighs(df, lookback = 3, count = 2) {
 
 
 // ═══════════════════════════════════════════════════════
-//  STAGE 3 — 1H CONFIRMATION → ENTRY MODE
+//  STAGE 2 — 1H CONFIRMATION → ENTRY MODE
 //
 //  NOT an entry trigger. Just grants permission to look
 //  for a 15M entry. Checked every cycle while NOT already
@@ -585,7 +534,7 @@ function check1hConfirmation(dailyBias, dfH1) {
 
 
 // ═══════════════════════════════════════════════════════
-//  STAGE 4 — 15M ENTRY
+//  STAGE 3 — 15M ENTRY
 //
 //  Only evaluated while in Entry Mode. Waits for a
 //  pullback + rejection/engulfing candle to CLOSE.
@@ -669,39 +618,16 @@ export function collectSignals(tf) {
     state.dailyBiasDate = today;
     state.dailyBias      = result.bias;
     state.dailyBiasMeta  = result.reason;
-    state.invalidatedReason = null; // fresh day, no invalidation yet
     // New trading day — reset entry mode / pending entry from yesterday
     state.entryMode      = false;
     state.entryModeReason = "";
     state.pendingEntry    = null;
   }
 
-  // If a PRIOR cycle today invalidated the bias (Stage 2 mismatch),
-  // state.dailyBias is "none" but state.dailyBiasMeta still holds the
-  // original Stage 1 SUCCESS message. Show the actual invalidation
-  // reason instead, so the log doesn't contradict itself.
-  if (state.dailyBias === "none" && state.invalidatedReason) {
-    breakdown.push({ step: "Stage1 DailyBias", result: "NONE (invalidated)", reason: state.invalidatedReason });
-    return { signal: SIG_HOLD, breakdown, reason: `NO TRADE TODAY — ${state.invalidatedReason}`, dailyBias: "none" };
-  }
-
   breakdown.push({ step: "Stage1 DailyBias", result: state.dailyBias.toUpperCase(), reason: state.dailyBiasMeta });
 
   if (state.dailyBias === "none") {
     return { signal: SIG_HOLD, breakdown, reason: `NO TRADE TODAY — ${state.dailyBiasMeta}`, dailyBias: "none" };
-  }
-
-  // ── STAGE 2: TREND CHECK ──
-  const trendCheck = checkTrendAgreement(state.dailyBias, d1);
-  breakdown.push({ step: "Stage2 TrendCheck", result: trendCheck.agrees ? "AGREES" : "MISMATCH", reason: trendCheck.reason });
-
-  if (!trendCheck.agrees) {
-    // Per spec — mismatch invalidates today's bias entirely.
-    // Store the REAL reason separately so future cycles today
-    // show this instead of the stale Stage 1 success message.
-    state.dailyBias = "none";
-    state.invalidatedReason = trendCheck.reason;
-    return { signal: SIG_HOLD, breakdown, reason: `NO TRADE TODAY — ${trendCheck.reason}`, dailyBias: "none" };
   }
 
   // ── SESSION GATE (FX/Metals only) ──
@@ -711,14 +637,14 @@ export function collectSignals(tf) {
   // New York, or the overlap. Synthetics/crypto are unaffected
   // (isInTradingSession returns true 24/7 for them).
   if (!isInTradingSession(symbol)) {
-    breakdown.push({ step: "Stage3 1H Confirm", result: "OUTSIDE SESSION", reason: `${symbol} — waiting for London/NY session (FX only)` });
+    breakdown.push({ step: "Stage2 1H Confirm", result: "OUTSIDE SESSION", reason: `${symbol} — waiting for London/NY session (FX only)` });
     return { signal: SIG_HOLD, breakdown, reason: "Outside London/NY trading session — bias held for next session", dailyBias: state.dailyBias };
   }
 
-  // ── STAGE 3: 1H CONFIRMATION → ENTRY MODE ──
+  // ── STAGE 2: 1H CONFIRMATION → ENTRY MODE ──
   if (!state.entryMode) {
     const confirmation = check1hConfirmation(state.dailyBias, h1);
-    breakdown.push({ step: "Stage3 1H Confirm", result: confirmation.confirmed ? "ENTRY MODE" : "WAITING", reason: confirmation.reason });
+    breakdown.push({ step: "Stage2 1H Confirm", result: confirmation.confirmed ? "ENTRY MODE" : "WAITING", reason: confirmation.reason });
 
     if (!confirmation.confirmed) {
       return { signal: SIG_HOLD, breakdown, reason: `WAITING — ${confirmation.reason}`, dailyBias: state.dailyBias };
@@ -727,13 +653,13 @@ export function collectSignals(tf) {
     state.entryMode = true;
     state.entryModeReason = confirmation.reason;
   } else {
-    breakdown.push({ step: "Stage3 1H Confirm", result: "ENTRY MODE (active)", reason: state.entryModeReason });
+    breakdown.push({ step: "Stage2 1H Confirm", result: "ENTRY MODE (active)", reason: state.entryModeReason });
   }
 
-  // ── STAGE 4: 15M ENTRY ──
+  // ── STAGE 3: 15M ENTRY ──
   const entry = check15mEntry(state.dailyBias, m15, state);
   breakdown.push({
-    step: "Stage4 15M Entry",
+    step: "Stage3 15M Entry",
     result: entry.signal === SIG_HOLD ? "WAIT" : (entry.signal === SIG_BUY ? "BUY" : "SELL"),
     reason: entry.reason,
   });
