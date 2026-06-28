@@ -31,11 +31,12 @@ const userSchema = new mongoose.Schema({
     takeProfitPct:        { type: Number, default: 2.00 },
     // PnL Lock (field name kept as trailingStopPct for backward DB
     // compatibility — dashboard label/logs now say "PnL Lock"): % of
-    // TAKE PROFIT that must be reached before the lock activates (e.g.
-    // 0.5 = 50% of TP). Once activated, locks in that same % of PEAK
-    // profit reached so far, ratcheting up only. Trade auto-closes
-    // (client-side sell, not contract_update) if profit falls to/below
-    // the locked floor. Default 50%. Set to 0 to disable entirely.
+    // TAKE PROFIT used as the step size. Profit locks in discrete steps:
+    // step 1 (peak >= 1 step) -> breakeven; step 2 -> locks step 1's
+    // amount; step 3 -> locks step 2's amount; etc. Always one full step
+    // behind peak (uses peak, not current PnL, so it only ratchets up).
+    // Trade auto-closes (client-side sell, not contract_update) if profit
+    // falls to/below the locked floor. Default 50%. Set to 0 to disable.
     trailingStopPct:      { type: Number, default: 0.5 },
     // Forced contract close duration in minutes. null = OFF (no forced close,
     // only SL/TP/trailing stop closes the trade). No min/max enforced.

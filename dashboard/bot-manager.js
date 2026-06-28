@@ -306,38 +306,48 @@ async function monitorOpenTrades(ws, userId, label, portfolio, dfD1Cache, riskSe
         }
 
         // ── EXIT 2: PNL LOCK (user-configurable, default 50% of TP) ───
-        // Client-side profit lock. Does NOT use Deriv's contract_update —
-        // per Deriv support's own chat transcript, trailing isn't natively
-        // supported, and Deriv's own docs define stop_loss as a LOSS-amount
-        // threshold, not a price/equity level, so pushing a profit floor
-        // through that field is unverified at best. Instead: track peak
-        // profit, compute floor = peak * pnlLockPct once activated, and
+        // Client-side, stepped profit lock. Does NOT use Deriv's
+        // contract_update — per Deriv support's own chat transcript,
+        // trailing isn't natively supported, and Deriv's own docs define
+        // stop_loss as a LOSS-amount threshold, not a price/equity level,
+        // so pushing a profit floor through that field is unverified at
+        // best. Instead: track peak profit, compute a STEPPED floor, and
         // close via `sell` (closeTrade — the exact same function EXIT 1
         // and EXIT 1B already use successfully) the moment current profit
-        // falls to/below that floor. Floor only ever moves UP, never down.
+        // falls to/below that floor.
+        //
+        // Stepped mechanic (example: TP=$1000, pnlLockPct=10% -> step=$100):
+        //   peak reaches $100 (step 1)  -> floor = $0   (breakeven)
+        //   peak reaches $200 (step 2)  -> floor = $100 (prior step locked)
+        //   peak reaches $300 (step 3)  -> floor = $200
+        //   peak reaches $400 (step 4)  -> floor = $300
+        // i.e. floor = (stepsBanked - 1) * stepSize, always one full step
+        // behind peak, using PEAK (not current PnL) so it only ratchets up.
+        //
         // The original stop_loss/take_profit set at trade-open are NOT
         // touched — they remain the hard backstop on Deriv's side.
         const takeProfit = trade.takeProfit;
 
         if (pnlLockPct > 0 && takeProfit > 0) {
-          const activationThreshold = takeProfit * pnlLockPct;
+          const stepSize   = takeProfit * pnlLockPct;
           const priorPeak  = trade.trailingPeakPnl || 0;
           const priorFloor = trade.pnlLockFloor    || 0;
           const peak       = Math.max(priorPeak, currentPnl);
+          const stepsBanked = Math.floor(peak / stepSize);
 
-          if (peak >= activationThreshold) {
-            const candidateFloor = parseFloat((peak * pnlLockPct).toFixed(4));
+          if (stepsBanked >= 1) {
+            const candidateFloor = parseFloat(((stepsBanked - 1) * stepSize).toFixed(4));
             const floor          = Math.max(candidateFloor, priorFloor); // never lower the floor
 
             // Full visibility every single cycle, per request — current
             // PnL and exactly what PnL would trigger a close, in real time.
             await log(userId,
-              `[${label}] ${trade.symbol} | 🔒 PnL Lock | Profit: $${currentPnl.toFixed(4)} | Peak: $${peak.toFixed(4)} | Closes if PnL <= $${floor.toFixed(4)}`,
+              `[${label}] ${trade.symbol} | 🔒 PnL Lock | Profit: $${currentPnl.toFixed(4)} | Peak: $${peak.toFixed(4)} | Step ${stepsBanked} | Closes if PnL <= $${floor.toFixed(4)}`,
               "info"
             );
 
             if (floor > priorFloor) {
-              // Floor just ratcheted up — meaningful event: persist + notify
+              // Floor just ratcheted up a step — meaningful event: persist + notify
               const wasActive = trade.trailingActive;
               await Trade.findByIdAndUpdate(trade._id, {
                 trailingActive:  true,
@@ -345,8 +355,8 @@ async function monitorOpenTrades(ws, userId, label, portfolio, dfD1Cache, riskSe
                 pnlLockFloor:    floor,
               });
               await log(userId,
-                `[${label}] ${trade.symbol} | 📈 PnL Lock ${wasActive ? "raised" : "ACTIVATED"} | New close-floor: $${floor.toFixed(4)} ` +
-                `(locks ${(pnlLockPct * 100).toFixed(0)}% of $${peak.toFixed(4)} peak)`,
+                `[${label}] ${trade.symbol} | 📈 PnL Lock ${wasActive ? "stepped up" : "ACTIVATED (breakeven)"} | New close-floor: $${floor.toFixed(4)} ` +
+                `(step ${stepsBanked} of $${stepSize.toFixed(2)} each)`,
                 "trade"
               );
               await notifyPnlLockUpdate({
@@ -354,7 +364,7 @@ async function monitorOpenTrades(ws, userId, label, portfolio, dfD1Cache, riskSe
                 label, botToken, chatId,
               });
             } else if (peak > priorPeak) {
-              // Peak ticked up but not enough to raise the floor yet
+              // Peak ticked up but not enough to reach the next step yet
               await Trade.findByIdAndUpdate(trade._id, { trailingPeakPnl: peak });
             }
 
