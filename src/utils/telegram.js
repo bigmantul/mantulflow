@@ -92,6 +92,43 @@ export function notifyTradeOpened({
   );
 }
 
+// ── TRADE CLOSED (any exit reason) ────────────────────
+export function notifyTradeClosed({
+  symbol, direction, soldFor, pnl, stake, reason,
+  label, botToken, chatId,
+}) {
+  const isWin = pnl >= 0;
+  const icon  = isWin ? "✅ WIN" : "❌ LOSS";
+  const dir   = direction === "MULTUP" ? "BUY" : "SELL";
+
+  return sendMessage(
+    `${icon} <b>${label || "Bot"} — ${symbol}</b>\n` +
+    `Direction  : ${dir}\n` +
+    `Reason     : ${reason}\n` +
+    `Sold For   : $${soldFor.toFixed(2)}\n` +
+    `PnL        : $${pnl.toFixed(2)} (stake $${stake.toFixed(2)})`,
+    botToken, chatId
+  );
+}
+
+// ── PNL LOCK FLOOR RAISED (client-side profit lock) ───
+export function notifyPnlLockUpdate({
+  symbol, direction, currentPnl, peak, floor, lockPct,
+  label, botToken, chatId,
+}) {
+  const dir = direction === "MULTUP" ? "BUY" : "SELL";
+  return sendMessage(
+    `🔒 <b>${label || "Bot"} — ${symbol} PnL Lock</b>\n` +
+    `Direction  : ${dir}\n` +
+    `Current PnL: $${currentPnl.toFixed(2)}\n` +
+    `Peak PnL   : $${peak.toFixed(2)}\n` +
+    `Locked at  : ${(lockPct * 100).toFixed(0)}% of peak\n` +
+    `New Floor  : $${floor.toFixed(2)}\n` +
+    `Closes automatically if profit falls to/below this floor.`,
+    botToken, chatId
+  );
+}
+
 // ── RISK BLOCK ────────────────────────────────────────
 export function notifyRiskBlock(reason, label, botToken, chatId) {
   return sendMessage(

@@ -547,9 +547,9 @@ tr:hover td{background:rgba(56,189,248,0.03)}
         <div class="field"><label>STOP LOSS %</label><input type="number" id="rSL" min="10" max="200" placeholder="80"/></div>
         <div class="field"><label>TAKE PROFIT %</label><input type="number" id="rTP" min="10" max="1000" placeholder="200"/></div>
         <div class="field">
-          <label>TRAILING STOP % OF TP (0 = off)</label>
+          <label>PNL LOCK % OF TP (0 = off)</label>
           <input type="number" id="rTrail" min="0" max="100" step="1" placeholder="50"/>
-          <small style="opacity:0.6;font-size:0.75em;">% of take profit to activate (default 50%)</small>
+          <small style="opacity:0.6;font-size:0.75em;">Once profit reaches this % of take-profit, locks in that % of peak profit — closes automatically if price falls back to the locked amount (default 50%)</small>
         </div>
         <div class="field">
           <label>

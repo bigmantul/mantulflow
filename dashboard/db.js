@@ -29,10 +29,13 @@ const userSchema = new mongoose.Schema({
     maxConsecutiveLosses: { type: Number, default: 3 },
     stopLossPct:          { type: Number, default: 0.80 },
     takeProfitPct:        { type: Number, default: 2.00 },
-    // Trailing stop: % of TAKE PROFIT that must be reached before
-    // trailing activates (e.g. 0.5 = 50% of TP). Once activated, SL
-    // moves to breakeven, then trails behind peak profit by the same
-    // percentage step. Default 50%. Set to 0 to disable entirely.
+    // PnL Lock (field name kept as trailingStopPct for backward DB
+    // compatibility — dashboard label/logs now say "PnL Lock"): % of
+    // TAKE PROFIT that must be reached before the lock activates (e.g.
+    // 0.5 = 50% of TP). Once activated, locks in that same % of PEAK
+    // profit reached so far, ratcheting up only. Trade auto-closes
+    // (client-side sell, not contract_update) if profit falls to/below
+    // the locked floor. Default 50%. Set to 0 to disable entirely.
     trailingStopPct:      { type: Number, default: 0.5 },
     // Forced contract close duration in minutes. null = OFF (no forced close,
     // only SL/TP/trailing stop closes the trade). No min/max enforced.
@@ -66,9 +69,10 @@ const tradeSchema = new mongoose.Schema({
   stopLoss:   { type: Number },
   takeProfit: { type: Number },
   strength:   { type: Number },
-  // Trailing stop tracking
+  // PnL Lock tracking (field names kept for backward DB compatibility)
   trailingActive:  { type: Boolean, default: false },
-  trailingPeakPnl: { type: Number, default: 0 }, // highest profit seen since trailing activated
+  trailingPeakPnl: { type: Number, default: 0 }, // highest profit seen since lock activated
+  pnlLockFloor:    { type: Number, default: 0 }, // current locked-profit floor — close if PnL falls to/below this
   status:     { type: String, default: "open" },
   pnl:        { type: Number, default: null },  // null = not yet closed
   openedAt:   { type: Date, default: Date.now },
