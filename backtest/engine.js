@@ -10,6 +10,26 @@
 //  backtest result reflects what production code actually
 //  does — not a re-derived approximation of it.
 //
+//  EXIT RULES SIMULATED (matches dashboard/bot-manager.js
+//  monitorOpenTrades(), same priority order, checked in
+//  this exact order on every closed M15 bar):
+//    1. 20-min no-profit cutoff — close if open >=20min and
+//       PnL<=0, then symbol locked out from new entries 2hrs
+//    2. Trailing stop — activates at trailingStopPct of TP
+//       (default 50%), moves SL to breakeven, then trails
+//       by the same step
+//    3. Stop Loss (fixed dollar limit order)
+//    4. Take Profit (fixed dollar limit order)
+//    5. Forced contract close — after contractDurationMins
+//       (default 120 = 2hrs), regardless of P&L
+//
+//  NOT YET SIMULATED — KNOWN GAP:
+//  Production's EXIT 1 (Daily Bias Reversal — closing early
+//  if the D1 bias flips against an open position) is NOT
+//  implemented in this engine yet. Positions here only close
+//  via the 5 rules above. If you want this added too, say so
+//  explicitly — flagging it rather than silently omitting it.
+//
 //  IMPORTANT GOTCHA THIS ENGINE WORKS AROUND:
 //  signals.js uses `new Date()` (real wall-clock time) to
 //  decide "is this a new trading day" and "are we in the
@@ -100,29 +120,95 @@ function pnlAtPrice({ entryPrice, stake, multiplier, direction }, price) {
   return stake * multiplier * ((price - entryPrice) / entryPrice) * dirSign;
 }
 
-// Given an open position and the M15 bar that just closed,
-// determine if SL or TP was crossed inside that bar's
-// high/low range. Conservative convention: if both could
-// have been hit in the same bar, SL is assumed to have hit
-// first (avoids overstating performance).
-function checkExitWithinBar(position, bar) {
-  const { stopLoss, takeProfit, direction } = position;
-  const worstPrice = direction === "buy" ? bar.low : bar.high;
-  const bestPrice = direction === "buy" ? bar.high : bar.low;
+// Converts a target PnL dollar amount into the price level that would
+// produce it, given direction/stake/multiplier — used for SL/TP/trailing.
+function priceForPnl(position, targetPnl) {
+  const { entryPrice, stake, multiplier, direction } = position;
+  const dirSign = direction === "buy" ? 1 : -1;
+  return entryPrice * (1 + (targetPnl / (stake * multiplier)) * dirSign);
+}
 
-  const worstPnl = pnlAtPrice(position, worstPrice);
+/**
+ * Given an open position and the M15 bar that just closed, checks ALL
+ * exit conditions in the SAME PRIORITY ORDER as production's
+ * monitorOpenTrades(), aside from Daily Bias Reversal (checked
+ * separately in the main loop since it needs collectSignals() output,
+ * not just this bar's OHLC).
+ *
+ * Priority: 20-min no-profit cutoff -> trailing stop -> SL -> TP ->
+ * forced contract duration close.
+ *
+ * Conservative convention preserved: if SL and TP could both have
+ * been hit in the same bar, SL is assumed to have hit first.
+ */
+function checkExitWithinBar(position, bar, opts) {
+  const { trailingStopPct = 0.5, contractDurationMins = 120 } = opts;
+  const { stopLoss, takeProfit, direction, entryEpoch, m15GranularitySec = 900 } = position;
+
+  const worstPrice = direction === "buy" ? bar.low : bar.high;
+  const bestPrice  = direction === "buy" ? bar.high : bar.low;
+  const worstPnl   = pnlAtPrice(position, worstPrice);
+  const bestPnl    = pnlAtPrice(position, bestPrice);
+
+  const minutesOpen = (bar.epoch - entryEpoch) / 60;
+
+  // ── 1. 20-MIN NO-PROFIT CUTOFF ──────────────────────
+  // Mirrors bot-manager.js EXIT 1B exactly: if >=20 min open and
+  // current (close-of-bar) PnL <= 0, force close. Uses bar.close
+  // as "current price" since that's the most recent known price
+  // at the moment this check would run live (poll-based, not
+  // intra-bar), matching how monitorOpenTrades() polls periodically
+  // rather than reacting to every tick.
+  const closePnl = pnlAtPrice(position, bar.close);
+  if (minutesOpen >= 20 && closePnl <= 0) {
+    return { exit: true, exitPrice: bar.close, pnl: closePnl, outcome: "NO_PROFIT_20MIN", lockCooldown: true };
+  }
+
+  // ── 2. TRAILING STOP ─────────────────────────────────
+  // Activates once profit reaches trailingStopPct of TP, moves SL to
+  // breakeven, then trails by the same step as profit climbs further
+  // — identical math to bot-manager.js EXIT (trailing stop) section.
+  if (trailingStopPct > 0 && takeProfit > 0) {
+    const stepSize  = takeProfit * trailingStopPct;
+    const priorPeak = position.trailingPeakPnl || 0;
+    const newPeak   = Math.max(priorPeak, bestPnl);
+    if (newPeak > priorPeak) position.trailingPeakPnl = newPeak;
+
+    if (newPeak >= stepSize) {
+      const stepsBanked = Math.floor(newPeak / stepSize);
+      const lockedProfit = stepsBanked * stepSize;
+      // Trailing floor sits ONE STEP behind the peak — e.g. once 2 steps
+      // are banked, the floor locks in 1 step of profit, not 2 — same
+      // "always one step behind" behavior as production.
+      const trailingFloorPnl = Math.max(lockedProfit - stepSize, 0); // never below breakeven (pnl=0)
+      position.trailingActive = true;
+
+      if (worstPnl <= trailingFloorPnl) {
+        const exitPrice = priceForPnl(position, trailingFloorPnl);
+        return { exit: true, exitPrice, pnl: trailingFloorPnl, outcome: trailingFloorPnl > 0 ? "TRAIL" : "TRAIL_BE" };
+      }
+    }
+  }
+
+  // ── 3. STOP LOSS ─────────────────────────────────────
   if (worstPnl <= -stopLoss) {
-    // Solve for the exact price where pnl == -stopLoss
-    const dirSign = direction === "buy" ? 1 : -1;
-    const exitPrice = position.entryPrice * (1 - (stopLoss / (position.stake * position.multiplier)) * dirSign);
+    const exitPrice = priceForPnl(position, -stopLoss);
     return { exit: true, exitPrice, pnl: -stopLoss, outcome: "SL" };
   }
-  const bestPnl = pnlAtPrice(position, bestPrice);
+
+  // ── 4. TAKE PROFIT ───────────────────────────────────
   if (bestPnl >= takeProfit) {
-    const dirSign = direction === "buy" ? 1 : -1;
-    const exitPrice = position.entryPrice * (1 + (takeProfit / (position.stake * position.multiplier)) * dirSign);
+    const exitPrice = priceForPnl(position, takeProfit);
     return { exit: true, exitPrice, pnl: takeProfit, outcome: "TP" };
   }
+
+  // ── 5. FORCED CONTRACT DURATION CLOSE ────────────────
+  // Mirrors trader.js's startForcedCloseTimer: regardless of P&L,
+  // close once contractDurationMins has elapsed. 0/null = OFF.
+  if (contractDurationMins > 0 && minutesOpen >= contractDurationMins) {
+    return { exit: true, exitPrice: bar.close, pnl: closePnl, outcome: "FORCED_CLOSE" };
+  }
+
   return { exit: false };
 }
 
@@ -145,6 +231,8 @@ function checkExitWithinBar(position, bar) {
  * @param {number} [opts.maxOpenTrades=3]
  * @param {number} [opts.maxConsecutiveLosses=3]
  * @param {number} [opts.maxDailyLossPct=0.30]
+ * @param {number} [opts.trailingStopPct=0.5]   - matches db.js default (50% of TP)
+ * @param {number} [opts.contractDurationMins=120] - matches db.js default (2hrs). 0 = OFF.
  * @param {number} [opts.minStartIndex] - skip this many bars at the start to give D1/H1 lookback room to warm up
  */
 export function runBacktest(opts) {
@@ -160,6 +248,8 @@ export function runBacktest(opts) {
     maxOpenTrades = 3,
     maxConsecutiveLosses = 3,
     maxDailyLossPct = 0.30,
+    trailingStopPct = 0.5,
+    contractDurationMins = 120,
     minStartIndex = 100,
   } = opts;
 
@@ -180,6 +270,7 @@ export function runBacktest(opts) {
   const equityCurve = [{ epoch: m15[0].epoch, equity }];
   const trades = [];
   let openPosition = null; // single position at a time for this symbol
+  let cooldownUntilEpoch = 0; // set by the 20-min-no-profit rule; blocks new entries until this epoch
 
   // Incrementally-grown "closed bars so far" arrays. Avoids the O(n^2)
   // cost of re-slicing the full history on every bar — instead we push
@@ -203,9 +294,12 @@ export function runBacktest(opts) {
     // need to see the same simulated "now", not real wall-clock time.
     withFakeNow(bar.epoch * 1000, () => {
 
-    // ── If a position is open, check for SL/TP exit on THIS bar first ──
+    // ── If a position is open, check ALL exit conditions on THIS bar ──
+    // (20-min no-profit cutoff, trailing stop, SL, TP, forced duration
+    // close — see checkExitWithinBar's priority order, matches
+    // bot-manager.js's monitorOpenTrades exactly)
     if (openPosition) {
-      const result = checkExitWithinBar(openPosition, bar);
+      const result = checkExitWithinBar(openPosition, bar, { trailingStopPct, contractDurationMins });
       if (result.exit) {
         equity += result.pnl;
         rm.tradeClosed(result.pnl);
@@ -223,6 +317,12 @@ export function runBacktest(opts) {
           equityAfter: equity,
         });
         equityCurve.push({ epoch: bar.epoch, equity });
+        // The 20-min no-profit exit locks the symbol out from new
+        // entries for 2hrs of SIMULATED time, mirroring
+        // portfolio.lockSymbolForCooldown() in bot-manager.js.
+        if (result.lockCooldown) {
+          cooldownUntilEpoch = bar.epoch + 2 * 60 * 60;
+        }
         openPosition = null;
       }
     }
@@ -252,6 +352,8 @@ export function runBacktest(opts) {
 
     // ── Symbol lock: while a position is open on this symbol, ignore new signals ──
     if (openPosition) return;
+    // ── Cooldown lock: 2hrs after a 20-min-no-profit exit, no new entries ──
+    if (bar.epoch < cooldownUntilEpoch) return;
     if (result.signal !== SIG_BUY && result.signal !== SIG_SELL) return;
 
     if (!rm.canTrade(equity)) return;
@@ -272,6 +374,8 @@ export function runBacktest(opts) {
       multiplier,
       stopLoss: limitOrder.stop_loss,
       takeProfit: limitOrder.take_profit,
+      trailingPeakPnl: 0,
+      trailingActive: false,
     };
     rm.tradeOpened();
 
