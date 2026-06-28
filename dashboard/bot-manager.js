@@ -251,8 +251,10 @@ async function monitorOpenTrades(ws, userId, label, portfolio, dfD1Cache, riskSe
         // ══════════════════════════════════════════════════════
 
         // 1+2: distance to native SL/TP (Deriv-side hard backstops)
-        const distToSL = currentPnl + trade.stopLoss;     // more loss needed to hit SL
-        const distToTP = trade.takeProfit - currentPnl;   // more profit needed to hit TP
+        const stopLossVal   = trade.stopLoss   || 0;
+        const takeProfitVal = trade.takeProfit || 0;
+        const distToSL = currentPnl + stopLossVal;     // more loss needed to hit SL
+        const distToTP = takeProfitVal - currentPnl;    // more profit needed to hit TP
 
         // 3: daily bias agreement
         const d1Candles   = dfD1Cache.get(trade.symbol);
@@ -269,7 +271,7 @@ async function monitorOpenTrades(ws, userId, label, portfolio, dfD1Cache, riskSe
           : (cutoffDue ? "TRIGGERED" : `${(20 - minutesOpen).toFixed(1)}min remaining`);
 
         // 5: PnL Lock (stepped ratchet)
-        const takeProfit = trade.takeProfit;
+        const takeProfit = takeProfitVal;
         let pnlLockText = "not active (below first step)";
         let peak = trade.trailingPeakPnl || 0;
         let floor = trade.pnlLockFloor || 0;
@@ -300,7 +302,7 @@ async function monitorOpenTrades(ws, userId, label, portfolio, dfD1Cache, riskSe
 
         const statusLines = [
           `[${label}] ${trade.symbol} (${dirLabel}) | LIVE STATUS`,
-          `PnL: $${currentPnl.toFixed(4)} | SL: $${trade.stopLoss.toFixed(2)} (${distToSL.toFixed(4)} away) | TP: $${trade.takeProfit.toFixed(2)} (${distToTP.toFixed(4)} away)`,
+          `PnL: $${currentPnl.toFixed(4)} | SL: $${stopLossVal.toFixed(2)} (${distToSL.toFixed(4)} away) | TP: $${takeProfitVal.toFixed(2)} (${distToTP.toFixed(4)} away)`,
           `Daily Bias: ${currentBias.toUpperCase()} (${biasStatus})`,
           `20min Cutoff: ${cutoffText}`,
           `PnL Lock: ${pnlLockText}`,
