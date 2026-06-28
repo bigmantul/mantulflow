@@ -92,6 +92,11 @@ export function notifyTradeOpened({
   );
 }
 
+// ── LIVE STATUS (all exit mechanisms, every monitor cycle) ──
+export function notifyLiveStatus({ lines, label, botToken, chatId }) {
+  return sendMessage(`📡 ${lines.join("\n")}`, botToken, chatId);
+}
+
 // ── TRADE CLOSED (any exit reason) ────────────────────
 export function notifyTradeClosed({
   symbol, direction, soldFor, pnl, stake, reason,

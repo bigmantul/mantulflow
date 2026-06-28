@@ -74,6 +74,7 @@ const tradeSchema = new mongoose.Schema({
   trailingActive:  { type: Boolean, default: false },
   trailingPeakPnl: { type: Number, default: 0 }, // highest profit seen since lock activated
   pnlLockFloor:    { type: Number, default: 0 }, // current locked-profit floor — close if PnL falls to/below this
+  forcedCloseDurationMins: { type: Number, default: 120 }, // snapshot of the duration timer setting AT trade-open, for accurate countdown display
   status:     { type: String, default: "open" },
   pnl:        { type: Number, default: null },  // null = not yet closed
   openedAt:   { type: Date, default: Date.now },
