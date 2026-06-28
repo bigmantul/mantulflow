@@ -10,8 +10,13 @@
 //      scan can still be dry-run end-to-end
 //
 //  Usage:
-//    node backtest/run-all.js [--days=365] [--equity=1000] [--risk=0.02] [--real-only]
+//    node backtest/run-all.js [--days=365] [--equity=1000] [--risk=0.02]
+//      [--trailing=0.5] [--duration=120] [--real-only]
 //
+//  --trailing  : trailingStopPct (default 0.5 = 50% of TP, matches
+//                db.js default). 0 disables trailing stop.
+//  --duration  : contractDurationMins (default 120 = 2hrs, matches
+//                db.js default). 0 disables the forced-close timer.
 //  --real-only skips any symbol without a real data file
 //  instead of falling back to synthetic data for it.
 // ═══════════════════════════════════════════════════════
@@ -65,6 +70,8 @@ for (const symbol of SYMBOLS) {
       riskPct: opts.risk ?? 0.02,
       slPct: opts.sl ?? 0.80,
       tpPct: opts.tp ?? 2.00,
+      trailingStopPct: opts.trailing ?? 0.5,
+      contractDurationMins: opts.duration ?? 120,
     });
     results.push(result);
   } catch (e) {
@@ -89,6 +96,13 @@ console.log(`  Total Trades     : ${totalTrades}`);
 console.log(`  Win Rate         : ${totalTrades ? ((totalWins / totalTrades) * 100).toFixed(1) : 0}% (${totalWins}W / ${totalLosses}L)`);
 console.log(`  Profit Factor    : ${grossLoss > 0 ? (grossProfit / grossLoss).toFixed(2) : "—"}`);
 console.log(`  Combined PnL     : $${totalPnl.toFixed(2)}  (each symbol modeled with its own independent $${(opts.equity ?? 1000)} — NOT a shared portfolio equity curve)`);
+console.log(`══════════════════════════════════════════════════════════════`);
+
+// Exit-reason breakdown — shows how often each exit rule actually fired
+const outcomeCounts = {};
+for (const t of allTrades) outcomeCounts[t.outcome] = (outcomeCounts[t.outcome] || 0) + 1;
+console.log(`  Exit reasons     : ${Object.entries(outcomeCounts).map(([k, v]) => `${k}=${v}`).join("  ")}`);
+console.log(`  Settings used    : trailingStopPct=${opts.trailing ?? 0.5}  contractDurationMins=${opts.duration ?? 120}`);
 console.log(`══════════════════════════════════════════════════════════════\n`);
 
 // Per-symbol table, sorted by trade count desc so active symbols surface first
