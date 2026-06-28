@@ -41,7 +41,7 @@ async function getBroadcast() {
 import {
   notifyStartup, notifyTradeOpened, notifyRiskBlock,
   notifyReconnecting, notifyMaxTrades, notifyDailySummary,
-  notifyCycleScan, notifyTradeClosed, notifyPnlLockUpdate,
+  notifyCycleScan,
 } from "../src/utils/telegram.js";
 
 const SYMBOLS = [
@@ -207,17 +207,16 @@ async function syncTradeStatuses(ws, userId, label) {
 }
 
 // ── PORTFOLIO TRACKER ─────────────────────────────────
-async function monitorOpenTrades(ws, userId, label, portfolio, dfD1Cache, riskSettings, botToken, chatId) {
+async function monitorOpenTrades(ws, userId, label, portfolio, dfD1Cache, riskSettings) {
   try {
     const openTrades = await Trade.find({ userId, status: "open" });
     if (!openTrades.length) return;
 
-    // pnlLockPct = % of TAKE PROFIT that must be reached to activate the
-    // PnL lock (field name in the DB is still trailingStopPct for backward
-    // compatibility with existing user documents — only the dashboard
-    // label and all log/Telegram text now say "PnL Lock"). Defaults to
-    // 0.5 (50%) if the user has never set this.
-    const pnlLockPct = (riskSettings?.trailingStopPct === undefined || riskSettings?.trailingStopPct === null)
+    // trailingStopPct = % of TAKE PROFIT that must be reached to activate
+    // trailing stop. Defaults to 0.5 (50%) if the user has never set this
+    // (covers both brand-new users AND existing users whose DB document
+    // predates this field / still has the old stake-based default of 0).
+    const trailingStopPct = (riskSettings?.trailingStopPct === undefined || riskSettings?.trailingStopPct === null)
       ? 0.5
       : riskSettings.trailingStopPct;
 
@@ -245,8 +244,7 @@ async function monitorOpenTrades(ws, userId, label, portfolio, dfD1Cache, riskSe
           const biasFlipped = currentBias !== "neutral" && currentBias !== tradeBias;
 
           if (biasFlipped) {
-            const reason = `Daily bias reversed to ${currentBias.toUpperCase()}`;
-            await log(userId, `[${label}] ${trade.symbol} | 🔄 EXIT: ${reason} — closing ${direction}`, "trade");
+            await log(userId, `[${label}] ${trade.symbol} | 🔄 EXIT: Daily bias reversed to ${currentBias.toUpperCase()} — closing ${direction}`, "trade");
             const soldFor = await closeTrade(ws, trade.contractId);
             if (soldFor !== null) {
               const finalPnl = soldFor - stake;
@@ -257,134 +255,74 @@ async function monitorOpenTrades(ws, userId, label, portfolio, dfD1Cache, riskSe
               });
               portfolio.unlockSymbol(trade.symbol);
               await log(userId, `[${label}] ${trade.symbol} | Closed $${soldFor.toFixed(2)} | PnL: $${finalPnl.toFixed(2)}`, "trade");
-              await notifyTradeClosed({ symbol: trade.symbol, direction, soldFor, pnl: finalPnl, stake, reason, label, botToken, chatId });
             }
             continue;
           }
         }
 
-        // ── EXIT 1B: NO-PROFIT 20-MINUTE CUTOFF ──────────
-        // If a trade has been open for >= 20 minutes and is NOT in
-        // profit (currentPnl <= 0), close it immediately and lock
-        // the symbol for a 2-hour cooldown (separate from the normal
-        // unlock-on-close — this is a deliberate "stay away" period
-        // after a stalled/losing setup, even though no trade remains
-        // open on this symbol).
-        const openedAtMs   = new Date(trade.openedAt).getTime();
-        const minutesOpen  = (Date.now() - openedAtMs) / 60000;
-
-        // Real-time countdown visibility every cycle while waiting,
-        // not just when the cutoff actually fires.
-        if (currentPnl <= 0 && minutesOpen < 20) {
-          const remainingMin = (20 - minutesOpen).toFixed(1);
-          await log(userId,
-            `[${label}] ${trade.symbol} | ⏱️ ${minutesOpen.toFixed(1)}min open | PnL: $${currentPnl.toFixed(2)} | Auto-closes in ${remainingMin}min if still not profitable`,
-            "info"
-          );
-        }
-
-        if (minutesOpen >= 20 && currentPnl <= 0) {
-          const reason = `Not profitable after ${minutesOpen.toFixed(0)}min`;
-          await log(userId,
-            `[${label}] ${trade.symbol} | ⏱️ EXIT: ${reason} ($${currentPnl.toFixed(2)}) — closing + 2hr cooldown lock`,
-            "trade"
-          );
-          const soldFor = await closeTrade(ws, trade.contractId);
-          if (soldFor !== null) {
-            const finalPnl = soldFor - stake;
-            await Trade.findByIdAndUpdate(trade._id, {
-              status:   finalPnl >= 0 ? "won" : "lost",
-              pnl:      finalPnl,
-              closedAt: new Date(),
-            });
-            portfolio.unlockSymbol(trade.symbol);
-            portfolio.lockSymbolForCooldown(trade.symbol, 2 * 60 * 60 * 1000); // 2hr cooldown
-            await log(userId, `[${label}] ${trade.symbol} | Closed $${soldFor.toFixed(2)} | PnL: $${finalPnl.toFixed(2)} | 🧊 locked 2hrs`, "trade");
-            await notifyTradeClosed({ symbol: trade.symbol, direction, soldFor, pnl: finalPnl, stake, reason: `${reason} — 2hr cooldown lock applied`, label, botToken, chatId });
-          }
-          continue;
-        }
-
-        // ── EXIT 2: PNL LOCK (user-configurable, default 50% of TP) ───
-        // Client-side, stepped profit lock. Does NOT use Deriv's
-        // contract_update — per Deriv support's own chat transcript,
-        // trailing isn't natively supported, and Deriv's own docs define
-        // stop_loss as a LOSS-amount threshold, not a price/equity level,
-        // so pushing a profit floor through that field is unverified at
-        // best. Instead: track peak profit, compute a STEPPED floor, and
-        // close via `sell` (closeTrade — the exact same function EXIT 1
-        // and EXIT 1B already use successfully) the moment current profit
-        // falls to/below that floor.
+        // ── EXIT 2: TRAILING STOP (user-configurable, default 50% of TP) ───
+        // trailingStopPct = % of TAKE PROFIT that must be reached before
+        // trailing activates. e.g. TP=$2.00, trailingStopPct=0.5 (50%)
+        // → activates once profit reaches $1.00.
         //
-        // Stepped mechanic (example: TP=$1000, pnlLockPct=10% -> step=$100):
-        //   peak reaches $100 (step 1)  -> floor = $0   (breakeven)
-        //   peak reaches $200 (step 2)  -> floor = $100 (prior step locked)
-        //   peak reaches $300 (step 3)  -> floor = $200
-        //   peak reaches $400 (step 4)  -> floor = $300
-        // i.e. floor = (stepsBanked - 1) * stepSize, always one full step
-        // behind peak, using PEAK (not current PnL) so it only ratchets up.
+        // Behavior once active:
+        //   1. First activation: SL moves to BREAKEVEN (stop_loss = stake,
+        //      meaning the contract closes at $0 profit/loss if reversed)
+        //   2. As profit keeps climbing past breakeven, SL keeps trailing
+        //      UP — every time profit advances by another
+        //      (takeProfit * trailingStopPct) step, SL moves up to lock
+        //      in that new floor, always sitting one step behind peak profit.
         //
-        // The original stop_loss/take_profit set at trade-open are NOT
-        // touched — they remain the hard backstop on Deriv's side.
+        // 0 / disabled → skip entirely, no behavior change for those users.
         const takeProfit = trade.takeProfit;
 
-        if (pnlLockPct > 0 && takeProfit > 0) {
-          const stepSize   = takeProfit * pnlLockPct;
-          const priorPeak  = trade.trailingPeakPnl || 0;
-          const priorFloor = trade.pnlLockFloor    || 0;
-          const peak       = Math.max(priorPeak, currentPnl);
-          const stepsBanked = Math.floor(peak / stepSize);
+        if (trailingStopPct > 0 && takeProfit > 0) {
+          const stepSize           = takeProfit * trailingStopPct;
+          const activationThreshold = stepSize; // first step = activation point
 
-          if (stepsBanked >= 1) {
-            const candidateFloor = parseFloat(((stepsBanked - 1) * stepSize).toFixed(4));
-            const floor          = Math.max(candidateFloor, priorFloor); // never lower the floor
+          if (currentPnl >= activationThreshold) {
+            // peak profit seen so far for this trade (persisted in DB)
+            const priorPeak = trade.trailingPeakPnl || 0;
 
-            // Full visibility every single cycle, per request — current
-            // PnL and exactly what PnL would trigger a close, in real time.
-            await log(userId,
-              `[${label}] ${trade.symbol} | 🔒 PnL Lock | Profit: $${currentPnl.toFixed(4)} | Peak: $${peak.toFixed(4)} | Step ${stepsBanked} | Closes if PnL <= $${floor.toFixed(4)}`,
-              "info"
-            );
+            if (currentPnl > priorPeak) {
+              // Calculate new trailing SL level — SL floor = stake (breakeven)
+              // + locked profit so far, where locked profit is the highest
+              // FULL step reached, MINUS one step, so the trail always sits
+              // one step BEHIND current profit (true trailing behavior).
+              const stepsBanked  = Math.floor(currentPnl / stepSize);
+              const lockedProfit = stepsBanked * stepSize;
 
-            if (floor > priorFloor) {
-              // Floor just ratcheted up a step — meaningful event: persist + notify
-              const wasActive = trade.trailingActive;
-              await Trade.findByIdAndUpdate(trade._id, {
-                trailingActive:  true,
-                trailingPeakPnl: peak,
-                pnlLockFloor:    floor,
-              });
-              await log(userId,
-                `[${label}] ${trade.symbol} | 📈 PnL Lock ${wasActive ? "stepped up" : "ACTIVATED (breakeven)"} | New close-floor: $${floor.toFixed(4)} ` +
-                `(step ${stepsBanked} of $${stepSize.toFixed(2)} each)`,
-                "trade"
-              );
-              await notifyPnlLockUpdate({
-                symbol: trade.symbol, direction, currentPnl, peak, floor, lockPct: pnlLockPct,
-                label, botToken, chatId,
-              });
-            } else if (peak > priorPeak) {
-              // Peak ticked up but not enough to reach the next step yet
-              await Trade.findByIdAndUpdate(trade._id, { trailingPeakPnl: peak });
-            }
+              const newStopLoss     = parseFloat((stake + lockedProfit - stepSize).toFixed(4));
+              const flooredStopLoss = Math.max(newStopLoss, stake); // never below breakeven
 
-            // ── Price fell back to the locked floor → close now ──
-            if (currentPnl <= floor) {
-              const reason = `PnL Lock floor hit ($${currentPnl.toFixed(4)} <= $${floor.toFixed(4)})`;
-              await log(userId, `[${label}] ${trade.symbol} | 🔒 EXIT: ${reason} — closing`, "trade");
-              const soldFor = await closeTrade(ws, trade.contractId);
-              if (soldFor !== null) {
-                const finalPnl = soldFor - stake;
-                await Trade.findByIdAndUpdate(trade._id, {
-                  status:   finalPnl >= 0 ? "won" : "lost",
-                  pnl:      finalPnl,
-                  closedAt: new Date(),
-                });
-                portfolio.unlockSymbol(trade.symbol);
-                await log(userId, `[${label}] ${trade.symbol} | Closed $${soldFor.toFixed(2)} | PnL: $${finalPnl.toFixed(2)} (locked floor was $${floor.toFixed(4)})`, "trade");
-                await notifyTradeClosed({ symbol: trade.symbol, direction, soldFor, pnl: finalPnl, stake, reason, label, botToken, chatId });
+              if (!trade.trailingActive || flooredStopLoss > (trade.stopLoss ?? 0)) {
+                try {
+                  await sendMessage(ws, {
+                    contract_update: 1,
+                    contract_id:     parseInt(trade.contractId),
+                    limit_order:     { stop_loss: flooredStopLoss },
+                  }, "contract_update");
+
+                  await Trade.findByIdAndUpdate(trade._id, {
+                    stopLoss:        flooredStopLoss,
+                    trailingActive:  true,
+                    trailingPeakPnl: currentPnl,
+                  });
+
+                  const lockedPnl = flooredStopLoss - stake;
+                  await log(userId,
+                    `[${label}] ${trade.symbol} | 📈 Trailing stop ${trade.trailingActive ? "updated" : "ACTIVATED"} | ` +
+                    `Profit: $${currentPnl.toFixed(4)} (${((currentPnl / takeProfit) * 100).toFixed(0)}% of TP) | ` +
+                    `New SL locks in: $${lockedPnl.toFixed(4)}`,
+                    "trade"
+                  );
+                } catch (updateErr) {
+                  console.log(`[${label}] Could not update trailing SL: ${updateErr.message}`);
+                }
+              } else {
+                // Peak ticked up but not enough for a new step yet — just track it
+                await Trade.findByIdAndUpdate(trade._id, { trailingPeakPnl: currentPnl });
               }
-              continue;
             }
           }
         }
@@ -405,7 +343,6 @@ function createPortfolio(userId) {
   let activeSymbols = new Set();
   let openCount     = 0;
   const timers      = new Map();
-  const cooldowns   = new Map(); // symbol -> expiresAt (ms epoch) — survives sync()
 
   return {
     getActiveSymbols: () => activeSymbols,
@@ -426,32 +363,6 @@ function createPortfolio(userId) {
       activeSymbols.delete(sym);
       timers.delete(sym);
       openCount = Math.max(0, openCount - 1);
-    },
-
-    // Locks a symbol for a fixed cooldown window WITHOUT requiring an
-    // open trade — used by the 20-min-no-profit auto-close rule so the
-    // symbol stays off-limits for 2hrs after that specific exit, even
-    // though no trade is open anymore. Independent of timers/activeSymbols
-    // so portfolio.sync() rebuilding those from Deriv/DB doesn't erase it.
-    lockSymbolForCooldown(sym, durationMs = 2 * 60 * 60 * 1000) {
-      cooldowns.set(sym, Date.now() + durationMs);
-    },
-
-    isOnCooldown(sym) {
-      const expiresAt = cooldowns.get(sym);
-      if (!expiresAt) return false;
-      if (Date.now() >= expiresAt) { cooldowns.delete(sym); return false; }
-      return true;
-    },
-
-    getCooldownRemaining(sym) {
-      const expiresAt = cooldowns.get(sym);
-      if (!expiresAt) return "";
-      const remaining = expiresAt - Date.now();
-      if (remaining <= 0) return "";
-      const hrs  = Math.floor(remaining / 3600000);
-      const mins = Math.floor((remaining % 3600000) / 60000);
-      return hrs > 0 ? ` | 🧊 cooldown ${hrs}h ${mins}m` : ` | 🧊 cooldown ${mins}m`;
     },
 
     getCountdown(sym) {
@@ -568,7 +479,7 @@ async function runUserBot(user, stopSignal) {
         await syncTradeStatuses(ws, user._id, label);
         lastApiCall = Date.now();
 
-        await monitorOpenTrades(ws, user._id, label, portfolio, dfD1Cache, freshUser.risk, botToken, chatId);
+        await monitorOpenTrades(ws, user._id, label, portfolio, dfD1Cache, freshUser.risk);
         lastApiCall = Date.now();
 
         const currentOpen = await portfolio.sync(ws);
@@ -626,13 +537,6 @@ async function runUserBot(user, stopSignal) {
             const countdown = portfolio.getCountdown(symbol);
             await log(userId, `[${label}] ${symbol} | 🔒 LOCKED${countdown}`, "info");
             cycleResults.push({ symbol, status: "LOCKED", countdown });
-            continue;
-          }
-
-          if (portfolio.isOnCooldown(symbol)) {
-            const cooldownText = portfolio.getCooldownRemaining(symbol);
-            await log(userId, `[${label}] ${symbol} | 🧊 COOLDOWN${cooldownText}`, "info");
-            cycleResults.push({ symbol, status: "LOCKED", countdown: cooldownText });
             continue;
           }
 
