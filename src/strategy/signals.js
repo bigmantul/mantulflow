@@ -273,33 +273,39 @@ function validateDailyCandle(candle) {
   }
 
   if (body > 0) {
-    // Bullish candle
-    const bodyAbs        = body; // Close - Open
-    const upperWick       = candle.high - candle.close;
-    const upperWickPct    = (upperWick / bodyAbs) * 100;
-    const closesNearHigh  = (candle.high - candle.close) / range <= 0.25;
-    const wickValid        = upperWickPct <= 40;
+    // ── BULLISH CANDLE ──
+    // Step 1: Close > Open (already confirmed by body > 0)
+    // Step 2: Body = Close - Open
+    const bodyAbs = body;
+    // Step 3: Upper Wick = High - Close
+    const upperWick = candle.high - candle.close;
+    // Step 4: Upper Wick % = (Upper Wick / Body) x 100
+    const upperWickPct = (upperWick / bodyAbs) * 100;
+    // Step 5: Valid if Upper Wick % <= 40, else Invalid
+    const wickValid = upperWickPct <= 40;
 
-    if (closesNearHigh && wickValid) {
+    if (wickValid) {
       return { valid: true, direction: "bullish", wickPct: upperWickPct, reason: `Valid bullish — upper wick ${upperWickPct.toFixed(0)}% of body` };
     }
-    if (!wickValid) return { valid: false, direction: "bullish", wickPct: upperWickPct, reason: `Invalid bullish — upper wick ${upperWickPct.toFixed(0)}% of body (>40%)` };
-    return { valid: false, direction: "bullish", wickPct: upperWickPct, reason: "Invalid bullish — doesn't close near high" };
+    return { valid: false, direction: "bullish", wickPct: upperWickPct, reason: `Invalid bullish — upper wick ${upperWickPct.toFixed(0)}% of body (>40%)` };
   }
 
   if (body < 0) {
-    // Bearish candle
-    const bodyAbs        = -body; // Open - Close
-    const lowerWick       = candle.close - candle.low;
-    const lowerWickPct    = (lowerWick / bodyAbs) * 100;
-    const closesNearLow    = (candle.close - candle.low) / range <= 0.25;
-    const wickValid         = lowerWickPct <= 40;
+    // ── BEARISH CANDLE ──
+    // Step 1: Close < Open (already confirmed by body < 0)
+    // Step 2: Body = Open - Close
+    const bodyAbs = -body;
+    // Step 3: Lower Wick = Close - Low
+    const lowerWick = candle.close - candle.low;
+    // Step 4: Lower Wick % = (Lower Wick / Body) x 100
+    const lowerWickPct = (lowerWick / bodyAbs) * 100;
+    // Step 5: Valid if Lower Wick % <= 40, else Invalid
+    const wickValid = lowerWickPct <= 40;
 
-    if (closesNearLow && wickValid) {
+    if (wickValid) {
       return { valid: true, direction: "bearish", wickPct: lowerWickPct, reason: `Valid bearish — lower wick ${lowerWickPct.toFixed(0)}% of body` };
     }
-    if (!wickValid) return { valid: false, direction: "bearish", wickPct: lowerWickPct, reason: `Invalid bearish — lower wick ${lowerWickPct.toFixed(0)}% of body (>40%)` };
-    return { valid: false, direction: "bearish", wickPct: lowerWickPct, reason: "Invalid bearish — doesn't close near low" };
+    return { valid: false, direction: "bearish", wickPct: lowerWickPct, reason: `Invalid bearish — lower wick ${lowerWickPct.toFixed(0)}% of body (>40%)` };
   }
 
   return { valid: false, direction: null, reason: "Doji / indecisive candle" };
