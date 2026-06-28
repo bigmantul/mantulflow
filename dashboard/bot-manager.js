@@ -146,7 +146,7 @@ async function log(userId, message, level = "info") {
 }
 
 // ── SYNC TRADE STATUSES ───────────────────────────────
-async function syncTradeStatuses(ws, userId, label) {
+async function syncTradeStatuses(ws, userId, label, botToken, chatId) {
   try {
     const openTrades = await Trade.find({ userId, status: "open" });
     if (!openTrades.length) return;
@@ -172,6 +172,11 @@ async function syncTradeStatuses(ws, userId, label) {
         continue;
       }
 
+      // Contract is gone from the active portfolio — it closed somewhere
+      // we didn't directly trigger: native SL, native TP, or the forced-
+      // close timer already closed it (and that path's own onClosed
+      // callback may already have notified — this is the catch-all for
+      // any case that wasn't directly caught elsewhere).
       let finalPnl    = 0;
       let finalStatus = "closed";
 
@@ -197,10 +202,20 @@ async function syncTradeStatuses(ws, userId, label) {
       });
 
       cancelForcedCloseTimer(String(trade.contractId));
+
+      const soldFor = finalPnl + trade.stake; // derived — matches the soldFor-stake=pnl convention used everywhere else
+      const reason  = finalPnl >= 0
+        ? "Closed by native Take Profit (or already closed before the bot's own exit checks ran)"
+        : "Closed by native Stop Loss (or already closed before the bot's own exit checks ran)";
+
       await log(userId,
-        `[${label}] [sync] Trade ${trade.contractId} → ${finalStatus} | PnL: $${finalPnl.toFixed(2)}`,
+        `[${label}] ${trade.symbol} | [sync] Closed externally → ${finalStatus} | Sold $${soldFor.toFixed(2)} | PnL: $${finalPnl.toFixed(2)}`,
         "trade"
       );
+      await notifyTradeClosed({
+        symbol: trade.symbol, direction: trade.direction, soldFor, pnl: finalPnl,
+        stake: trade.stake, reason, label, botToken, chatId,
+      });
     }
   } catch (e) {
     await log(userId, `[${label}] [sync] Error: ${e.message}`, "error");
@@ -590,7 +605,7 @@ async function runUserBot(user, stopSignal) {
         balance     = await getBalance(ws);
         lastApiCall = Date.now();
 
-        await syncTradeStatuses(ws, user._id, label);
+        await syncTradeStatuses(ws, user._id, label, botToken, chatId);
         lastApiCall = Date.now();
 
         const liveStatuses = await monitorOpenTrades(ws, user._id, label, portfolio, dfD1Cache, freshUser.risk, botToken, chatId);
@@ -781,6 +796,21 @@ async function runUserBot(user, stopSignal) {
               mode:         user.derivMode,
               label,
               durationMins, // 0 = OFF (explicit user choice), no min/max otherwise
+              onClosed: async ({ soldFor, finalPnl, reason }) => {
+                // status:"open" filter makes this safe even if another
+                // path (sync, or one of the 3 monitored exits) already
+                // closed/updated this same trade first — matches zero
+                // documents in that case, no double-processing.
+                const updated = await Trade.findOneAndUpdate(
+                  { contractId: String(contractId), status: "open" },
+                  { status: finalPnl >= 0 ? "won" : "lost", pnl: finalPnl, closedAt: new Date() }
+                );
+                if (!updated) return; // already closed via another path
+                portfolio.unlockSymbol(symbol);
+                await log(user._id, `[${label}] ${symbol} | ⏰ EXIT: ${reason} — closed`, "trade");
+                await log(user._id, `[${label}] ${symbol} | Closed $${soldFor.toFixed(2)} | PnL: $${finalPnl.toFixed(2)}`, "trade");
+                await notifyTradeClosed({ symbol, direction, soldFor, pnl: finalPnl, stake, reason, label, botToken, chatId });
+              },
             });
 
             try {

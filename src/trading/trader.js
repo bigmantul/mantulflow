@@ -43,7 +43,7 @@ function parseMultipliersFromError(errorText) {
 //  CORE FORCED CLOSE
 // ═══════════════════════════════════════════════════════
 
-async function forceCloseContract({ contractId, symbol, direction, stake, token, appId, mode, label }) {
+async function forceCloseContract({ contractId, symbol, direction, stake, token, appId, mode, label, onClosed }) {
   const contractIdStr = String(contractId);
   let ws = null;
   try {
@@ -60,9 +60,19 @@ async function forceCloseContract({ contractId, symbol, direction, stake, token,
     const result   = finalPnl >= 0 ? "✅ WON" : "❌ LOST";
     console.log(`   [${label}] ${result} | ${symbol} | Sold: $${soldFor.toFixed(2)} | PnL: $${finalPnl.toFixed(2)}`);
 
+    if (onClosed) {
+      try {
+        await onClosed({ contractId: contractIdStr, symbol, direction, stake, soldFor, finalPnl, reason: "Forced close — duration timer expired" });
+      } catch (cbErr) {
+        console.error(`   [${label}] onClosed callback error: ${cbErr.message}`);
+      }
+    }
+
   } catch (e) {
     if (e.message.includes("sold") || e.message.includes("closed") || e.message.includes("expired")) {
       console.log(`   [${label}] Contract ${contractIdStr} already closed by SL/TP before forced close.`);
+      // Don't call onClosed here — syncTradeStatuses' regular catch-all
+      // will pick this case up on its next pass with its own notification.
     } else {
       console.error(`   [${label}] Force close error: ${e.message}`);
     }
@@ -84,7 +94,7 @@ async function forceCloseContract({ contractId, symbol, direction, stake, token,
 // ═══════════════════════════════════════════════════════
 
 export function startForcedCloseTimer(tradeInfo) {
-  const { contractId, symbol, direction, stake, token, appId, mode, label, durationMins } = tradeInfo;
+  const { contractId, symbol, direction, stake, token, appId, mode, label, durationMins, onClosed } = tradeInfo;
   const contractIdStr = String(contractId);
 
   cancelForcedCloseTimer(contractIdStr);
@@ -105,7 +115,7 @@ export function startForcedCloseTimer(tradeInfo) {
   const timer = setTimeout(async () => {
     console.log(`\n⏰ [${label}] Forced close timer expired for ${contractIdStr} (${symbol} ${direction})`);
     console.log(`   Opening fresh connection to close trade...`);
-    await forceCloseContract({ contractId: contractIdStr, symbol, direction, stake, token, appId, mode, label });
+    await forceCloseContract({ contractId: contractIdStr, symbol, direction, stake, token, appId, mode, label, onClosed });
   }, durationMs);
 
   openTimers.set(contractIdStr, timer);
