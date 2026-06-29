@@ -113,7 +113,7 @@ const SYMBOLS = [
   "1HZ100V",
 ];
 
-const POLL_SECS          = 30;
+const POLL_SECS          = 10; // was 30 - the dominant component of the live-status display delay
 const TELEGRAM_BOT_TOKEN = process.env.TELEGRAM_BOT_TOKEN;
 
 const runningBots = new Map();
