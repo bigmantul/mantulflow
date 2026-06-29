@@ -27,6 +27,7 @@ router.put("/risk", protect, async (req, res) => {
       stakeAmount, maxOpenTrades, maxDailyLossPct,
       maxConsecutiveLosses, stopLossPct, takeProfitPct,
       trailingStopPct, contractDurationMins,
+      noProfitCutoffMins, cutoffCooldownHours,
     } = req.body;
 
     const user = await User.findById(req.user._id);
@@ -51,6 +52,22 @@ router.put("/risk", protect, async (req, res) => {
       user.risk.contractDurationMins = contractDurationMins === null || contractDurationMins === ""
         ? 0
         : parseFloat(contractDurationMins);
+    }
+
+    // noProfitCutoffMins: minutes to wait before closing a non-profitable
+    // trade. 0 = fully OFF (this mechanism never closes a trade).
+    if (noProfitCutoffMins !== undefined) {
+      user.risk.noProfitCutoffMins = noProfitCutoffMins === null || noProfitCutoffMins === ""
+        ? 0
+        : Math.max(parseFloat(noProfitCutoffMins), 0);
+    }
+
+    // cutoffCooldownHours: hours to lock a symbol after the no-profit
+    // cutoff fires. 0 = no cooldown at all.
+    if (cutoffCooldownHours !== undefined) {
+      user.risk.cutoffCooldownHours = cutoffCooldownHours === null || cutoffCooldownHours === ""
+        ? 0
+        : Math.max(parseFloat(cutoffCooldownHours), 0);
     }
 
     await user.save();

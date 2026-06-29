@@ -559,6 +559,22 @@ tr:hover td{background:rgba(56,189,248,0.03)}
           <input type="number" id="rDuration" min="0" step="1" placeholder="120"/>
           <small style="opacity:0.6;font-size:0.75em;">minutes until forced close (no limit)</small>
         </div>
+        <div class="field">
+          <label>
+            <input type="checkbox" id="rCutoffOff" style="width:auto;margin-right:6px;" onchange="document.getElementById('rCutoff').disabled=this.checked;"/>
+            NO-PROFIT CUTOFF — <span style="opacity:0.7;">OFF</span>
+          </label>
+          <input type="number" id="rCutoff" min="0" step="1" placeholder="20"/>
+          <small style="opacity:0.6;font-size:0.75em;">Close a trade if it hasn't reached profit within this many minutes (default 20)</small>
+        </div>
+        <div class="field">
+          <label>
+            <input type="checkbox" id="rCooldownOff" style="width:auto;margin-right:6px;" onchange="document.getElementById('rCooldown').disabled=this.checked;"/>
+            CUTOFF COOLDOWN — <span style="opacity:0.7;">OFF</span>
+          </label>
+          <input type="number" id="rCooldown" min="0" step="0.5" placeholder="2"/>
+          <small style="opacity:0.6;font-size:0.75em;">Hours to lock a symbol out after the no-profit cutoff fires (default 2)</small>
+        </div>
       </div>
       <button class="save-btn" onclick="saveRisk()">Save Risk Settings</button>
       <div class="ok-msg" id="riskOk">✅ Saved!</div>
@@ -1076,6 +1092,12 @@ async function saveRisk(){
     contractDurationMins: document.getElementById("rDurationOff").checked
       ? 0
       : (parseFloat(document.getElementById("rDuration").value) || 0),
+    noProfitCutoffMins: document.getElementById("rCutoffOff").checked
+      ? 0
+      : (parseFloat(document.getElementById("rCutoff").value) || 0),
+    cutoffCooldownHours: document.getElementById("rCooldownOff").checked
+      ? 0
+      : (parseFloat(document.getElementById("rCooldown").value) || 0),
   };
   await API("/user/risk","PUT",data);
   const m=document.getElementById("riskOk");
@@ -1116,6 +1138,14 @@ async function init(){
   document.getElementById("rDurationOff").checked = durationOff;
   document.getElementById("rDuration").disabled = durationOff;
   document.getElementById("rDuration").value = r.contractDurationMins || 120;
+  const cutoffOff = r.noProfitCutoffMins !== undefined && r.noProfitCutoffMins !== null && r.noProfitCutoffMins <= 0;
+  document.getElementById("rCutoffOff").checked = cutoffOff;
+  document.getElementById("rCutoff").disabled = cutoffOff;
+  document.getElementById("rCutoff").value = (r.noProfitCutoffMins === undefined || r.noProfitCutoffMins === null) ? 20 : r.noProfitCutoffMins;
+  const cooldownOff = r.cutoffCooldownHours !== undefined && r.cutoffCooldownHours !== null && r.cutoffCooldownHours <= 0;
+  document.getElementById("rCooldownOff").checked = cooldownOff;
+  document.getElementById("rCooldown").disabled = cooldownOff;
+  document.getElementById("rCooldown").value = (r.cutoffCooldownHours === undefined || r.cutoffCooldownHours === null) ? 2 : r.cutoffCooldownHours;
   document.getElementById("setPAT").value=user.derivPAT||"";
   document.getElementById("setAppId").value=user.derivAppId||"";
   document.getElementById("setMode").value=user.derivMode||"demo";

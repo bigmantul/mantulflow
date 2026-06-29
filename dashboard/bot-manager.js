@@ -237,6 +237,16 @@ async function monitorOpenTrades(ws, userId, label, portfolio, dfD1Cache, riskSe
       ? 0.5
       : riskSettings.trailingStopPct;
 
+    // noProfitCutoffMins: 0 = OFF (this mechanism never closes a trade).
+    const noProfitCutoffMins = (riskSettings?.noProfitCutoffMins === undefined || riskSettings?.noProfitCutoffMins === null)
+      ? 20
+      : riskSettings.noProfitCutoffMins;
+
+    // cutoffCooldownHours: 0 = no cooldown applied after the cutoff fires.
+    const cutoffCooldownHours = (riskSettings?.cutoffCooldownHours === undefined || riskSettings?.cutoffCooldownHours === null)
+      ? 2
+      : riskSettings.cutoffCooldownHours;
+
     const liveStatuses = [];
 
     for (const trade of openTrades) {
@@ -277,13 +287,15 @@ async function monitorOpenTrades(ws, userId, label, portfolio, dfD1Cache, riskSe
         const biasFlipped = currentBias !== "neutral" && currentBias !== tradeBias;
         const biasStatus  = currentBias === "neutral" ? "NEUTRAL" : (biasFlipped ? "REVERSED" : "AGREES");
 
-        // 4: 20-minute no-profit cutoff
+        // 4: no-profit cutoff (configurable, default 20min, 0 = OFF)
         const openedAtMs  = new Date(trade.openedAt).getTime();
         const minutesOpen = (Date.now() - openedAtMs) / 60000;
-        const cutoffDue    = minutesOpen >= 20 && currentPnl <= 0;
-        const cutoffText   = currentPnl > 0
-          ? "n/a (in profit)"
-          : (cutoffDue ? "TRIGGERED" : `${(20 - minutesOpen).toFixed(1)}min remaining`);
+        const cutoffDue    = noProfitCutoffMins > 0 && minutesOpen >= noProfitCutoffMins && currentPnl <= 0;
+        const cutoffText   = noProfitCutoffMins <= 0
+          ? "OFF"
+          : (currentPnl > 0
+            ? "n/a (in profit)"
+            : (cutoffDue ? "TRIGGERED" : `${(noProfitCutoffMins - minutesOpen).toFixed(1)}min remaining`));
 
         // 5: PnL Lock (stepped ratchet)
         const takeProfit = takeProfitVal;
@@ -319,7 +331,7 @@ async function monitorOpenTrades(ws, userId, label, portfolio, dfD1Cache, riskSe
           `[${label}] ${trade.symbol} (${dirLabel}) | LIVE STATUS`,
           `PnL: $${currentPnl.toFixed(4)} | SL: $${stopLossVal.toFixed(2)} (${distToSL.toFixed(4)} away) | TP: $${takeProfitVal.toFixed(2)} (${distToTP.toFixed(4)} away)`,
           `Daily Bias: ${currentBias.toUpperCase()} (${biasStatus})`,
-          `20min Cutoff: ${cutoffText}`,
+          `No-Profit Cutoff: ${cutoffText}`,
           `PnL Lock: ${pnlLockText}`,
           `Forced Close Timer: ${forcedCloseText}`,
         ];
@@ -350,16 +362,20 @@ async function monitorOpenTrades(ws, userId, label, portfolio, dfD1Cache, riskSe
           continue;
         }
 
-        // ── EXIT 1B: NO-PROFIT 20-MINUTE CUTOFF ──────────
-        // If a trade has been open for >= 20 minutes and is NOT in
-        // profit, close it immediately and lock the symbol for a
-        // 2-hour cooldown (separate from the normal unlock-on-close
-        // — a deliberate "stay away" period even though no trade
-        // remains open on this symbol).
+        // ── EXIT 1B: NO-PROFIT CUTOFF (configurable, default 20min) ──
+        // If a trade has been open for >= noProfitCutoffMins and is NOT
+        // in profit, close it immediately. If cutoffCooldownHours > 0,
+        // also lock the symbol for that many hours — separate from the
+        // normal unlock-on-close, a deliberate "stay away" period even
+        // though no trade remains open on this symbol. Both settings
+        // are user-configurable on the dashboard; either can be set to
+        // 0 to disable (cutoff itself, or just the cooldown lock).
         if (cutoffDue) {
           const reason = `Not profitable after ${minutesOpen.toFixed(0)}min`;
+          const cooldownMs   = cutoffCooldownHours * 60 * 60 * 1000;
+          const cooldownText = cutoffCooldownHours > 0 ? ` + ${cutoffCooldownHours}hr cooldown lock` : "";
           await log(userId,
-            `[${label}] ${trade.symbol} | ⏱️ EXIT: ${reason} ($${currentPnl.toFixed(2)}) — closing + 2hr cooldown lock`,
+            `[${label}] ${trade.symbol} | ⏱️ EXIT: ${reason} ($${currentPnl.toFixed(2)}) — closing${cooldownText}`,
             "trade"
           );
           const soldFor = await closeTrade(ws, trade.contractId);
@@ -371,9 +387,9 @@ async function monitorOpenTrades(ws, userId, label, portfolio, dfD1Cache, riskSe
               closedAt: new Date(),
             });
             portfolio.unlockSymbol(trade.symbol);
-            portfolio.lockSymbolForCooldown(trade.symbol, 2 * 60 * 60 * 1000); // 2hr cooldown
-            await log(userId, `[${label}] ${trade.symbol} | Closed $${soldFor.toFixed(2)} | PnL: $${finalPnl.toFixed(2)} | 🧊 locked 2hrs`, "trade");
-            await notifyTradeClosed({ symbol: trade.symbol, direction, soldFor, pnl: finalPnl, stake, reason: `${reason} — 2hr cooldown lock applied`, label, botToken, chatId });
+            if (cutoffCooldownHours > 0) portfolio.lockSymbolForCooldown(trade.symbol, cooldownMs);
+            await log(userId, `[${label}] ${trade.symbol} | Closed $${soldFor.toFixed(2)} | PnL: $${finalPnl.toFixed(2)}${cutoffCooldownHours > 0 ? ` | 🧊 locked ${cutoffCooldownHours}hrs` : ""}`, "trade");
+            await notifyTradeClosed({ symbol: trade.symbol, direction, soldFor, pnl: finalPnl, stake, reason: `${reason}${cutoffCooldownHours > 0 ? ` — ${cutoffCooldownHours}hr cooldown lock applied` : ""}`, label, botToken, chatId });
           }
           continue;
         }

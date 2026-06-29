@@ -38,6 +38,15 @@ const userSchema = new mongoose.Schema({
     // Trade auto-closes (client-side sell, not contract_update) if profit
     // falls to/below the locked floor. Default 50%. Set to 0 to disable.
     trailingStopPct:      { type: Number, default: 0.5 },
+    // No-profit cutoff: close a trade if it hasn't reached profit within
+    // this many minutes of opening. Default 20. Set to 0 to disable
+    // entirely (trade is never closed by this mechanism).
+    noProfitCutoffMins:   { type: Number, default: 20 },
+    // Cooldown applied to a symbol after the no-profit cutoff fires —
+    // blocks new entries on that symbol for this many hours. Default 2.
+    // Set to 0 for no cooldown at all (symbol immediately tradeable
+    // again once unlocked).
+    cutoffCooldownHours:  { type: Number, default: 2 },
     // Forced contract close duration in minutes. null = OFF (no forced close,
     // only SL/TP/trailing stop closes the trade). No min/max enforced.
     contractDurationMins: { type: Number, default: 120 },
