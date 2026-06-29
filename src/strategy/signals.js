@@ -221,18 +221,19 @@ function getSimpleTrend(dfD1, lookback = 30) {
 // ═══════════════════════════════════════════════════════
 //  STAGE 1 — DAILY BIAS (computed once per trading day)
 //
-//  NEW RULES (replaces prev-high/low break requirement):
-//
 //  Step 1 — Validate each daily candle independently:
-//    Valid Bullish: Close > Open, closes near high,
-//                   Upper Wick% = (High-Close)/(Close-Open) <= 40%
-//    Valid Bearish: Close < Open, closes near low,
-//                   Lower Wick% = (Close-Low)/(Open-Close) <= 40%
+//    Valid Bullish: Close > Open, AND Body > Upper Wick
+//                   (Body = Close-Open, Upper Wick = High-Close)
+//    Valid Bearish: Close < Open, AND Body > Lower Wick
+//                   (Body = Open-Close, Lower Wick = Close-Low)
+//    Rule: the body must be strictly bigger than the relevant
+//    wick. Equal size (wick = 100% of body) or wick >= body
+//    is invalid.
 //
 //  Step 2 — Count consecutive valid candles of the SAME
-//    direction. ANY invalid candle (wrong direction, not
-//    closing near high/low, or wick% > 40%) resets count
-//    to zero. Never count an invalid candle toward the
+//    direction. ANY invalid candle (wrong direction, or
+//    wick >= body) resets count to zero. Never count an
+//    invalid candle toward the
 //    3-candle confirmation.
 //
 //  Step 3 — Determine bias:
@@ -264,15 +265,15 @@ function validateDailyCandle(candle) {
     const bodyAbs = body;
     // Step 3: Upper Wick = High - Close
     const upperWick = candle.high - candle.close;
-    // Step 4: Upper Wick % = (Upper Wick / Body) x 100
-    const upperWickPct = (upperWick / bodyAbs) * 100;
-    // Step 5: Valid if Upper Wick % <= 40, else Invalid
-    const wickValid = upperWickPct <= 40;
+    // Step 4: Valid if Body > Upper Wick, else Invalid
+    // (the body must be bigger than the wick — equal or smaller is invalid)
+    const wickValid = bodyAbs > upperWick;
+    const upperWickPct = (upperWick / bodyAbs) * 100; // kept for logging only
 
     if (wickValid) {
-      return { valid: true, direction: "bullish", wickPct: upperWickPct, reason: `Valid bullish — upper wick ${upperWickPct.toFixed(0)}% of body` };
+      return { valid: true, direction: "bullish", wickPct: upperWickPct, reason: `Valid bullish — body (${bodyAbs.toFixed(5)}) > upper wick (${upperWick.toFixed(5)})` };
     }
-    return { valid: false, direction: "bullish", wickPct: upperWickPct, reason: `Invalid bullish — upper wick ${upperWickPct.toFixed(0)}% of body (>40%)` };
+    return { valid: false, direction: "bullish", wickPct: upperWickPct, reason: `Invalid bullish — upper wick (${upperWick.toFixed(5)}) >= body (${bodyAbs.toFixed(5)})` };
   }
 
   if (body < 0) {
@@ -282,15 +283,14 @@ function validateDailyCandle(candle) {
     const bodyAbs = -body;
     // Step 3: Lower Wick = Close - Low
     const lowerWick = candle.close - candle.low;
-    // Step 4: Lower Wick % = (Lower Wick / Body) x 100
-    const lowerWickPct = (lowerWick / bodyAbs) * 100;
-    // Step 5: Valid if Lower Wick % <= 40, else Invalid
-    const wickValid = lowerWickPct <= 40;
+    // Step 4: Valid if Body > Lower Wick, else Invalid
+    const wickValid = bodyAbs > lowerWick;
+    const lowerWickPct = (lowerWick / bodyAbs) * 100; // kept for logging only
 
     if (wickValid) {
-      return { valid: true, direction: "bearish", wickPct: lowerWickPct, reason: `Valid bearish — lower wick ${lowerWickPct.toFixed(0)}% of body` };
+      return { valid: true, direction: "bearish", wickPct: lowerWickPct, reason: `Valid bearish — body (${bodyAbs.toFixed(5)}) > lower wick (${lowerWick.toFixed(5)})` };
     }
-    return { valid: false, direction: "bearish", wickPct: lowerWickPct, reason: `Invalid bearish — lower wick ${lowerWickPct.toFixed(0)}% of body (>40%)` };
+    return { valid: false, direction: "bearish", wickPct: lowerWickPct, reason: `Invalid bearish — lower wick (${lowerWick.toFixed(5)}) >= body (${bodyAbs.toFixed(5)})` };
   }
 
   return { valid: false, direction: null, reason: "Doji / indecisive candle" };
