@@ -221,11 +221,19 @@ function checkExitWithinBar(position, bar, opts) {
  * @param {Array}  opts.h1   - full historical H1 candles
  * @param {Array}  opts.m15  - full historical M15 candles (the bar the loop steps over)
  * @param {number} [opts.startEquity=1000]
- * @param {number} [opts.riskPct=0.02]      - fraction of equity risked per trade stake (0.02 = 2%).
- *                                            NOTE: this is intentionally NOT routed through
- *                                            RiskManager.calculateStake() — see README note on
- *                                            the riskPct*10 bug in risk-manager.js. This engine
- *                                            computes stake directly with correct units.
+ * @param {number} [opts.stakeAmount]  - FIXED dollar stake, matches the live bot's
+ *                                       dashboard/db.js risk.stakeAmount EXACTLY (the
+ *                                       live bot does NOT size stake as a % of balance
+ *                                       at all — every trade uses this same fixed dollar
+ *                                       amount regardless of equity). If provided, this
+ *                                       takes priority over riskPct below. This is the
+ *                                       option to use for a true 1:1 match to production.
+ * @param {number} [opts.riskPct=0.02] - fraction of equity risked per trade stake (0.02 = 2%).
+ *                                       Only used as a FALLBACK if stakeAmount is not
+ *                                       provided. NOTE: this %-of-equity sizing is NOT
+ *                                       how the live bot actually sizes trades — kept here
+ *                                       only for exploratory "what if I sized by % instead"
+ *                                       backtests. For matching production, use stakeAmount.
  * @param {number} [opts.slPct=0.80]        - matches StopLossTakeProfit default
  * @param {number} [opts.tpPct=2.00]
  * @param {number} [opts.maxOpenTrades=3]
@@ -242,6 +250,7 @@ export function runBacktest(opts) {
     h1,
     m15,
     startEquity = 1000,
+    stakeAmount,
     riskPct = 0.02,
     slPct = 0.80,
     tpPct = 2.00,
@@ -362,7 +371,12 @@ export function runBacktest(opts) {
     // signal candle — that's exactly `bar` in this loop iteration,
     // since collectSignals() just fired using bar i as `lastClosed`.
     const direction = result.signal === SIG_BUY ? "buy" : "sell";
-    const stake = Math.max(1, parseFloat((equity * riskPct).toFixed(2)));
+    // FIXED dollar stake (matches production exactly) takes priority
+    // over %-of-equity sizing when provided — see runBacktest's
+    // docblock above for why these are NOT the same thing.
+    const stake = stakeAmount !== undefined
+      ? Math.max(1, stakeAmount)
+      : Math.max(1, parseFloat((equity * riskPct).toFixed(2)));
     const multiplier = FALLBACK_MULTIPLIERS[symbol] ?? 50;
     const limitOrder = sltp.getMultiplierLimitOrder(stake);
 
