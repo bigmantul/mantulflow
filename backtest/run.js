@@ -1,10 +1,23 @@
 // ═══════════════════════════════════════════════════════
 //  backtest/run.js
 //
-//  Usage:
-//    node backtest/run.js <SYMBOL> [--equity=1000] [--risk=0.02]
-//      [--trailing=0.5] [--duration=120]
+//  PERSONAL RISK SETTINGS:
+//  If backtest/my-risk-settings.js exists (copy it from
+//  backtest/my-risk-settings.example.js and edit it with
+//  YOUR dashboard values), it's loaded automatically and
+//  used as the defaults below — no need to retype
+//  --stake= --trailing= --duration= every run. CLI flags
+//  still override individual values if passed.
 //
+//  Usage:
+//    node backtest/run.js <SYMBOL> [--equity=1000] [--stake=1.00]
+//      [--risk=0.02] [--trailing=0.5] [--duration=120]
+//
+//  --stake    : FIXED dollar stake (matches db.js risk.stakeAmount
+//               EXACTLY — production sizing, not % of equity).
+//               Takes priority over --risk when both are set.
+//  --risk     : fallback %-of-equity sizing, only used if --stake
+//               is not set (production does not use this mode).
 //  --trailing : trailingStopPct, fraction of TP that activates
 //               trailing stop (default 0.5 = 50%, matches db.js
 //               default). Set to 0 to disable.
@@ -13,13 +26,23 @@
 //               default). Set to 0 to disable.
 //
 //  Reads backtest/data/<SYMBOL>.json (produced either by
-//  fetch-history.js against real Deriv data, or by
-//  generate-sample-data.js for a synthetic dry run) and
-//  prints a performance report.
+//  fetch-history.js / fetch-all-history.js against real
+//  Deriv data, or by generate-sample-data.js for a synthetic
+//  dry run) and prints a performance report.
 // ═══════════════════════════════════════════════════════
 
 import fs from "fs";
+import path from "path";
 import { runBacktest } from "./engine.js";
+
+// ── LOAD PERSONAL RISK SETTINGS, IF PRESENT ──────────────
+const myRiskPath = path.resolve("backtest/my-risk-settings.js");
+let myRisk = {};
+if (fs.existsSync(myRiskPath)) {
+  const mod = await import(`file://${myRiskPath}`);
+  myRisk = mod.default || {};
+  console.log("Loaded personal risk settings from backtest/my-risk-settings.js");
+}
 
 function parseArgs(argv) {
   const symbol = argv[2];
@@ -31,10 +54,11 @@ function parseArgs(argv) {
   return { symbol, opts };
 }
 
-const { symbol, opts } = parseArgs(process.argv);
+const { symbol, opts: cliOpts } = parseArgs(process.argv);
+const opts = { ...myRisk, ...cliOpts };
 
 if (!symbol) {
-  console.error("Usage: node backtest/run.js <SYMBOL> [--equity=1000] [--risk=0.02] [--trailing=0.5] [--duration=120]");
+  console.error("Usage: node backtest/run.js <SYMBOL> [--equity=1000] [--stake=1.00] [--risk=0.02] [--trailing=0.5] [--duration=120]");
   process.exit(1);
 }
 
@@ -44,6 +68,7 @@ if (!fs.existsSync(dataPath)) {
   console.error(`Run either:`);
   console.error(`  node backtest/generate-sample-data.js ${symbol}   (synthetic dry run)`);
   console.error(`  node backtest/fetch-history.js ${symbol}          (real Deriv history)`);
+  console.error(`  node backtest/fetch-all-history.js                (real Deriv history, ALL symbols)`);
   process.exit(1);
 }
 
@@ -55,16 +80,22 @@ const result = runBacktest({
   h1,
   m15,
   startEquity: opts.equity ?? 1000,
-  riskPct: opts.risk ?? 0.02,
-  slPct: opts.sl ?? 0.80,
-  tpPct: opts.tp ?? 2.00,
-  trailingStopPct: opts.trailing ?? 0.5,
-  contractDurationMins: opts.duration ?? 120,
+  stakeAmount: opts.stake ?? opts.stakeAmount, // fixed dollar stake, matches production
+  riskPct: opts.risk ?? 0.02,                   // fallback only, used if stakeAmount unset
+  slPct: opts.sl ?? opts.stopLossPct ?? 0.80,
+  tpPct: opts.tp ?? opts.takeProfitPct ?? 2.00,
+  trailingStopPct: opts.trailing ?? opts.trailingStopPct ?? 0.5,
+  contractDurationMins: opts.duration ?? opts.contractDurationMins ?? 120,
 });
+
+const stakeMode = (opts.stake ?? opts.stakeAmount) !== undefined
+  ? `stakeAmount=$${opts.stake ?? opts.stakeAmount} (fixed, matches production)`
+  : `riskPct=${opts.risk ?? 0.02} (% of equity, fallback mode)`;
 
 console.log(`\n══════════════════════════════════════════`);
 console.log(`  BACKTEST REPORT — ${result.symbol}`);
 console.log(`══════════════════════════════════════════`);
+console.log(`  Settings       : ${stakeMode}`);
 console.log(`  Start Equity   : $${result.startEquity.toFixed(2)}`);
 console.log(`  Final Equity   : $${result.finalEquity.toFixed(2)}`);
 console.log(`  Total Return   : ${result.totalReturnPct}%`);
