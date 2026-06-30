@@ -13,8 +13,9 @@
 //  EXIT RULES SIMULATED (matches dashboard/bot-manager.js
 //  monitorOpenTrades(), same priority order, checked in
 //  this exact order on every closed M15 bar):
-//    1. 20-min no-profit cutoff — close if open >=20min and
-//       PnL<=0, then symbol locked out from new entries 2hrs
+//    1. No-profit cutoff (configurable, default 20min, 0=OFF) —
+//       close if open >=noProfitCutoffMins and PnL<=0, then symbol
+//       locked out from new entries for cutoffCooldownHours (0=none)
 //    2. Trailing stop — activates at trailingStopPct of TP
 //       (default 50%), moves SL to breakeven, then trails
 //       by the same step
@@ -142,7 +143,7 @@ function priceForPnl(position, targetPnl) {
  * been hit in the same bar, SL is assumed to have hit first.
  */
 function checkExitWithinBar(position, bar, opts) {
-  const { trailingStopPct = 0.5, contractDurationMins = 120 } = opts;
+  const { trailingStopPct = 0.5, contractDurationMins = 120, noProfitCutoffMins = 20, cutoffCooldownHours = 2 } = opts;
   const { stopLoss, takeProfit, direction, entryEpoch, m15GranularitySec = 900 } = position;
 
   const worstPrice = direction === "buy" ? bar.low : bar.high;
@@ -152,16 +153,17 @@ function checkExitWithinBar(position, bar, opts) {
 
   const minutesOpen = (bar.epoch - entryEpoch) / 60;
 
-  // ── 1. 20-MIN NO-PROFIT CUTOFF ──────────────────────
-  // Mirrors bot-manager.js EXIT 1B exactly: if >=20 min open and
-  // current (close-of-bar) PnL <= 0, force close. Uses bar.close
+  // ── 1. NO-PROFIT CUTOFF (configurable, default 20min, 0 = OFF) ──
+  // Mirrors bot-manager.js EXIT 1B exactly: if >=noProfitCutoffMins open
+  // and current (close-of-bar) PnL <= 0, force close. Uses bar.close
   // as "current price" since that's the most recent known price
   // at the moment this check would run live (poll-based, not
   // intra-bar), matching how monitorOpenTrades() polls periodically
-  // rather than reacting to every tick.
+  // rather than reacting to every tick. cutoffCooldownHours controls
+  // how long the symbol is then locked out (0 = no cooldown at all).
   const closePnl = pnlAtPrice(position, bar.close);
-  if (minutesOpen >= 20 && closePnl <= 0) {
-    return { exit: true, exitPrice: bar.close, pnl: closePnl, outcome: "NO_PROFIT_20MIN", lockCooldown: true };
+  if (noProfitCutoffMins > 0 && minutesOpen >= noProfitCutoffMins && closePnl <= 0) {
+    return { exit: true, exitPrice: bar.close, pnl: closePnl, outcome: "NO_PROFIT_CUTOFF", lockCooldownHours: cutoffCooldownHours };
   }
 
   // ── 2. TRAILING STOP ─────────────────────────────────
@@ -259,6 +261,8 @@ export function runBacktest(opts) {
     maxDailyLossPct = 0.30,
     trailingStopPct = 0.5,
     contractDurationMins = 120,
+    noProfitCutoffMins = 20,
+    cutoffCooldownHours = 2,
     minStartIndex = 100,
   } = opts;
 
@@ -308,7 +312,7 @@ export function runBacktest(opts) {
     // close — see checkExitWithinBar's priority order, matches
     // bot-manager.js's monitorOpenTrades exactly)
     if (openPosition) {
-      const result = checkExitWithinBar(openPosition, bar, { trailingStopPct, contractDurationMins });
+      const result = checkExitWithinBar(openPosition, bar, { trailingStopPct, contractDurationMins, noProfitCutoffMins, cutoffCooldownHours });
       if (result.exit) {
         equity += result.pnl;
         rm.tradeClosed(result.pnl);
@@ -326,11 +330,12 @@ export function runBacktest(opts) {
           equityAfter: equity,
         });
         equityCurve.push({ epoch: bar.epoch, equity });
-        // The 20-min no-profit exit locks the symbol out from new
-        // entries for 2hrs of SIMULATED time, mirroring
-        // portfolio.lockSymbolForCooldown() in bot-manager.js.
-        if (result.lockCooldown) {
-          cooldownUntilEpoch = bar.epoch + 2 * 60 * 60;
+        // The no-profit cutoff exit locks the symbol out from new
+        // entries for cutoffCooldownHours of SIMULATED time, mirroring
+        // portfolio.lockSymbolForCooldown() in bot-manager.js. 0 hours
+        // means no cooldown is applied at all.
+        if (result.lockCooldownHours > 0) {
+          cooldownUntilEpoch = bar.epoch + result.lockCooldownHours * 60 * 60;
         }
         openPosition = null;
       }

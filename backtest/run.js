@@ -12,6 +12,7 @@
 //  Usage:
 //    node backtest/run.js <SYMBOL> [--equity=1000] [--stake=1.00]
 //      [--risk=0.02] [--trailing=0.5] [--duration=120]
+//      [--cutoff=20] [--cooldown=2]
 //
 //  --stake    : FIXED dollar stake (matches db.js risk.stakeAmount
 //               EXACTLY — production sizing, not % of equity).
@@ -24,6 +25,14 @@
 //  --duration : contractDurationMins, forced close timer in
 //               minutes (default 120 = 2hrs, matches db.js
 //               default). Set to 0 to disable.
+//  --cutoff   : noProfitCutoffMins, close a trade if it hasn't
+//               reached profit within this many minutes of opening
+//               (default 20, matches db.js default). Set to 0 to
+//               disable this mechanism entirely.
+//  --cooldown : cutoffCooldownHours, hours to lock a symbol out of
+//               new entries after the no-profit cutoff fires
+//               (default 2, matches db.js default). Set to 0 for
+//               no cooldown lock at all.
 //
 //  Reads backtest/data/<SYMBOL>.json (produced either by
 //  fetch-history.js / fetch-all-history.js against real
@@ -58,7 +67,7 @@ const { symbol, opts: cliOpts } = parseArgs(process.argv);
 const opts = { ...myRisk, ...cliOpts };
 
 if (!symbol) {
-  console.error("Usage: node backtest/run.js <SYMBOL> [--equity=1000] [--stake=1.00] [--risk=0.02] [--trailing=0.5] [--duration=120]");
+  console.error("Usage: node backtest/run.js <SYMBOL> [--equity=1000] [--stake=1.00] [--risk=0.02] [--trailing=0.5] [--duration=120] [--cutoff=20] [--cooldown=2]");
   process.exit(1);
 }
 
@@ -86,6 +95,8 @@ const result = runBacktest({
   tpPct: opts.tp ?? opts.takeProfitPct ?? 2.00,
   trailingStopPct: opts.trailing ?? opts.trailingStopPct ?? 0.5,
   contractDurationMins: opts.duration ?? opts.contractDurationMins ?? 120,
+  noProfitCutoffMins: opts.cutoff ?? opts.noProfitCutoffMins ?? 20,
+  cutoffCooldownHours: opts.cooldown ?? opts.cutoffCooldownHours ?? 2,
 });
 
 const stakeMode = (opts.stake ?? opts.stakeAmount) !== undefined
@@ -96,6 +107,7 @@ console.log(`\n═════════════════════�
 console.log(`  BACKTEST REPORT — ${result.symbol}`);
 console.log(`══════════════════════════════════════════`);
 console.log(`  Settings       : ${stakeMode}`);
+console.log(`  No-Profit Cutoff: ${(opts.cutoff ?? opts.noProfitCutoffMins ?? 20) > 0 ? `${opts.cutoff ?? opts.noProfitCutoffMins ?? 20}min` : "OFF"}  Cooldown: ${(opts.cooldown ?? opts.cutoffCooldownHours ?? 2) > 0 ? `${opts.cooldown ?? opts.cutoffCooldownHours ?? 2}hr` : "OFF"}`);
 console.log(`  Start Equity   : $${result.startEquity.toFixed(2)}`);
 console.log(`  Final Equity   : $${result.finalEquity.toFixed(2)}`);
 console.log(`  Total Return   : ${result.totalReturnPct}%`);

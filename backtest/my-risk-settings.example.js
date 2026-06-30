@@ -48,6 +48,12 @@ export default {
   takeProfitPct:        2.00,   // matches db.js: risk.takeProfitPct
   trailingStopPct:      0.50,   // matches db.js: risk.trailingStopPct (50% of TP)
   contractDurationMins: 120,    // matches db.js: risk.contractDurationMins (0 = OFF)
+  noProfitCutoffMins:   20,     // matches db.js: risk.noProfitCutoffMins — close a trade
+                                 // if it hasn't reached profit within this many minutes
+                                 // of opening (0 = OFF, this mechanism never closes a trade)
+  cutoffCooldownHours:  2,      // matches db.js: risk.cutoffCooldownHours — hours to lock
+                                 // a symbol out of new entries after the no-profit cutoff
+                                 // fires (0 = no cooldown lock applied at all)
   maxOpenTrades:        3,      // matches db.js: risk.maxOpenTrades (engine.js currently
                                  // backtests ONE symbol at a time independently, so this
                                  // isn't applied per-run yet — kept here for reference /

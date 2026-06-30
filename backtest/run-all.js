@@ -20,7 +20,7 @@
 //  Usage:
 //    node backtest/run-all.js [--days=365] [--equity=1000]
 //      [--stake=1.00] [--risk=0.02] [--trailing=0.5]
-//      [--duration=120] [--real-only]
+//      [--duration=120] [--cutoff=20] [--cooldown=2] [--real-only]
 //
 //  --stake     : FIXED dollar stake (matches db.js risk.stakeAmount
 //                EXACTLY — this is how production actually sizes
@@ -32,6 +32,10 @@
 //                db.js default). 0 disables trailing stop.
 //  --duration  : contractDurationMins (default 120 = 2hrs, matches
 //                db.js default). 0 disables the forced-close timer.
+//  --cutoff    : noProfitCutoffMins (default 20, matches db.js
+//                default). 0 disables this mechanism entirely.
+//  --cooldown  : cutoffCooldownHours (default 2, matches db.js
+//                default). 0 means no cooldown lock applied.
 //  --real-only skips any symbol without a real data file
 //  instead of falling back to synthetic data for it.
 // ═══════════════════════════════════════════════════════
@@ -103,6 +107,8 @@ for (const symbol of SYMBOLS) {
       tpPct: opts.tp ?? opts.takeProfitPct ?? 2.00,
       trailingStopPct: opts.trailing ?? opts.trailingStopPct ?? 0.5,
       contractDurationMins: opts.duration ?? opts.contractDurationMins ?? 120,
+      noProfitCutoffMins: opts.cutoff ?? opts.noProfitCutoffMins ?? 20,
+      cutoffCooldownHours: opts.cooldown ?? opts.cutoffCooldownHours ?? 2,
     });
     results.push(result);
   } catch (e) {
@@ -136,7 +142,7 @@ console.log(`  Exit reasons     : ${Object.entries(outcomeCounts).map(([k, v]) =
 const stakeMode = (opts.stake ?? opts.stakeAmount) !== undefined
   ? `stakeAmount=$${opts.stake ?? opts.stakeAmount} (fixed, matches production)`
   : `riskPct=${opts.risk ?? 0.02} (% of equity, fallback mode)`;
-console.log(`  Settings used    : ${stakeMode}  trailingStopPct=${opts.trailing ?? opts.trailingStopPct ?? 0.5}  contractDurationMins=${opts.duration ?? opts.contractDurationMins ?? 120}`);
+console.log(`  Settings used    : ${stakeMode}  trailingStopPct=${opts.trailing ?? opts.trailingStopPct ?? 0.5}  contractDurationMins=${opts.duration ?? opts.contractDurationMins ?? 120}  noProfitCutoffMins=${opts.cutoff ?? opts.noProfitCutoffMins ?? 20}  cutoffCooldownHours=${opts.cooldown ?? opts.cutoffCooldownHours ?? 2}`);
 console.log(`══════════════════════════════════════════════════════════════\n`);
 
 // Per-symbol table, sorted by trade count desc so active symbols surface first
