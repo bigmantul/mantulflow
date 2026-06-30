@@ -157,6 +157,29 @@ router.put("/users/:id", adminAuth, async (req, res) => {
       if (risk.takeProfitPct        !== undefined) user.risk.takeProfitPct        = Math.min(Math.max(parseFloat(risk.takeProfitPct), 0.10), 10.0);
       if (risk.maxDailyLossPct      !== undefined) user.risk.maxDailyLossPct      = Math.min(Math.max(parseFloat(risk.maxDailyLossPct), 0.05), 1.0);
       if (risk.maxConsecutiveLosses !== undefined) user.risk.maxConsecutiveLosses = Math.min(Math.max(parseInt(risk.maxConsecutiveLosses), 1), 10);
+
+      // The following four can legitimately be 0 (= OFF) — don't clamp
+      // with a positive floor like the fields above.
+      if (risk.trailingStopPct !== undefined) {
+        user.risk.trailingStopPct = risk.trailingStopPct === null || risk.trailingStopPct === ""
+          ? 0
+          : Math.min(Math.max(parseFloat(risk.trailingStopPct), 0), 1.0);
+      }
+      if (risk.contractDurationMins !== undefined) {
+        user.risk.contractDurationMins = risk.contractDurationMins === null || risk.contractDurationMins === ""
+          ? 0
+          : Math.max(parseFloat(risk.contractDurationMins), 0);
+      }
+      if (risk.noProfitCutoffMins !== undefined) {
+        user.risk.noProfitCutoffMins = risk.noProfitCutoffMins === null || risk.noProfitCutoffMins === ""
+          ? 0
+          : Math.max(parseFloat(risk.noProfitCutoffMins), 0);
+      }
+      if (risk.cutoffCooldownHours !== undefined) {
+        user.risk.cutoffCooldownHours = risk.cutoffCooldownHours === null || risk.cutoffCooldownHours === ""
+          ? 0
+          : Math.max(parseFloat(risk.cutoffCooldownHours), 0);
+      }
     }
 
     await user.save();

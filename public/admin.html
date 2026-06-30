@@ -249,6 +249,39 @@ input:focus,select:focus{border-color:var(--border)}
         <div class="field"><label>DAILY LOSS LIMIT %</label><input type="number" id="editDailyLoss" min="5" max="100" placeholder="30"/></div>
         <div class="field"><label>MAX LOSS STREAK</label><input type="number" id="editStreak" min="1" max="10" placeholder="3"/></div>
       </div>
+      <div class="form-grid">
+        <div class="field">
+          <label>PNL LOCK % OF TP (0 = off)</label>
+          <input type="number" id="editTrail" min="0" max="100" step="1" placeholder="50"/>
+          <small style="opacity:0.6;font-size:0.75em;">Profit locks in steps of this % of take-profit (default 50%)</small>
+        </div>
+        <div class="field">
+          <label>
+            <input type="checkbox" id="editDurationOff" style="width:auto;margin-right:6px;" onchange="document.getElementById('editDuration').disabled=this.checked;"/>
+            CONTRACT DURATION — <span style="opacity:0.7;">OFF</span>
+          </label>
+          <input type="number" id="editDuration" min="0" step="1" placeholder="120"/>
+          <small style="opacity:0.6;font-size:0.75em;">Forced close after this many minutes, regardless of PnL</small>
+        </div>
+      </div>
+      <div class="form-grid">
+        <div class="field">
+          <label>
+            <input type="checkbox" id="editCutoffOff" style="width:auto;margin-right:6px;" onchange="document.getElementById('editCutoff').disabled=this.checked;"/>
+            NO-PROFIT CUTOFF — <span style="opacity:0.7;">OFF</span>
+          </label>
+          <input type="number" id="editCutoff" min="0" step="1" placeholder="20"/>
+          <small style="opacity:0.6;font-size:0.75em;">Close a trade if not profitable within this many minutes (default 20)</small>
+        </div>
+        <div class="field">
+          <label>
+            <input type="checkbox" id="editCooldownOff" style="width:auto;margin-right:6px;" onchange="document.getElementById('editCooldown').disabled=this.checked;"/>
+            CUTOFF COOLDOWN — <span style="opacity:0.7;">OFF</span>
+          </label>
+          <input type="number" id="editCooldown" min="0" step="0.5" placeholder="2"/>
+          <small style="opacity:0.6;font-size:0.75em;">Hours to lock a symbol out after the no-profit cutoff fires (default 2)</small>
+        </div>
+      </div>
       <button class="save-btn" onclick="saveEditUser()">💾 Save Changes</button>
     </div>
   </div>
@@ -416,6 +449,19 @@ async function editUser(id,name){
   document.getElementById("editTP").value=Math.round((r.takeProfitPct||2.0)*100);
   document.getElementById("editDailyLoss").value=Math.round((r.maxDailyLossPct||0.3)*100);
   document.getElementById("editStreak").value=r.maxConsecutiveLosses||3;
+  document.getElementById("editTrail").value=(r.trailingStopPct===undefined||r.trailingStopPct===null ? 50 : (r.trailingStopPct*100)).toFixed(1);
+  const durationOff = !r.contractDurationMins || r.contractDurationMins <= 0;
+  document.getElementById("editDurationOff").checked = durationOff;
+  document.getElementById("editDuration").disabled = durationOff;
+  document.getElementById("editDuration").value = r.contractDurationMins || 120;
+  const cutoffOff = r.noProfitCutoffMins !== undefined && r.noProfitCutoffMins !== null && r.noProfitCutoffMins <= 0;
+  document.getElementById("editCutoffOff").checked = cutoffOff;
+  document.getElementById("editCutoff").disabled = cutoffOff;
+  document.getElementById("editCutoff").value = (r.noProfitCutoffMins === undefined || r.noProfitCutoffMins === null) ? 20 : r.noProfitCutoffMins;
+  const cooldownOff = r.cutoffCooldownHours !== undefined && r.cutoffCooldownHours !== null && r.cutoffCooldownHours <= 0;
+  document.getElementById("editCooldownOff").checked = cooldownOff;
+  document.getElementById("editCooldown").disabled = cooldownOff;
+  document.getElementById("editCooldown").value = (r.cutoffCooldownHours === undefined || r.cutoffCooldownHours === null) ? 2 : r.cutoffCooldownHours;
   document.getElementById("editModal").classList.add("open");
 }
 
@@ -435,6 +481,16 @@ async function saveEditUser(){
       takeProfitPct:        parseFloat(document.getElementById("editTP").value)/100,
       maxDailyLossPct:      parseFloat(document.getElementById("editDailyLoss").value)/100,
       maxConsecutiveLosses: parseInt(document.getElementById("editStreak").value)||3,
+      trailingStopPct:      (parseFloat(document.getElementById("editTrail").value)||0)/100,
+      contractDurationMins: document.getElementById("editDurationOff").checked
+        ? 0
+        : (parseFloat(document.getElementById("editDuration").value) || 0),
+      noProfitCutoffMins: document.getElementById("editCutoffOff").checked
+        ? 0
+        : (parseFloat(document.getElementById("editCutoff").value) || 0),
+      cutoffCooldownHours: document.getElementById("editCooldownOff").checked
+        ? 0
+        : (parseFloat(document.getElementById("editCooldown").value) || 0),
     },
   };
   if(pat) data.derivPAT=pat;
