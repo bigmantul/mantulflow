@@ -5,14 +5,29 @@
 //  exact same list src/index.js scans in production — see
 //  src/config/symbols.js). For each symbol:
 //    - uses backtest/data/<symbol>.json if present (real
-//      data from fetch-history.js)
+//      data from fetch-history.js / fetch-all-history.js)
 //    - otherwise auto-generates synthetic data so the full
 //      scan can still be dry-run end-to-end
 //
-//  Usage:
-//    node backtest/run-all.js [--days=365] [--equity=1000] [--risk=0.02]
-//      [--trailing=0.5] [--duration=120] [--real-only]
+//  PERSONAL RISK SETTINGS:
+//  If backtest/my-risk-settings.js exists (copy it from
+//  backtest/my-risk-settings.example.js and edit it with
+//  YOUR dashboard values), it's loaded automatically and
+//  used as the defaults for every option below — no need
+//  to retype --stake= --trailing= --duration= every run.
+//  CLI flags still override individual values if passed.
 //
+//  Usage:
+//    node backtest/run-all.js [--days=365] [--equity=1000]
+//      [--stake=1.00] [--risk=0.02] [--trailing=0.5]
+//      [--duration=120] [--real-only]
+//
+//  --stake     : FIXED dollar stake (matches db.js risk.stakeAmount
+//                EXACTLY — this is how production actually sizes
+//                trades, NOT a % of equity). Takes priority over
+//                --risk when both are present.
+//  --risk      : fallback %-of-equity sizing, only used if --stake
+//                is not set (production does not use this mode).
 //  --trailing  : trailingStopPct (default 0.5 = 50% of TP, matches
 //                db.js default). 0 disables trailing stop.
 //  --duration  : contractDurationMins (default 120 = 2hrs, matches
@@ -22,9 +37,22 @@
 // ═══════════════════════════════════════════════════════
 
 import fs from "fs";
+import path from "path";
 import { runBacktest } from "./engine.js";
 import { generateSample } from "./generate-sample-data.js";
 import { SYMBOLS } from "../src/config/symbols.js";
+
+// ── LOAD PERSONAL RISK SETTINGS, IF PRESENT ──────────────
+const myRiskPath = path.resolve("backtest/my-risk-settings.js");
+let myRisk = {};
+if (fs.existsSync(myRiskPath)) {
+  const mod = await import(`file://${myRiskPath}`);
+  myRisk = mod.default || {};
+  console.log("Loaded personal risk settings from backtest/my-risk-settings.js");
+} else {
+  console.log("No backtest/my-risk-settings.js found — using built-in defaults.");
+  console.log("(Copy backtest/my-risk-settings.example.js to create your own.)\n");
+}
 
 function parseArgs(argv) {
   const opts = {};
@@ -36,7 +64,9 @@ function parseArgs(argv) {
   return opts;
 }
 
-const opts = parseArgs(process.argv);
+const cliOpts = parseArgs(process.argv);
+// CLI flags override personal settings file, which overrides built-in defaults.
+const opts = { ...myRisk, ...cliOpts };
 const days = opts.days ?? 365;
 
 console.log(`Scanning ${SYMBOLS.length} symbols (the same list src/index.js trades)...\n`);
@@ -67,11 +97,12 @@ for (const symbol of SYMBOLS) {
       h1: data.h1,
       m15: data.m15,
       startEquity: opts.equity ?? 1000,
-      riskPct: opts.risk ?? 0.02,
-      slPct: opts.sl ?? 0.80,
-      tpPct: opts.tp ?? 2.00,
-      trailingStopPct: opts.trailing ?? 0.5,
-      contractDurationMins: opts.duration ?? 120,
+      stakeAmount: opts.stake ?? opts.stakeAmount, // fixed dollar stake, matches production
+      riskPct: opts.risk ?? 0.02,                   // fallback only, used if stakeAmount unset
+      slPct: opts.sl ?? opts.stopLossPct ?? 0.80,
+      tpPct: opts.tp ?? opts.takeProfitPct ?? 2.00,
+      trailingStopPct: opts.trailing ?? opts.trailingStopPct ?? 0.5,
+      contractDurationMins: opts.duration ?? opts.contractDurationMins ?? 120,
     });
     results.push(result);
   } catch (e) {
@@ -102,7 +133,10 @@ console.log(`══════════════════════�
 const outcomeCounts = {};
 for (const t of allTrades) outcomeCounts[t.outcome] = (outcomeCounts[t.outcome] || 0) + 1;
 console.log(`  Exit reasons     : ${Object.entries(outcomeCounts).map(([k, v]) => `${k}=${v}`).join("  ")}`);
-console.log(`  Settings used    : trailingStopPct=${opts.trailing ?? 0.5}  contractDurationMins=${opts.duration ?? 120}`);
+const stakeMode = (opts.stake ?? opts.stakeAmount) !== undefined
+  ? `stakeAmount=$${opts.stake ?? opts.stakeAmount} (fixed, matches production)`
+  : `riskPct=${opts.risk ?? 0.02} (% of equity, fallback mode)`;
+console.log(`  Settings used    : ${stakeMode}  trailingStopPct=${opts.trailing ?? opts.trailingStopPct ?? 0.5}  contractDurationMins=${opts.duration ?? opts.contractDurationMins ?? 120}`);
 console.log(`══════════════════════════════════════════════════════════════\n`);
 
 // Per-symbol table, sorted by trade count desc so active symbols surface first
