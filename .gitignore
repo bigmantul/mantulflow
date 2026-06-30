@@ -11,3 +11,6 @@ logs/
 # Backtest candle data — fetched/generated locally, can get large
 backtest/data/*.json
 backtest/results/*.csv
+
+# Personal risk settings — your real dashboard numbers, never commit
+backtest/my-risk-settings.js
