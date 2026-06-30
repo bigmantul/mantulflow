@@ -146,7 +146,7 @@ async function log(userId, message, level = "info") {
 }
 
 // ── SYNC TRADE STATUSES ───────────────────────────────
-async function syncTradeStatuses(ws, userId, label, botToken, chatId) {
+async function syncTradeStatuses(ws, userId, label, botToken, chatId, rm) {
   try {
     const openTrades = await Trade.find({ userId, status: "open" });
     if (!openTrades.length) return;
@@ -202,6 +202,7 @@ async function syncTradeStatuses(ws, userId, label, botToken, chatId) {
       });
 
       cancelForcedCloseTimer(String(trade.contractId));
+      if (rm) rm.tradeClosed(finalPnl);
 
       const soldFor = finalPnl + trade.stake; // derived — matches the soldFor-stake=pnl convention used everywhere else
       const reason  = finalPnl >= 0
@@ -223,7 +224,7 @@ async function syncTradeStatuses(ws, userId, label, botToken, chatId) {
 }
 
 // ── PORTFOLIO TRACKER ─────────────────────────────────
-async function monitorOpenTrades(ws, userId, label, portfolio, dfD1Cache, riskSettings, botToken, chatId) {
+async function monitorOpenTrades(ws, userId, label, portfolio, dfD1Cache, riskSettings, botToken, chatId, rm) {
   try {
     const openTrades = await Trade.find({ userId, status: "open" });
     if (!openTrades.length) return [];
@@ -356,6 +357,7 @@ async function monitorOpenTrades(ws, userId, label, portfolio, dfD1Cache, riskSe
               closedAt: new Date(),
             });
             portfolio.unlockSymbol(trade.symbol);
+            if (rm) rm.tradeClosed(finalPnl);
             await log(userId, `[${label}] ${trade.symbol} | Closed $${soldFor.toFixed(2)} | PnL: $${finalPnl.toFixed(2)}`, "trade");
             await notifyTradeClosed({ symbol: trade.symbol, direction, soldFor, pnl: finalPnl, stake, reason, label, botToken, chatId });
           }
@@ -387,6 +389,7 @@ async function monitorOpenTrades(ws, userId, label, portfolio, dfD1Cache, riskSe
               closedAt: new Date(),
             });
             portfolio.unlockSymbol(trade.symbol);
+            if (rm) rm.tradeClosed(finalPnl);
             if (cutoffCooldownHours > 0) portfolio.lockSymbolForCooldown(trade.symbol, cooldownMs);
             await log(userId, `[${label}] ${trade.symbol} | Closed $${soldFor.toFixed(2)} | PnL: $${finalPnl.toFixed(2)}${cutoffCooldownHours > 0 ? ` | 🧊 locked ${cutoffCooldownHours}hrs` : ""}`, "trade");
             await notifyTradeClosed({ symbol: trade.symbol, direction, soldFor, pnl: finalPnl, stake, reason: `${reason}${cutoffCooldownHours > 0 ? ` — ${cutoffCooldownHours}hr cooldown lock applied` : ""}`, label, botToken, chatId });
@@ -436,6 +439,7 @@ async function monitorOpenTrades(ws, userId, label, portfolio, dfD1Cache, riskSe
                 closedAt: new Date(),
               });
               portfolio.unlockSymbol(trade.symbol);
+              if (rm) rm.tradeClosed(finalPnl);
               await log(userId, `[${label}] ${trade.symbol} | Closed $${soldFor.toFixed(2)} | PnL: $${finalPnl.toFixed(2)} (locked floor was $${floor.toFixed(4)})`, "trade");
               await notifyTradeClosed({ symbol: trade.symbol, direction, soldFor, pnl: finalPnl, stake, reason, label, botToken, chatId });
             }
@@ -621,10 +625,10 @@ async function runUserBot(user, stopSignal) {
         balance     = await getBalance(ws);
         lastApiCall = Date.now();
 
-        await syncTradeStatuses(ws, user._id, label, botToken, chatId);
+        await syncTradeStatuses(ws, user._id, label, botToken, chatId, rm);
         lastApiCall = Date.now();
 
-        const liveStatuses = await monitorOpenTrades(ws, user._id, label, portfolio, dfD1Cache, freshUser.risk, botToken, chatId);
+        const liveStatuses = await monitorOpenTrades(ws, user._id, label, portfolio, dfD1Cache, freshUser.risk, botToken, chatId, rm);
         lastApiCall = Date.now();
 
         const currentOpen = await portfolio.sync(ws);
@@ -823,6 +827,7 @@ async function runUserBot(user, stopSignal) {
                 );
                 if (!updated) return; // already closed via another path
                 portfolio.unlockSymbol(symbol);
+                rm.tradeClosed(finalPnl);
                 await log(user._id, `[${label}] ${symbol} | ⏰ EXIT: ${reason} — closed`, "trade");
                 await log(user._id, `[${label}] ${symbol} | Closed $${soldFor.toFixed(2)} | PnL: $${finalPnl.toFixed(2)}`, "trade");
                 await notifyTradeClosed({ symbol, direction, soldFor, pnl: finalPnl, stake, reason, label, botToken, chatId });
