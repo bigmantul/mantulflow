@@ -484,49 +484,50 @@ function hasConsecutiveLowerHighs(df, lookback = 3, count = 2) {
 //  in Entry Mode for this symbol+bias.
 // ═══════════════════════════════════════════════════════
 
-function check1hConfirmation(dailyBias, dfH1) {
-  if (!dfH1 || dfH1.length < 20) {
+function check1hConfirmation(dailyBias, dfH1, dfD1) {
+  if (!dfH1 || dfH1.length < 3) {
     return { confirmed: false, reason: "Insufficient 1H data" };
   }
+  if (!dfD1 || dfD1.length < 2) {
+    return { confirmed: false, reason: "Insufficient daily data for yesterday's high/low" };
+  }
 
+  // Most recent CLOSED 1H candle (dfH1[len-1] may still be forming).
   const len  = dfH1.length;
   const last = dfH1[len - 2];
-  const prev = dfH1[len - 3];
+
+  // "Yesterday" = the most recent CLOSED daily candle — same
+  // dfD1[len-2] convention used by Stage 1 (countConsecutiveValidCandles).
+  const yesterday = dfD1[dfD1.length - 2];
+  const yesterdayHigh = yesterday.high;
+  const yesterdayLow  = yesterday.low;
 
   if (dailyBias === "bullish") {
-    const engulfing  = isBullishEngulfing(last, prev);
-    const momentum    = isBullishMomentum(last);
-    const longWick     = hasLongLowerWick(last);
-    const higherLows   = hasConsecutiveHigherLows(dfH1, 3, 2);
-
-    const matches = [engulfing, momentum, longWick, higherLows].filter(Boolean).length;
-    if (matches >= 1) {
-      const reasons = [];
-      if (engulfing) reasons.push("bullish engulfing");
-      if (momentum) reasons.push("strong bullish momentum candle");
-      if (longWick) reasons.push("long lower rejection wick");
-      if (higherLows) reasons.push("higher lows");
-      return { confirmed: true, reason: `1H bullish evidence: ${reasons.join(", ")}` };
+    const brokeHigh = last.close > yesterdayHigh;
+    if (!brokeHigh) {
+      return { confirmed: false, reason: `Waiting — 1H close (${last.close.toFixed(5)}) has not closed above yesterday's high (${yesterdayHigh.toFixed(5)})` };
     }
-    return { confirmed: false, reason: "Waiting for 1H bullish confirmation" };
+
+    const shape = validateDailyCandle(last);
+    if (!shape.valid || shape.direction !== "bullish") {
+      return { confirmed: false, reason: `1H closed above yesterday's high (${yesterdayHigh.toFixed(5)}) but candle shape invalid — ${shape.reason}` };
+    }
+
+    return { confirmed: true, reason: `1H closed above yesterday's high (${yesterdayHigh.toFixed(5)}) AND ${shape.reason}` };
   }
 
   if (dailyBias === "bearish") {
-    const engulfing  = isBearishEngulfing(last, prev);
-    const momentum    = isBearishMomentum(last);
-    const longWick     = hasLongUpperWick(last);
-    const lowerHighs   = hasConsecutiveLowerHighs(dfH1, 3, 2);
-
-    const matches = [engulfing, momentum, longWick, lowerHighs].filter(Boolean).length;
-    if (matches >= 1) {
-      const reasons = [];
-      if (engulfing) reasons.push("bearish engulfing");
-      if (momentum) reasons.push("strong bearish momentum candle");
-      if (longWick) reasons.push("long upper rejection wick");
-      if (lowerHighs) reasons.push("lower highs");
-      return { confirmed: true, reason: `1H bearish evidence: ${reasons.join(", ")}` };
+    const brokeLow = last.close < yesterdayLow;
+    if (!brokeLow) {
+      return { confirmed: false, reason: `Waiting — 1H close (${last.close.toFixed(5)}) has not closed below yesterday's low (${yesterdayLow.toFixed(5)})` };
     }
-    return { confirmed: false, reason: "Waiting for 1H bearish confirmation" };
+
+    const shape = validateDailyCandle(last);
+    if (!shape.valid || shape.direction !== "bearish") {
+      return { confirmed: false, reason: `1H closed below yesterday's low (${yesterdayLow.toFixed(5)}) but candle shape invalid — ${shape.reason}` };
+    }
+
+    return { confirmed: true, reason: `1H closed below yesterday's low (${yesterdayLow.toFixed(5)}) AND ${shape.reason}` };
   }
 
   return { confirmed: false, reason: "No daily bias" };
@@ -643,7 +644,7 @@ export function collectSignals(tf) {
 
   // ── STAGE 2: 1H CONFIRMATION → ENTRY MODE ──
   if (!state.entryMode) {
-    const confirmation = check1hConfirmation(state.dailyBias, h1);
+    const confirmation = check1hConfirmation(state.dailyBias, h1, d1);
     breakdown.push({ step: "Stage2 1H Confirm", result: confirmation.confirmed ? "ENTRY MODE" : "WAITING", reason: confirmation.reason });
 
     if (!confirmation.confirmed) {
