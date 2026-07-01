@@ -537,23 +537,51 @@ function check1hConfirmation(dailyBias, dfH1, dfD1) {
 // ═══════════════════════════════════════════════════════
 //  STAGE 3 — 15M ENTRY
 //
-//  Only evaluated while in Entry Mode. Waits for a
-//  pullback + rejection/engulfing candle to CLOSE.
-//  Per spec: the bot does NOT enter on that close — it
-//  enters at the OPEN of the NEXT 15M candle. So this
-//  function flags "pendingEntry" on the close, and the
-//  actual BUY/SELL signal fires one cycle later once a
-//  new 15M candle has opened.
+//  Only evaluated while in Entry Mode. Uses the SAME
+//  yesterday's-D1-high/low level Stage 2 already confirmed
+//  against.
+//
+//  Bullish entry candle (EITHER of):
+//    1. 15M candle CLOSES above yesterday's daily high, OR
+//    2. 15M candle is a bullish pin bar/engulfing AT that
+//       level (candle's range touches the level, closes
+//       bullish, and has a rejection/engulfing shape)
+//  Bearish entry candle mirrors this against the daily low.
+//
+//  Invalid (skip, no signal):
+//    - 15M candle closes in the OPPOSITE direction of the
+//      daily bias — never counts toward either condition.
+//    - False break: wicks through the level intrabar but
+//      closes back on the wrong side — condition 1 already
+//      requires an actual CLOSE beyond the level (not just a
+//      wick), so a false break can only be a problem via
+//      condition 2, which is why condition 2 also requires a
+//      same-direction close.
+//
+//  Per spec: the bot does NOT enter on the signal candle's
+//  close — it enters at the OPEN of the NEXT 15M candle. So
+//  this function flags "pendingEntry" on the close, and the
+//  actual BUY/SELL signal fires one cycle later once a new
+//  15M candle has opened.
 // ═══════════════════════════════════════════════════════
 
-function check15mEntry(dailyBias, dfM15, state) {
-  if (!dfM15 || dfM15.length < 15) {
+function check15mEntry(dailyBias, dfM15, dfD1, state) {
+  if (!dfM15 || dfM15.length < 3) {
     return { signal: SIG_HOLD, reason: "Insufficient 15M data" };
+  }
+  if (!dfD1 || dfD1.length < 2) {
+    return { signal: SIG_HOLD, reason: "Insufficient daily data for daily high/low" };
   }
 
   const len        = dfM15.length;
   const lastClosed  = dfM15[len - 2]; // most recent fully closed candle
   const prevClosed   = dfM15[len - 3];
+
+  // "Yesterday" = the most recent CLOSED daily candle — same
+  // dfD1[len-2] convention Stage 1 and Stage 2 already use.
+  const yesterday = dfD1[dfD1.length - 2];
+  const yesterdayHigh = yesterday.high;
+  const yesterdayLow  = yesterday.low;
 
   // ── If we have a pending entry from a PRIOR cycle, check if
   //    a NEW 15M candle has opened since the signal candle closed.
@@ -576,26 +604,53 @@ function check15mEntry(dailyBias, dfM15, state) {
 
   // ── No pending entry yet — look for a fresh signal candle ──
   if (dailyBias === "bullish") {
-    const pullback = hasBullishPullback(dfM15, 8);
-    if (!pullback) return { signal: SIG_HOLD, reason: "No 15M pullback yet — waiting" };
+    // Invalid: candle closed opposite direction (bearish) — skip regardless of level
+    if (lastClosed.close <= lastClosed.open) {
+      return { signal: SIG_HOLD, reason: "Invalid — 15M candle closed bearish (opposite direction), skipping" };
+    }
 
-    const rejection = isBullishRejection(lastClosed, prevClosed);
-    if (!rejection) return { signal: SIG_HOLD, reason: "Pullback present, no bullish rejection/engulfing candle closed yet" };
+    const closedAboveHigh = lastClosed.close > yesterdayHigh;
 
-    // Mark pending — will fire on the NEXT scan once a newer candle exists
+    // "at Daily High" = the level falls within this candle's range
+    // (price actually tested it), plus a bullish rejection/engulfing shape.
+    const touchesHigh   = lastClosed.low <= yesterdayHigh && lastClosed.high >= yesterdayHigh;
+    const rejectionShape = isBullishRejection(lastClosed, prevClosed);
+    const pinBarAtHigh   = touchesHigh && rejectionShape;
+
+    if (!closedAboveHigh && !pinBarAtHigh) {
+      return { signal: SIG_HOLD, reason: `No 15M close above daily high (${yesterdayHigh.toFixed(5)}) and no bullish pin bar/engulfing at that level yet` };
+    }
+
+    const reason = closedAboveHigh
+      ? `15M closed above daily high (${yesterdayHigh.toFixed(5)})`
+      : `15M bullish pin bar/engulfing at daily high (${yesterdayHigh.toFixed(5)})`;
+
     state.pendingEntry = { direction: "buy", signalEpoch: lastClosed.epoch };
-    return { signal: SIG_HOLD, reason: "Bullish rejection/engulfing candle just closed — entry queued for next 15M candle open" };
+    return { signal: SIG_HOLD, reason: `${reason} — entry queued for next 15M candle open` };
   }
 
   if (dailyBias === "bearish") {
-    const retracement = hasBearishPullback(dfM15, 8);
-    if (!retracement) return { signal: SIG_HOLD, reason: "No 15M retracement yet — waiting" };
+    // Invalid: candle closed opposite direction (bullish) — skip regardless of level
+    if (lastClosed.close >= lastClosed.open) {
+      return { signal: SIG_HOLD, reason: "Invalid — 15M candle closed bullish (opposite direction), skipping" };
+    }
 
-    const rejection = isBearishRejection(lastClosed, prevClosed);
-    if (!rejection) return { signal: SIG_HOLD, reason: "Retracement present, no bearish rejection/engulfing candle closed yet" };
+    const closedBelowLow = lastClosed.close < yesterdayLow;
+
+    const touchesLow     = lastClosed.low <= yesterdayLow && lastClosed.high >= yesterdayLow;
+    const rejectionShape = isBearishRejection(lastClosed, prevClosed);
+    const pinBarAtLow    = touchesLow && rejectionShape;
+
+    if (!closedBelowLow && !pinBarAtLow) {
+      return { signal: SIG_HOLD, reason: `No 15M close below daily low (${yesterdayLow.toFixed(5)}) and no bearish pin bar/engulfing at that level yet` };
+    }
+
+    const reason = closedBelowLow
+      ? `15M closed below daily low (${yesterdayLow.toFixed(5)})`
+      : `15M bearish pin bar/engulfing at daily low (${yesterdayLow.toFixed(5)})`;
 
     state.pendingEntry = { direction: "sell", signalEpoch: lastClosed.epoch };
-    return { signal: SIG_HOLD, reason: "Bearish rejection/engulfing candle just closed — entry queued for next 15M candle open" };
+    return { signal: SIG_HOLD, reason: `${reason} — entry queued for next 15M candle open` };
   }
 
   return { signal: SIG_HOLD, reason: "No daily bias" };
@@ -658,7 +713,7 @@ export function collectSignals(tf) {
   }
 
   // ── STAGE 3: 15M ENTRY ──
-  const entry = check15mEntry(state.dailyBias, m15, state);
+  const entry = check15mEntry(state.dailyBias, m15, d1, state);
   breakdown.push({
     step: "Stage3 15M Entry",
     result: entry.signal === SIG_HOLD ? "WAIT" : (entry.signal === SIG_BUY ? "BUY" : "SELL"),
