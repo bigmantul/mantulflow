@@ -11,25 +11,19 @@
 //  does — not a re-derived approximation of it.
 //
 //  EXIT RULES SIMULATED (matches dashboard/bot-manager.js
-//  monitorOpenTrades(), same priority order, checked in
-//  this exact order on every closed M15 bar):
-//    1. No-profit cutoff (configurable, default 20min, 0=OFF) —
-//       close if open >=noProfitCutoffMins and PnL<=0, then symbol
-//       locked out from new entries for cutoffCooldownHours (0=none)
-//    2. Trailing stop — activates at trailingStopPct of TP
-//       (default 50%), moves SL to breakeven, then trails
-//       by the same step
-//    3. Stop Loss (fixed dollar limit order)
-//    4. Take Profit (fixed dollar limit order)
-//    5. Forced contract close — after contractDurationMins
+//  monitorOpenTrades(), same priority order):
+//    1. Daily Bias Reversal — close at bar.close if the D1
+//       bias flips against the open position's direction
+//    2. No-profit cutoff (configurable, default 20min, 0=OFF)
+//       close if open >=noProfitCutoffMins and PnL<=0, then
+//       symbol locked out for cutoffCooldownHours (0=none)
+//    3. PnL Lock trailing stop — activates at trailingStopPct
+//       of TP (default 50%), steps up one step at a time,
+//       closes when profit falls back to locked floor
+//    4. Stop Loss (fixed dollar limit order)
+//    5. Take Profit (fixed dollar limit order)
+//    6. Forced contract close — after contractDurationMins
 //       (default 120 = 2hrs), regardless of P&L
-//
-//  NOT YET SIMULATED — KNOWN GAP:
-//  Production's EXIT 1 (Daily Bias Reversal — closing early
-//  if the D1 bias flips against an open position) is NOT
-//  implemented in this engine yet. Positions here only close
-//  via the 5 rules above. If you want this added too, say so
-//  explicitly — flagging it rather than silently omitting it.
 //
 //  IMPORTANT GOTCHA THIS ENGINE WORKS AROUND:
 //  signals.js uses `new Date()` (real wall-clock time) to
@@ -307,40 +301,6 @@ export function runBacktest(opts) {
     // need to see the same simulated "now", not real wall-clock time.
     withFakeNow(bar.epoch * 1000, () => {
 
-    // ── If a position is open, check ALL exit conditions on THIS bar ──
-    // (20-min no-profit cutoff, trailing stop, SL, TP, forced duration
-    // close — see checkExitWithinBar's priority order, matches
-    // bot-manager.js's monitorOpenTrades exactly)
-    if (openPosition) {
-      const result = checkExitWithinBar(openPosition, bar, { trailingStopPct, contractDurationMins, noProfitCutoffMins, cutoffCooldownHours });
-      if (result.exit) {
-        equity += result.pnl;
-        rm.tradeClosed(result.pnl);
-        trades.push({
-          symbol,
-          direction: openPosition.direction,
-          entryEpoch: openPosition.entryEpoch,
-          entryPrice: openPosition.entryPrice,
-          exitEpoch: bar.epoch,
-          exitPrice: result.exitPrice,
-          stake: openPosition.stake,
-          multiplier: openPosition.multiplier,
-          pnl: result.pnl,
-          outcome: result.outcome,
-          equityAfter: equity,
-        });
-        equityCurve.push({ epoch: bar.epoch, equity });
-        // The no-profit cutoff exit locks the symbol out from new
-        // entries for cutoffCooldownHours of SIMULATED time, mirroring
-        // portfolio.lockSymbolForCooldown() in bot-manager.js. 0 hours
-        // means no cooldown is applied at all.
-        if (result.lockCooldownHours > 0) {
-          cooldownUntilEpoch = bar.epoch + result.lockCooldownHours * 60 * 60;
-        }
-        openPosition = null;
-      }
-    }
-
     // ── Grow the closed-bar windows incrementally, no lookahead ──
     const targetD1Count = d1Counter(bar.epoch);
     while (d1Pushed < targetD1Count) growingD1.push(d1[d1Pushed++]);
@@ -350,35 +310,95 @@ export function runBacktest(opts) {
 
     if (growingD1.length < 4 || growingH1.length < 20) return; // not enough warm-up yet
 
-    const d1Placeholder = pushPlaceholder(growingD1);
-    const h1Placeholder = pushPlaceholder(growingH1);
-    const m15Placeholder = pushPlaceholder(growingM15);
+    pushPlaceholder(growingD1);
+    pushPlaceholder(growingH1);
+    pushPlaceholder(growingM15);
 
-    let result;
+    let signalResult;
     try {
       const tf = { d1: growingD1, h1: growingH1, m15: growingM15, symbol };
-      result = collectSignals(tf);
+      signalResult = collectSignals(tf);
     } finally {
       growingD1.pop();
       growingH1.pop();
       growingM15.pop();
     }
 
+    // ── If a position is open, check ALL exit conditions on THIS bar ──
+    // Priority order matches bot-manager.js monitorOpenTrades() exactly:
+    // EXIT 1: Daily Bias Reversal → EXIT 1B: No-profit cutoff →
+    // EXIT 2: Trailing stop → EXIT 3: SL → EXIT 4: TP →
+    // EXIT 5: Forced duration close
+    if (openPosition) {
+      // ── EXIT 1: DAILY BIAS REVERSAL ──────────────────────────────
+      // If the daily bias has flipped against the open position's
+      // direction, close immediately at bar.close — mirroring
+      // bot-manager.js's EXIT 1 (check1hConfirmation's bias used there
+      // is effectively the same as collectSignals().dailyBias).
+      const currentBias  = signalResult.dailyBias;
+      const positionBias = openPosition.direction === "buy" ? "bullish" : "bearish";
+      const biasFlipped  = currentBias !== "none" && currentBias !== positionBias;
+
+      if (biasFlipped) {
+        const pnl = pnlAtPrice(openPosition, bar.close);
+        equity += pnl;
+        rm.tradeClosed(pnl);
+        trades.push({
+          symbol,
+          direction: openPosition.direction,
+          entryEpoch: openPosition.entryEpoch,
+          entryPrice: openPosition.entryPrice,
+          exitEpoch:  bar.epoch,
+          exitPrice:  bar.close,
+          stake:      openPosition.stake,
+          multiplier: openPosition.multiplier,
+          pnl,
+          outcome: "BIAS_REVERSAL",
+          equityAfter: equity,
+        });
+        equityCurve.push({ epoch: bar.epoch, equity });
+        openPosition = null;
+        return; // end this bar's processing — position is now closed
+      }
+
+      // ── EXIT 1B-5: all other exit conditions ─────────────────────
+      const exitResult = checkExitWithinBar(openPosition, bar, { trailingStopPct, contractDurationMins, noProfitCutoffMins, cutoffCooldownHours });
+      if (exitResult.exit) {
+        equity += exitResult.pnl;
+        rm.tradeClosed(exitResult.pnl);
+        trades.push({
+          symbol,
+          direction: openPosition.direction,
+          entryEpoch: openPosition.entryEpoch,
+          entryPrice: openPosition.entryPrice,
+          exitEpoch: bar.epoch,
+          exitPrice: exitResult.exitPrice,
+          stake: openPosition.stake,
+          multiplier: openPosition.multiplier,
+          pnl: exitResult.pnl,
+          outcome: exitResult.outcome,
+          equityAfter: equity,
+        });
+        equityCurve.push({ epoch: bar.epoch, equity });
+        if (exitResult.lockCooldownHours > 0) {
+          cooldownUntilEpoch = bar.epoch + exitResult.lockCooldownHours * 60 * 60;
+        }
+        openPosition = null;
+      }
+    }
+
     // ── Symbol lock: while a position is open on this symbol, ignore new signals ──
     if (openPosition) return;
-    // ── Cooldown lock: 2hrs after a 20-min-no-profit exit, no new entries ──
+    // ── Cooldown lock: after a no-profit cutoff exit, no new entries ──
     if (bar.epoch < cooldownUntilEpoch) return;
-    if (result.signal !== SIG_BUY && result.signal !== SIG_SELL) return;
+    if (signalResult.signal !== SIG_BUY && signalResult.signal !== SIG_SELL) return;
 
     if (!rm.canTrade(equity)) return;
 
     // Entry happens at the OPEN of the bar immediately following the
     // signal candle — that's exactly `bar` in this loop iteration,
     // since collectSignals() just fired using bar i as `lastClosed`.
-    const direction = result.signal === SIG_BUY ? "buy" : "sell";
-    // FIXED dollar stake (matches production exactly) takes priority
-    // over %-of-equity sizing when provided — see runBacktest's
-    // docblock above for why these are NOT the same thing.
+    const direction = signalResult.signal === SIG_BUY ? "buy" : "sell";
     const stake = stakeAmount !== undefined
       ? Math.max(1, stakeAmount)
       : Math.max(1, parseFloat((equity * riskPct).toFixed(2)));
