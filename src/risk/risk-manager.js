@@ -8,10 +8,10 @@ export class RiskManager {
   static MAX_STAKE_CAP = 1000;
 
   constructor({
-    riskPct              = 10,
-    maxDailyLossPct      = 0.30,
+    riskPct              = 10.0,
+    maxDailyLossPct      = 0,
     maxOpenTrades        = 3,
-    maxConsecutiveLosses = 3,
+    maxConsecutiveLosses = 30,
   } = {}) {
     this.riskPct              = riskPct;
     this.maxDailyLossPct      = maxDailyLossPct;

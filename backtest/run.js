@@ -89,25 +89,25 @@ const result = runBacktest({
   h1,
   m15,
   startEquity: opts.equity ?? 1000,
-  stakeAmount: opts.stake ?? opts.stakeAmount, // fixed dollar stake, matches production
-  riskPct: opts.risk ?? 0.02,                   // fallback only, used if stakeAmount unset
+  stakeAmount: opts.stake ?? opts.stakeAmount ?? 100,  // fixed dollar stake, matches production
+  riskPct: opts.risk ?? 10,                   // fallback only, used if stakeAmount unset
   slPct: opts.sl ?? opts.stopLossPct ?? 0.80,
-  tpPct: opts.tp ?? opts.takeProfitPct ?? 2.00,
-  trailingStopPct: opts.trailing ?? opts.trailingStopPct ?? 0.5,
-  contractDurationMins: opts.duration ?? opts.contractDurationMins ?? 120,
-  noProfitCutoffMins: opts.cutoff ?? opts.noProfitCutoffMins ?? 20,
-  cutoffCooldownHours: opts.cooldown ?? opts.cutoffCooldownHours ?? 2,
+  tpPct: opts.tp ?? opts.takeProfitPct ?? 1.60,
+  trailingStopPct: opts.trailing ?? opts.trailingStopPct ?? 25,
+  contractDurationMins: opts.duration ?? opts.contractDurationMins ?? 240,
+  noProfitCutoffMins: opts.cutoff ?? opts.noProfitCutoffMins ?? 0,
+  cutoffCooldownHours: opts.cooldown ?? opts.cutoffCooldownHours ?? 0,
 });
 
 const stakeMode = (opts.stake ?? opts.stakeAmount) !== undefined
   ? `stakeAmount=$${opts.stake ?? opts.stakeAmount} (fixed, matches production)`
-  : `riskPct=${opts.risk ?? 0.02} (% of equity, fallback mode)`;
+  : `riskPct=${opts.risk ?? 10} (% of equity, fallback mode)`;
 
 console.log(`\n══════════════════════════════════════════`);
 console.log(`  BACKTEST REPORT — ${result.symbol}`);
-console.log(`══════════════════════════════════════════`);
+console.log(`═════════════════════════════════════════`);
 console.log(`  Settings       : ${stakeMode}`);
-console.log(`  No-Profit Cutoff: ${(opts.cutoff ?? opts.noProfitCutoffMins ?? 20) > 0 ? `${opts.cutoff ?? opts.noProfitCutoffMins ?? 20}min` : "OFF"}  Cooldown: ${(opts.cooldown ?? opts.cutoffCooldownHours ?? 2) > 0 ? `${opts.cooldown ?? opts.cutoffCooldownHours ?? 2}hr` : "OFF"}`);
+console.log(`  No-Profit Cutoff: ${(opts.cutoff ?? opts.noProfitCutoffMins ?? 0) > 0 ? `${opts.cutoff ?? opts.noProfitCutoffMins ?? 0}min` : "OFF"}  Cooldown: ${(opts.cooldown ?? opts.cutoffCooldownHours ?? 0) > 0 ? `${opts.cooldown ?? opts.cutoffCooldownHours ?? 0}hr` : "OFF"}`);
 console.log(`  Start Equity   : $${result.startEquity.toFixed(2)}`);
 console.log(`  Final Equity   : $${result.finalEquity.toFixed(2)}`);
 console.log(`  Total Return   : ${result.totalReturnPct}%`);

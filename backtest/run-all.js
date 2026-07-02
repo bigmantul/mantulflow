@@ -101,14 +101,14 @@ for (const symbol of SYMBOLS) {
       h1: data.h1,
       m15: data.m15,
       startEquity: opts.equity ?? 1000,
-      stakeAmount: opts.stake ?? opts.stakeAmount, // fixed dollar stake, matches production
-      riskPct: opts.risk ?? 0.02,                   // fallback only, used if stakeAmount unset
+      stakeAmount: opts.stake ?? opts.stakeAmount ?? 100, // fixed dollar stake, matches production
+      riskPct: opts.risk ?? 10,                   // fallback only, used if stakeAmount unset
       slPct: opts.sl ?? opts.stopLossPct ?? 0.80,
-      tpPct: opts.tp ?? opts.takeProfitPct ?? 2.00,
-      trailingStopPct: opts.trailing ?? opts.trailingStopPct ?? 0.5,
-      contractDurationMins: opts.duration ?? opts.contractDurationMins ?? 120,
-      noProfitCutoffMins: opts.cutoff ?? opts.noProfitCutoffMins ?? 20,
-      cutoffCooldownHours: opts.cooldown ?? opts.cutoffCooldownHours ?? 2,
+      tpPct: opts.tp ?? opts.takeProfitPct ?? 1.60,
+      trailingStopPct: opts.trailing ?? opts.trailingStopPct ?? 25,
+      contractDurationMins: opts.duration ?? opts.contractDurationMins ?? 240,
+      noProfitCutoffMins: opts.cutoff ?? opts.noProfitCutoffMins ?? 0,
+      cutoffCooldownHours: opts.cooldown ?? opts.cutoffCooldownHours ?? 0,
     });
     results.push(result);
   } catch (e) {
@@ -141,8 +141,8 @@ for (const t of allTrades) outcomeCounts[t.outcome] = (outcomeCounts[t.outcome] 
 console.log(`  Exit reasons     : ${Object.entries(outcomeCounts).map(([k, v]) => `${k}=${v}`).join("  ")}`);
 const stakeMode = (opts.stake ?? opts.stakeAmount) !== undefined
   ? `stakeAmount=$${opts.stake ?? opts.stakeAmount} (fixed, matches production)`
-  : `riskPct=${opts.risk ?? 0.02} (% of equity, fallback mode)`;
-console.log(`  Settings used    : ${stakeMode}  trailingStopPct=${opts.trailing ?? opts.trailingStopPct ?? 0.5}  contractDurationMins=${opts.duration ?? opts.contractDurationMins ?? 120}  noProfitCutoffMins=${opts.cutoff ?? opts.noProfitCutoffMins ?? 20}  cutoffCooldownHours=${opts.cooldown ?? opts.cutoffCooldownHours ?? 2}`);
+  : `riskPct=${opts.risk ?? 10} (% of equity, fallback mode)`;
+console.log(`  Settings used    : ${stakeMode}  trailingStopPct=${opts.trailing ?? opts.trailingStopPct ?? 25}  contractDurationMins=${opts.duration ?? opts.contractDurationMins ?? 240}  noProfitCutoffMins=${opts.cutoff ?? opts.noProfitCutoffMins ?? 0}  cutoffCooldownHours=${opts.cooldown ?? opts.cutoffCooldownHours ?? 0}`);
 console.log(`══════════════════════════════════════════════════════════════\n`);
 
 // Per-symbol table, sorted by trade count desc so active symbols surface first
