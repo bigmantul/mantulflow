@@ -14,13 +14,17 @@
 //           entry granted, but no trade yet) and the epoch
 //           of that confirming H1 candle is remembered.
 //  Stage 3: 15M Entry — only checked once in Entry Mode.
-//           Looks at the 4 fifteen-minute candles that made
-//           up the confirming H1 candle. ANY 3 CONSECUTIVE
-//           of those 4 (1-2-3 or 2-3-4) must each be a valid
-//           candle (body>wick, matching bias direction) with
-//           open AND close beyond the same D1 level. Once
-//           found, enters at the OPEN of the NEXT 15M candle
-//           (not immediately).
+//           Does NOT enter on the H1 close. Defines a ZONE
+//           from the confirming H1 candle's own high/low,
+//           then watches subsequent 15M candles for a
+//           retracement (opposite-direction candle trading
+//           inside the zone) followed by a valid engulfing
+//           candle that closes beyond the zone in the bias
+//           direction. Enters immediately when that engulfing
+//           candle closes (no next-candle delay). Also covers
+//           immediate continuation with no retracement at all,
+//           since the engulf reference starts as the H1 bar's
+//           own last 15M candle.
 //
 //  SESSION RULE: Daily bias (Stage 1) is computed any time
 //  of day. Stage 2 + Stage 3 only run for FX/Metals during
@@ -117,13 +121,18 @@ export function sessionName() {
 //      computed for (so it's only recomputed once/day)
 //    - dailyBias: "bullish" | "bearish" | "none"
 //    - entryMode: false until 1H confirms, then true
-//    - pendingEntry: set when a 15M signal candle just
-//      closed — the ACTUAL entry happens on the NEXT 15M
-//      candle's open, so we need to remember "enter on the
-//      next tick" between scan cycles.
-//    - lastM15Epoch: the epoch of the most recent M15
-//      candle we've already evaluated, so we don't
-//      re-process the same closed candle twice.
+//    - entryModeH1Epoch/H1High/H1Low: identifies the
+//      confirming H1 candle and defines the "zone" (its own
+//      high/low) that Stage 3 watches for a retracement +
+//      engulfing breakout.
+//    - engulfRef: the current 15M candle Stage 3 is waiting
+//      to see engulfed — starts as the confirming H1 bar's
+//      last 15M candle, and updates to the most recent
+//      opposite-direction 15M candle seen trading inside the
+//      zone (a "retracement").
+//    - m15ScanEpoch: epoch of the most recent 15M candle
+//      Stage 3 has already scanned, so each closed candle is
+//      only evaluated once across scan cycles.
 // ═══════════════════════════════════════════════════════
 
 const symbolState = new Map();
@@ -137,7 +146,10 @@ function getState(symbol) {
       entryMode:     false,
       entryModeReason: "",
       entryModeH1Epoch: null, // epoch of the H1 candle Stage 2 confirmed against
-      pendingEntry:  null,   // { direction, signalEpoch } or null
+      entryModeH1High:  null, // that H1 candle's own high — top of the "zone"
+      entryModeH1Low:   null, // that H1 candle's own low — bottom of the "zone"
+      engulfRef:        null, // 15M candle currently used as the engulf reference
+      m15ScanEpoch:     null, // epoch of the last 15M candle already scanned
       lastM15Epoch:  null,
     });
   }
@@ -531,7 +543,7 @@ function check1hConfirmation(dailyBias, dfH1, dfD1) {
       return { confirmed: false, reason: `1H open+close above yesterday's high (${yesterdayHigh.toFixed(5)}) but candle shape invalid — ${shape.reason}` };
     }
 
-    return { confirmed: true, h1Epoch: last.epoch, reason: `1H candle opened (${last.open.toFixed(5)}) AND closed (${last.close.toFixed(5)}) above yesterday's high (${yesterdayHigh.toFixed(5)}) AND ${shape.reason}` };
+    return { confirmed: true, h1Epoch: last.epoch, h1High: last.high, h1Low: last.low, reason: `1H candle opened (${last.open.toFixed(5)}) AND closed (${last.close.toFixed(5)}) above yesterday's high (${yesterdayHigh.toFixed(5)}) AND ${shape.reason}` };
   }
 
   if (dailyBias === "bearish") {
@@ -546,7 +558,7 @@ function check1hConfirmation(dailyBias, dfH1, dfD1) {
       return { confirmed: false, reason: `1H open+close below yesterday's low (${yesterdayLow.toFixed(5)}) but candle shape invalid — ${shape.reason}` };
     }
 
-    return { confirmed: true, h1Epoch: last.epoch, reason: `1H candle opened (${last.open.toFixed(5)}) AND closed (${last.close.toFixed(5)}) below yesterday's low (${yesterdayLow.toFixed(5)}) AND ${shape.reason}` };
+    return { confirmed: true, h1Epoch: last.epoch, h1High: last.high, h1Low: last.low, reason: `1H candle opened (${last.open.toFixed(5)}) AND closed (${last.close.toFixed(5)}) below yesterday's low (${yesterdayLow.toFixed(5)}) AND ${shape.reason}` };
   }
 
   return { confirmed: false, reason: "No daily bias" };
@@ -554,100 +566,114 @@ function check1hConfirmation(dailyBias, dfH1, dfD1) {
 
 
 // ═══════════════════════════════════════════════════════
-//  STAGE 3 — 15M ENTRY
+//  STAGE 3 — 15M ENTRY (reset v2: retracement + engulfing)
 //
-//  Only evaluated while in Entry Mode. Looks INSIDE the
-//  specific 1H candle that Stage 2 just confirmed against
-//  (identified by state.entryModeH1Epoch) — i.e. the 4
-//  fifteen-minute candles that make up that H1 bar.
+//  Only evaluated while in Entry Mode. Does NOT enter when
+//  the H1 confirmation candle closes.
 //
-//  RULE (reset version): among those 4 fifteen-minute
-//  candles, ANY 3 CONSECUTIVE candles (candles 1-2-3 OR
-//  2-3-4) must each be:
-//    - a VALID candle per validateDailyCandle (body > wick),
-//      matching the daily bias direction, AND
-//    - both its open AND close beyond the SAME D1 level
-//      Stage 2 confirmed against (D1 high for bullish, D1
-//      low for bearish).
+//  ZONE = [H1 confirmation candle's low, H1 confirmation
+//          candle's high] — i.e. that candle's own range,
+//          NOT the D1 level.
 //
-//  Per spec: the bot does NOT enter immediately once the
-//  pattern is found — it enters at the OPEN of the NEXT 15M
-//  candle. So this function flags "pendingEntry" once the
-//  pattern is confirmed, and the actual BUY/SELL signal
-//  fires one cycle later once a new 15M candle has opened.
+//  Starting from the 15M candle that opens right after the
+//  H1 confirmation candle closes, scan forward candle by
+//  candle, one time each:
+//
+//  - A "reference candle" is what the next entry candle must
+//    engulf. It starts as the LAST (4th) 15M candle of the
+//    confirming H1 bar.
+//  - Any 15M candle that trades INSIDE the zone AND whose own
+//    direction is OPPOSITE the daily bias becomes the NEW
+//    reference candle (keeps updating to the most recent one
+//    — this is the "retracement").
+//  - On every scanned candle, check if THIS candle is the
+//    entry trigger:
+//      - passes validateDailyCandle (body > wick), matching
+//        the daily bias direction
+//      - its body fully ENGULFS the reference candle's body
+//      - its CLOSE is beyond the zone (above zone high for
+//        bullish, below zone low for bearish)
+//    If all three hold, ENTER IMMEDIATELY on that candle's
+//    close (no next-candle delay). This naturally covers both
+//    "retrace then reverse" (reference = a real pullback
+//    candle) AND "immediate continuation, no retrace at all"
+//    (reference is still the H1 bar's own last candle).
 // ═══════════════════════════════════════════════════════
+
+function bodyEngulfs(engulfer, engulfed) {
+  const eLo = Math.min(engulfer.open, engulfer.close);
+  const eHi = Math.max(engulfer.open, engulfer.close);
+  const rLo = Math.min(engulfed.open, engulfed.close);
+  const rHi = Math.max(engulfed.open, engulfed.close);
+  return eLo <= rLo && eHi >= rHi;
+}
 
 function check15mEntry(dailyBias, dfM15, dfD1, state) {
   if (!dfM15 || dfM15.length < 3) {
     return { signal: SIG_HOLD, reason: "Insufficient 15M data" };
   }
-  if (!dfD1 || dfD1.length < 2) {
-    return { signal: SIG_HOLD, reason: "Insufficient daily data for daily high/low" };
-  }
   if (!state.entryModeH1Epoch) {
     return { signal: SIG_HOLD, reason: "No confirmed H1 bar recorded for entry mode" };
   }
-
-  const len        = dfM15.length;
-  const lastClosed = dfM15[len - 2]; // most recent fully closed 15M candle
-
-  // ── If we have a pending entry from a PRIOR cycle, check if
-  //    a NEW 15M candle has opened since the pattern confirmed.
-  //    If so, fire the trade now (entering at this new candle's open).
-  if (state.pendingEntry) {
-    const signalEpoch = state.pendingEntry.signalEpoch;
-    if (lastClosed.epoch > signalEpoch) {
-      const direction = state.pendingEntry.direction;
-      state.pendingEntry = null; // consume it — one-shot entry
-      return {
-        signal: direction === "buy" ? SIG_BUY : SIG_SELL,
-        reason: `Entering at open of next 15M candle after 3-consecutive-valid pattern confirmed`,
-      };
-    }
-    return { signal: SIG_HOLD, reason: "Pattern confirmed — waiting for next 15M candle to open for entry" };
-  }
-
   if (dailyBias !== "bullish" && dailyBias !== "bearish") {
     return { signal: SIG_HOLD, reason: "No daily bias" };
   }
 
-  // ── Gather the 4 fifteen-minute candles that formed the ──
-  // ── confirming H1 bar (epoch window [h1Epoch, h1Epoch+3600)) ──
-  const h1Epoch = state.entryModeH1Epoch;
-  const barCandles = dfM15
-    .filter(c => c.epoch >= h1Epoch && c.epoch < h1Epoch + 3600)
+  const zoneHigh = state.entryModeH1High;
+  const zoneLow  = state.entryModeH1Low;
+  const h1Epoch  = state.entryModeH1Epoch;
+
+  // ── Initialize the reference-to-engulf as the LAST 15M candle ──
+  // ── of the confirming H1 bar, the first time Stage 3 runs ──
+  if (!state.engulfRef) {
+    const barCandles = dfM15
+      .filter(c => c.epoch >= h1Epoch && c.epoch < h1Epoch + 3600)
+      .sort((a, b) => a.epoch - b.epoch);
+
+    if (barCandles.length < 4) {
+      return { signal: SIG_HOLD, reason: `Waiting for all 4 fifteen-minute candles of the confirming H1 bar (have ${barCandles.length}/4)` };
+    }
+    state.engulfRef    = barCandles[3];
+    state.m15ScanEpoch = h1Epoch + 3600 - 1; // start scanning from the H1 bar's close onward
+  }
+
+  // ── Gather CLOSED 15M candles we haven't scanned yet, in order ──
+  const len             = dfM15.length;
+  const lastClosedEpoch = dfM15[len - 2].epoch; // dfM15[len-1] may still be forming
+  const toScan = dfM15
+    .filter(c => c.epoch > state.m15ScanEpoch && c.epoch <= lastClosedEpoch)
     .sort((a, b) => a.epoch - b.epoch);
 
-  if (barCandles.length < 4) {
-    return { signal: SIG_HOLD, reason: `Waiting for all 4 fifteen-minute candles of the confirming H1 bar (have ${barCandles.length}/4)` };
-  }
-  const bar = barCandles.slice(0, 4);
-
-  // Same D1 level Stage 2 confirmed against.
-  const yesterday = dfD1[dfD1.length - 2];
-  const level = dailyBias === "bullish" ? yesterday.high : yesterday.low;
-  const wantDirection = dailyBias; // "bullish" | "bearish"
-
-  function qualifies(c) {
-    const shape = validateDailyCandle(c);
-    if (!shape.valid || shape.direction !== wantDirection) return false;
-    return wantDirection === "bullish"
-      ? (c.open > level && c.close > level)
-      : (c.open < level && c.close < level);
+  if (toScan.length === 0) {
+    return { signal: SIG_HOLD, reason: `Watching for retracement/engulfing beyond the H1 confirmation zone (${zoneLow.toFixed(5)} - ${zoneHigh.toFixed(5)})` };
   }
 
-  const flags = bar.map(qualifies);
-  const window123 = flags[0] && flags[1] && flags[2];
-  const window234 = flags[1] && flags[2] && flags[3];
+  for (const c of toScan) {
+    state.m15ScanEpoch = c.epoch; // mark processed regardless of outcome
 
-  if (!window123 && !window234) {
-    return { signal: SIG_HOLD, reason: `No 3 consecutive valid ${wantDirection} 15M candles (open+close beyond ${level.toFixed(5)}) inside the confirming H1 bar` };
+    const shape            = validateDailyCandle(c);
+    const shapeOk           = shape.valid && shape.direction === dailyBias;
+    const engulfsRef         = bodyEngulfs(c, state.engulfRef);
+    const closesBeyondZone   = dailyBias === "bullish" ? c.close > zoneHigh : c.close < zoneLow;
+
+    if (shapeOk && engulfsRef && closesBeyondZone) {
+      const direction = dailyBias === "bullish" ? "buy" : "sell";
+      return {
+        signal: direction === "buy" ? SIG_BUY : SIG_SELL,
+        reason: `Engulfing ${dailyBias} candle closed ${dailyBias === "bullish" ? "above" : "below"} the H1 confirmation zone (${zoneLow.toFixed(5)} - ${zoneHigh.toFixed(5)}), engulfing the prior reference candle — entering now`,
+      };
+    }
+
+    // Retracement: candle trades inside the zone AND is opposite direction
+    // to the daily bias — becomes the new reference to engulf.
+    const oppositeDirection = dailyBias === "bullish" ? c.close < c.open : c.close > c.open;
+    const insideZone        = c.low <= zoneHigh && c.high >= zoneLow;
+    if (oppositeDirection && insideZone) {
+      state.engulfRef = c;
+    }
   }
 
-  const which = window123 && window234 ? "candles 1-2-3 and 2-3-4" : (window123 ? "candles 1-2-3" : "candles 2-3-4");
-  const direction = dailyBias === "bullish" ? "buy" : "sell";
-  state.pendingEntry = { direction, signalEpoch: bar[3].epoch };
-  return { signal: SIG_HOLD, reason: `3 consecutive valid ${wantDirection} 15M candles found (${which}) inside H1 bar — entry queued for next 15M candle open` };
+  return { signal: SIG_HOLD, reason: `Watching for retracement/engulfing beyond the H1 confirmation zone (${zoneLow.toFixed(5)} - ${zoneHigh.toFixed(5)})` };
 }
 
 
@@ -672,7 +698,10 @@ export function collectSignals(tf) {
     state.entryMode      = false;
     state.entryModeReason = "";
     state.entryModeH1Epoch = null;
-    state.pendingEntry    = null;
+    state.entryModeH1High  = null;
+    state.entryModeH1Low   = null;
+    state.engulfRef         = null;
+    state.m15ScanEpoch      = null;
   }
 
   breakdown.push({ step: "Stage1 DailyBias", result: state.dailyBias.toUpperCase(), reason: state.dailyBiasMeta });
@@ -704,6 +733,10 @@ export function collectSignals(tf) {
     state.entryMode = true;
     state.entryModeReason = confirmation.reason;
     state.entryModeH1Epoch = confirmation.h1Epoch;
+    state.entryModeH1High  = confirmation.h1High;
+    state.entryModeH1Low   = confirmation.h1Low;
+    state.engulfRef         = null; // Stage 3 will (re)initialize this
+    state.m15ScanEpoch      = null;
   } else {
     breakdown.push({ step: "Stage2 1H Confirm", result: "ENTRY MODE (active)", reason: state.entryModeReason });
   }
