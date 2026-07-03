@@ -6,6 +6,8 @@
 <title>MANTUL FLOW</title>
 <link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@300;400;500;600;700&family=Space+Mono:wght@400;700&display=swap" rel="stylesheet">
 <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
+<script src="/socket.io/socket.io.js"></script>
+<script src="/realtime.js"></script>
 <link rel="icon" href="/icon.jpg">
 <link rel="apple-touch-icon" href="/icon.jpg">
 <style>
@@ -632,8 +634,8 @@ tr:hover td{background:rgba(56,189,248,0.03)}
     <div class="card-label" style="display:flex;justify-content:space-between;align-items:center">
       <span>Activity Timeline</span>
       <div style="display:flex;align-items:center;gap:10px">
-        <span style="font-size:10px;font-family:var(--mono);color:var(--muted)" id="tlStatus">Connecting...</span>
-        <div id="tlDot" style="width:7px;height:7px;border-radius:50%;background:var(--muted);transition:.3s"></div>
+        <span style="font-size:10px;font-family:var(--mono);color:var(--muted)" id="rtStatus">Connecting...</span>
+        <div id="rtDot" style="width:7px;height:7px;border-radius:50%;background:var(--muted);transition:.3s"></div>
       </div>
     </div>
     <!-- Scroll-to-top arrow when new logs arrive while scrolled down -->
@@ -762,17 +764,20 @@ function connectTicks(){
 // ═══════════════════════════════════════════════════
 //  BALANCE — server-side fetch
 // ═══════════════════════════════════════════════════
+function applyBalance(balance, mode){
+  const b=parseFloat(balance);
+  document.getElementById("balAmount").textContent=`$${b.toFixed(2)}`;
+  const h=Math.min(95,Math.max(20,Math.floor(b/200)));
+  document.getElementById("healthFill").style.width=h+"%";
+  document.getElementById("healthPct").textContent=h+"%";
+  if(mode) document.getElementById("balMode").textContent=mode.toUpperCase();
+}
 async function refreshBalance(){
   document.getElementById("balAmount").textContent="$ ...";
   try{
     const d=await API("/user/balance");
     if(d.balance!=null){
-      const b=parseFloat(d.balance);
-      document.getElementById("balAmount").textContent=`$${b.toFixed(2)}`;
-      const h=Math.min(95,Math.max(20,Math.floor(b/200)));
-      document.getElementById("healthFill").style.width=h+"%";
-      document.getElementById("healthPct").textContent=h+"%";
-      document.getElementById("balMode").textContent=(d.mode||"demo").toUpperCase();
+      applyBalance(d.balance, d.mode||"demo");
     } else {
       document.getElementById("balAmount").textContent="$—";
       if(d.error) toast(d.error,"err");
@@ -863,7 +868,6 @@ function refreshAll(){
   const filtered=filterByPeriod(allTrades,currentPeriod);
   const stats=calcStats(filtered);
   updateStatsUI(stats);
-  renderTable(filterByPeriod(allTrades,currentFilter));
   buildChart(currentPeriod);
 }
 
@@ -1158,54 +1162,44 @@ async function init(){
   await updateAI();
 }
 
-// Auto refresh every 15s
+// Safety-net reconciliation only — the real-time Socket.IO events below
+// (trade:opened/update/closed, balance:update) drive updates the moment
+// they happen. This just guards against a missed event (e.g. a socket
+// drop that happened to occur in the same instant as an update).
 setInterval(async()=>{
   await refreshBalance();
   await loadAllTrades();
   await updateAI();
   if(logsVisible) await loadLogs();
-},15000);
+},60000);
 
 // ═══════════════════════════════════════════════════
-//  REAL-TIME TIMELINE via WebSocket
+//  REAL-TIME UPDATES via Socket.IO
 // ═══════════════════════════════════════════════════
-let tlWs = null;
-let tlConnected = false;
-let tlScrolledUp = false;
-
-function connectTimeline(){
-  const wsUrl = `${location.protocol==="https:"?"wss":"ws"}://${location.host}/ws/timeline?token=${token}`;
-  tlWs = new WebSocket(wsUrl);
-
-  tlWs.onopen = () => {
-    tlConnected = true;
-    document.getElementById("tlDot").style.background = "var(--green)";
-    document.getElementById("tlDot").style.boxShadow = "0 0 8px var(--green)";
-    document.getElementById("tlStatus").textContent = "Live";
-    document.getElementById("tlStatus").style.color = "var(--green)";
-  };
-
-  tlWs.onmessage = e => {
-    try {
-      const data = JSON.parse(e.data);
-      if(data.type === "log") {
-        addTlEntry(data);
-      }
-    } catch {}
-  };
-
-  tlWs.onclose = () => {
-    tlConnected = false;
-    document.getElementById("tlDot").style.background = "var(--red)";
-    document.getElementById("tlDot").style.boxShadow = "none";
-    document.getElementById("tlStatus").textContent = "Reconnecting...";
-    document.getElementById("tlStatus").style.color = "var(--muted)";
-    // Auto-reconnect after 3 seconds
-    setTimeout(connectTimeline, 3000);
-  };
-
-  tlWs.onerror = () => tlWs.close();
+function upsertTrade(patch){
+  const id = patch.id || patch._id;
+  const idx = allTrades.findIndex(t => (t._id||t.id) === id);
+  if(idx >= 0) allTrades[idx] = {...allTrades[idx], ...patch, _id: id};
+  else allTrades.unshift({...patch, _id: id});
 }
+
+RT.connect(token);
+
+RT.on("trade:opened", trade => { upsertTrade(trade); refreshAll(); toast(`Opened ${trade.symbol}`,"ok"); });
+RT.on("trade:update", patch => { upsertTrade(patch); refreshAll(); });
+RT.on("trade:closed", trade => {
+  upsertTrade(trade);
+  refreshAll();
+  toast(`${trade.symbol} closed ${trade.pnl>=0?"+":""}$${Number(trade.pnl).toFixed(2)}`, trade.pnl>=0?"ok":"err");
+});
+RT.on("balance:update", d => applyBalance(d.balance, d.mode));
+RT.on("bot:status", d => { botActive = d.active; updateBotUI(botActive); });
+RT.on("log", data => addTlEntry(data));
+
+// ═══════════════════════════════════════════════════
+//  ACTIVITY TIMELINE rendering (fed by the "log" event above)
+// ═══════════════════════════════════════════════════
+let tlScrolledUp = false;
 
 function getEventIcon(message, level){
   if(level === "error") return "❌";
@@ -1294,7 +1288,6 @@ async function loadHistoricalTimeline(){
 
 init();
 loadHistoricalTimeline();
-connectTimeline();
 </script>
 </body>
 </html>

@@ -7,6 +7,8 @@
 <link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@300;400;500;600;700&family=Space+Mono:wght@400;700&display=swap" rel="stylesheet">
 <link rel="icon" href="/icon.jpg">
 <link rel="apple-touch-icon" href="/icon.jpg">
+<script src="/socket.io/socket.io.js"></script>
+<script src="/realtime.js"></script>
 <style>
 *{margin:0;padding:0;box-sizing:border-box}
 :root{
@@ -96,7 +98,13 @@ tr:hover td{background:rgba(56,189,248,0.03)}
         <p>Trade History</p>
       </div>
     </div>
-    <a class="back-btn" href="/dashboard.html">← Dashboard</a>
+    <div style="display:flex;align-items:center;gap:16px">
+      <div style="display:flex;align-items:center;gap:8px">
+        <span style="font-size:10px;font-family:var(--mono);color:var(--muted)" id="rtStatus">Connecting...</span>
+        <div id="rtDot" style="width:7px;height:7px;border-radius:50%;background:var(--muted);transition:.3s"></div>
+      </div>
+      <a class="back-btn" href="/dashboard.html">← Dashboard</a>
+    </div>
   </div>
 
   <!-- STATS -->
@@ -253,13 +261,31 @@ function setDir(s,btn){
   renderTable();
 }
 
+function upsertTrade(patch){
+  const id = patch.id || patch._id;
+  const idx = allTrades.findIndex(t => (t._id||t.id) === id);
+  if(idx >= 0) allTrades[idx] = {...allTrades[idx], ...patch, _id: id};
+  else allTrades.unshift({...patch, _id: id});
+}
+
 async function init(){
   const d=await API("/trades?limit=1000");
   allTrades=d.trades||[];
   renderTable();
 }
 init();
-setInterval(async()=>{const d=await API("/trades?limit=1000");allTrades=d.trades||[];renderTable();},30000);
+
+// ═══════════════════════════════════════════════════
+//  REAL-TIME UPDATES via Socket.IO
+// ═══════════════════════════════════════════════════
+RT.connect(token);
+RT.on("trade:opened", trade => { upsertTrade(trade); renderTable(); });
+RT.on("trade:update", patch => { upsertTrade(patch); renderTable(); });
+RT.on("trade:closed", trade => { upsertTrade(trade); renderTable(); });
+
+// Safety-net reconciliation only, in case a socket event is ever missed
+// (e.g. a drop that lands in the same instant as a trade update).
+setInterval(async()=>{const d=await API("/trades?limit=1000");allTrades=d.trades||[];renderTable();},120000);
 </script>
 </body>
 </html>

@@ -28,14 +28,18 @@ import {
 import { placeTradeWithRetry, startForcedCloseTimer, cancelForcedCloseTimer, closeTrade } from "../src/trading/trader.js";
 import { RiskManager, StopLossTakeProfit } from "../src/risk/risk-manager.js";
 import { Trade, User, BotLog }             from "./db.js";
+import {
+  emitToUser, emitTradeOpened, emitTradeUpdate,
+  emitTradeClosed, emitBalanceUpdate, emitBotStatus,
+} from "./realtime.js";
 
-let _broadcast = null;
-async function getBroadcast() {
-  if (!_broadcast) {
-    const mod = await import("./server.js");
-    _broadcast = mod.broadcastToUser;
-  }
-  return _broadcast;
+// Kept as a thin wrapper so existing call sites (log()) don't
+// need to change — routes activity-log events straight to the
+// user's Socket.IO room.
+function broadcast(userId, event) {
+  if (!event || typeof event !== "object") return;
+  const { type, ...rest } = event;
+  emitToUser(userId, type || "log", rest);
 }
 
 import {
@@ -133,7 +137,6 @@ async function log(userId, message, level = "info") {
   try {
     const entry = await BotLog.create({ userId, message, level });
     try {
-      const broadcast = await getBroadcast();
       broadcast(String(userId), {
         type:      "log",
         level,
@@ -169,6 +172,7 @@ async function syncTradeStatuses(ws, userId, label, botToken, chatId, rm) {
         const liveContract = activeContracts.get(contractIdStr);
         const livePnl      = parseFloat(liveContract.profit ?? liveContract.bid_price ?? 0);
         await Trade.findByIdAndUpdate(trade._id, { pnl: livePnl });
+        emitTradeUpdate(userId, { id: String(trade._id), pnl: livePnl, status: "open" });
         continue;
       }
 
@@ -203,6 +207,26 @@ async function syncTradeStatuses(ws, userId, label, botToken, chatId, rm) {
 
       cancelForcedCloseTimer(String(trade.contractId));
       if (rm) rm.tradeClosed(finalPnl);
+
+      emitTradeClosed(userId, {
+        id:       String(trade._id),
+        symbol:   trade.symbol,
+        direction: trade.direction,
+        stake:    trade.stake,
+        multiplier: trade.multiplier,
+        status:   finalStatus,
+        pnl:      finalPnl,
+        openedAt: trade.openedAt,
+        closedAt: new Date(),
+      });
+
+      // Balance/equity moved when this trade settled — let the
+      // dashboard refresh its balance display immediately rather
+      // than waiting for the next poll cycle.
+      try {
+        const freshBalance = await getBalance(ws);
+        emitBalanceUpdate(userId, freshBalance);
+      } catch {}
 
       const soldFor = finalPnl + trade.stake; // derived — matches the soldFor-stake=pnl convention used everywhere else
       const reason  = finalPnl >= 0
@@ -267,6 +291,7 @@ async function monitorOpenTrades(ws, userId, label, portfolio, dfD1Cache, riskSe
         const tradeBias  = direction === "MULTUP" ? "bullish" : "bearish";
 
         await Trade.findByIdAndUpdate(trade._id, { pnl: currentPnl });
+        emitTradeUpdate(userId, { id: String(trade._id), pnl: currentPnl, status: "open" });
 
         // ══════════════════════════════════════════════════════
         // LIVE STATUS — every exit mechanism, computed ONCE per
@@ -360,6 +385,8 @@ async function monitorOpenTrades(ws, userId, label, portfolio, dfD1Cache, riskSe
             if (rm) rm.tradeClosed(finalPnl);
             await log(userId, `[${label}] ${trade.symbol} | Closed $${soldFor.toFixed(2)} | PnL: $${finalPnl.toFixed(2)}`, "trade");
             await notifyTradeClosed({ symbol: trade.symbol, direction, soldFor, pnl: finalPnl, stake, reason, label, botToken, chatId });
+            emitTradeClosed(userId, { id: String(trade._id), symbol: trade.symbol, direction, stake, status: finalPnl >= 0 ? "won" : "lost", pnl: finalPnl, closedAt: new Date() });
+            try { emitBalanceUpdate(userId, await getBalance(ws)); } catch {}
           }
           continue;
         }
@@ -393,6 +420,8 @@ async function monitorOpenTrades(ws, userId, label, portfolio, dfD1Cache, riskSe
             if (cutoffCooldownHours > 0) portfolio.lockSymbolForCooldown(trade.symbol, cooldownMs);
             await log(userId, `[${label}] ${trade.symbol} | Closed $${soldFor.toFixed(2)} | PnL: $${finalPnl.toFixed(2)}${cutoffCooldownHours > 0 ? ` | 🧊 locked ${cutoffCooldownHours}hrs` : ""}`, "trade");
             await notifyTradeClosed({ symbol: trade.symbol, direction, soldFor, pnl: finalPnl, stake, reason: `${reason}${cutoffCooldownHours > 0 ? ` — ${cutoffCooldownHours}hr cooldown lock applied` : ""}`, label, botToken, chatId });
+            emitTradeClosed(userId, { id: String(trade._id), symbol: trade.symbol, direction, stake, status: finalPnl >= 0 ? "won" : "lost", pnl: finalPnl, closedAt: new Date() });
+            try { emitBalanceUpdate(userId, await getBalance(ws)); } catch {}
           }
           continue;
         }
@@ -442,6 +471,8 @@ async function monitorOpenTrades(ws, userId, label, portfolio, dfD1Cache, riskSe
               if (rm) rm.tradeClosed(finalPnl);
               await log(userId, `[${label}] ${trade.symbol} | Closed $${soldFor.toFixed(2)} | PnL: $${finalPnl.toFixed(2)} (locked floor was $${floor.toFixed(4)})`, "trade");
               await notifyTradeClosed({ symbol: trade.symbol, direction, soldFor, pnl: finalPnl, stake, reason, label, botToken, chatId });
+              emitTradeClosed(userId, { id: String(trade._id), symbol: trade.symbol, direction, stake, status: finalPnl >= 0 ? "won" : "lost", pnl: finalPnl, closedAt: new Date() });
+              try { emitBalanceUpdate(userId, await getBalance(ws)); } catch {}
             }
             continue;
           }
@@ -601,6 +632,8 @@ async function runUserBot(user, stopSignal) {
       let balance = await getBalance(ws);
       lastApiCall = Date.now();
       if (rm.startingBalance === null) rm.setStartingBalance(balance);
+      emitBalanceUpdate(user._id, balance, user.derivMode);
+      emitBotStatus(user._id, true);
 
       await log(userId, `[${label}] ✅ Connected | Balance: $${balance.toFixed(2)} | Open: ${openCount}/${rm.maxOpen}`, "info");
       await notifyStartup(balance, user.derivMode, label, botToken, chatId);
@@ -624,6 +657,7 @@ async function runUserBot(user, stopSignal) {
         lastApiCall = Date.now();
         balance     = await getBalance(ws);
         lastApiCall = Date.now();
+        emitBalanceUpdate(user._id, balance, user.derivMode);
 
         await syncTradeStatuses(ws, user._id, label, botToken, chatId, rm);
         lastApiCall = Date.now();
@@ -831,11 +865,13 @@ async function runUserBot(user, stopSignal) {
                 await log(user._id, `[${label}] ${symbol} | ⏰ EXIT: ${reason} — closed`, "trade");
                 await log(user._id, `[${label}] ${symbol} | Closed $${soldFor.toFixed(2)} | PnL: $${finalPnl.toFixed(2)}`, "trade");
                 await notifyTradeClosed({ symbol, direction, soldFor, pnl: finalPnl, stake, reason, label, botToken, chatId });
+                emitTradeClosed(user._id, { id: String(updated._id), symbol, direction, stake, status: finalPnl >= 0 ? "won" : "lost", pnl: finalPnl, closedAt: new Date() });
+                try { emitBalanceUpdate(user._id, await getBalance(ws)); } catch {}
               },
             });
 
             try {
-              await Trade.create({
+              const newTrade = await Trade.create({
                 userId:     user._id,
                 symbol,
                 direction,
@@ -848,6 +884,12 @@ async function runUserBot(user, stopSignal) {
                 forcedCloseDurationMins: durationMins,
                 status:     "open",
                 pnl:        0,
+              });
+              emitTradeOpened(user._id, {
+                id:         String(newTrade._id),
+                symbol, direction, stake, multiplier,
+                contractId, status: "open", pnl: 0,
+                openedAt:   newTrade.openedAt,
               });
             } catch (dbErr) {
               if (!dbErr.message.includes("duplicate key")) {
@@ -914,6 +956,7 @@ export const botManager = {
       signal.stopped = true;
       runningBots.delete(userId);
     }
+    emitBotStatus(userId, false);
   },
 
   async restartUser(userId) {

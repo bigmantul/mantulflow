@@ -7,6 +7,8 @@
 <link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@300;400;500;600;700&family=Space+Mono:wght@400;700&display=swap" rel="stylesheet">
 <link rel="icon" href="/icon.jpg">
 <link rel="apple-touch-icon" href="/icon.jpg">
+<script src="/socket.io/socket.io.js"></script>
+<script src="/realtime.js"></script>
 <style>
 *{margin:0;padding:0;box-sizing:border-box}
 :root{
@@ -169,6 +171,8 @@ input:focus,select:focus{border-color:var(--border)}
       </div>
       <div class="header-right">
         <span class="admin-badge">👑 ADMIN</span>
+        <span style="font-size:10px;font-family:var(--mono);color:var(--muted)" id="rtStatus">Connecting...</span>
+        <div id="rtDot" style="width:7px;height:7px;border-radius:50%;background:var(--muted);transition:.3s;display:inline-block"></div>
         <span style="font-size:11px;font-family:var(--mono);color:var(--muted)" id="botCountEl">—</span>
         <button class="refresh-btn" onclick="loadAll()">↻ Refresh</button>
         <button class="btn-out" onclick="adminLogout()">Exit</button>
@@ -328,10 +332,25 @@ function adminLogout(){
   document.getElementById("adminPanel").style.display="none";
 }
 
+let rtWired = false;
 function showPanel(){
   document.getElementById("loginScreen").style.display="none";
   document.getElementById("adminPanel").style.display="block";
   loadAll();
+
+  // ═══════════════════════════════════════════════════
+  //  REAL-TIME UPDATES via Socket.IO (admin room)
+  // ═══════════════════════════════════════════════════
+  RT.connect(adminToken);
+  if(!rtWired){
+    rtWired = true;
+    // Any user's trade/balance/bot-status change pings this — just
+    // refetch the aggregate views rather than trying to patch each
+    // one client-side (this page renders cross-user summaries, so a
+    // full loadAll() here is still far lighter than the old blind
+    // 15s poll, since it now only fires when something actually changed).
+    RT.on("admin:activity", () => loadAll());
+  }
 }
 
 async function loadAll(){
@@ -529,7 +548,9 @@ async function deleteUser(id,name){
 function closeModal(id){document.getElementById(id).classList.remove("open")}
 document.querySelectorAll(".modal").forEach(m=>{m.addEventListener("click",e=>{if(e.target===m)m.classList.remove("open")})});
 
-setInterval(loadAll,15000);
+// Safety-net reconciliation only — admin:activity events (above) drive
+// the primary real-time refresh now.
+setInterval(loadAll,60000);
 </script>
 </body>
 </html>
