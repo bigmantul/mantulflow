@@ -5,14 +5,22 @@
 //
 //  Stage 1: Daily Bias — computed ONCE per trading day,
 //           after the previous daily candle closes.
-//  Stage 2: 1H Confirmation — NOT an entry signal. Once
-//           enough bullish/bearish evidence appears on 1H,
-//           the symbol enters "Entry Mode" (permission to
-//           look for an entry granted, but no trade yet).
+//  Stage 2: 1H Confirmation — NOT an entry signal. The most
+//           recent CLOSED 1H candle must have BOTH its open
+//           AND close beyond yesterday's D1 high (bullish)
+//           or D1 low (bearish), AND pass the valid-candle
+//           body>wick test. Once confirmed, the symbol
+//           enters "Entry Mode" (permission to look for an
+//           entry granted, but no trade yet) and the epoch
+//           of that confirming H1 candle is remembered.
 //  Stage 3: 15M Entry — only checked once in Entry Mode.
-//           Waits for a pullback + rejection/engulfing
-//           candle to CLOSE, then enters at the OPEN of
-//           the NEXT 15M candle (not immediately on close).
+//           Looks at the 4 fifteen-minute candles that made
+//           up the confirming H1 candle. ANY 3 CONSECUTIVE
+//           of those 4 (1-2-3 or 2-3-4) must each be a valid
+//           candle (body>wick, matching bias direction) with
+//           open AND close beyond the same D1 level. Once
+//           found, enters at the OPEN of the NEXT 15M candle
+//           (not immediately).
 //
 //  SESSION RULE: Daily bias (Stage 1) is computed any time
 //  of day. Stage 2 + Stage 3 only run for FX/Metals during
@@ -128,6 +136,7 @@ function getState(symbol) {
       dailyBiasMeta: null,
       entryMode:     false,
       entryModeReason: "",
+      entryModeH1Epoch: null, // epoch of the H1 candle Stage 2 confirmed against
       pendingEntry:  null,   // { direction, signalEpoch } or null
       lastM15Epoch:  null,
     });
@@ -482,6 +491,14 @@ function hasConsecutiveLowerHighs(df, lookback = 3, count = 2) {
 //  NOT an entry trigger. Just grants permission to look
 //  for a 15M entry. Checked every cycle while NOT already
 //  in Entry Mode for this symbol+bias.
+//
+//  RULE (reset version): the most recent CLOSED 1H candle
+//  must have BOTH its open AND its close beyond yesterday's
+//  D1 level — above the D1 high for bullish, below the D1
+//  low for bearish — i.e. the entire candle body sits past
+//  the level, not just the close. It must also be a VALID
+//  candle per validateDailyCandle (body > wick, matching
+//  direction).
 // ═══════════════════════════════════════════════════════
 
 function check1hConfirmation(dailyBias, dfH1, dfD1) {
@@ -503,31 +520,33 @@ function check1hConfirmation(dailyBias, dfH1, dfD1) {
   const yesterdayLow  = yesterday.low;
 
   if (dailyBias === "bullish") {
-    const brokeHigh = last.close > yesterdayHigh;
-    if (!brokeHigh) {
-      return { confirmed: false, reason: `Waiting — 1H close (${last.close.toFixed(5)}) has not closed above yesterday's high (${yesterdayHigh.toFixed(5)})` };
+    const openAbove  = last.open  > yesterdayHigh;
+    const closeAbove = last.close > yesterdayHigh;
+    if (!openAbove || !closeAbove) {
+      return { confirmed: false, reason: `Waiting — 1H candle (open ${last.open.toFixed(5)}, close ${last.close.toFixed(5)}) has not fully opened+closed above yesterday's high (${yesterdayHigh.toFixed(5)})` };
     }
 
     const shape = validateDailyCandle(last);
     if (!shape.valid || shape.direction !== "bullish") {
-      return { confirmed: false, reason: `1H closed above yesterday's high (${yesterdayHigh.toFixed(5)}) but candle shape invalid — ${shape.reason}` };
+      return { confirmed: false, reason: `1H open+close above yesterday's high (${yesterdayHigh.toFixed(5)}) but candle shape invalid — ${shape.reason}` };
     }
 
-    return { confirmed: true, reason: `1H closed above yesterday's high (${yesterdayHigh.toFixed(5)}) AND ${shape.reason}` };
+    return { confirmed: true, h1Epoch: last.epoch, reason: `1H candle opened (${last.open.toFixed(5)}) AND closed (${last.close.toFixed(5)}) above yesterday's high (${yesterdayHigh.toFixed(5)}) AND ${shape.reason}` };
   }
 
   if (dailyBias === "bearish") {
-    const brokeLow = last.close < yesterdayLow;
-    if (!brokeLow) {
-      return { confirmed: false, reason: `Waiting — 1H close (${last.close.toFixed(5)}) has not closed below yesterday's low (${yesterdayLow.toFixed(5)})` };
+    const openBelow  = last.open  < yesterdayLow;
+    const closeBelow = last.close < yesterdayLow;
+    if (!openBelow || !closeBelow) {
+      return { confirmed: false, reason: `Waiting — 1H candle (open ${last.open.toFixed(5)}, close ${last.close.toFixed(5)}) has not fully opened+closed below yesterday's low (${yesterdayLow.toFixed(5)})` };
     }
 
     const shape = validateDailyCandle(last);
     if (!shape.valid || shape.direction !== "bearish") {
-      return { confirmed: false, reason: `1H closed below yesterday's low (${yesterdayLow.toFixed(5)}) but candle shape invalid — ${shape.reason}` };
+      return { confirmed: false, reason: `1H open+close below yesterday's low (${yesterdayLow.toFixed(5)}) but candle shape invalid — ${shape.reason}` };
     }
 
-    return { confirmed: true, reason: `1H closed below yesterday's low (${yesterdayLow.toFixed(5)}) AND ${shape.reason}` };
+    return { confirmed: true, h1Epoch: last.epoch, reason: `1H candle opened (${last.open.toFixed(5)}) AND closed (${last.close.toFixed(5)}) below yesterday's low (${yesterdayLow.toFixed(5)}) AND ${shape.reason}` };
   }
 
   return { confirmed: false, reason: "No daily bias" };
@@ -537,32 +556,25 @@ function check1hConfirmation(dailyBias, dfH1, dfD1) {
 // ═══════════════════════════════════════════════════════
 //  STAGE 3 — 15M ENTRY
 //
-//  Only evaluated while in Entry Mode. Uses the SAME
-//  yesterday's-D1-high/low level Stage 2 already confirmed
-//  against.
+//  Only evaluated while in Entry Mode. Looks INSIDE the
+//  specific 1H candle that Stage 2 just confirmed against
+//  (identified by state.entryModeH1Epoch) — i.e. the 4
+//  fifteen-minute candles that make up that H1 bar.
 //
-//  Bullish entry candle (EITHER of):
-//    1. 15M candle CLOSES above yesterday's daily high, OR
-//    2. 15M candle is a bullish pin bar/engulfing AT that
-//       level (candle's range touches the level, closes
-//       bullish, and has a rejection/engulfing shape)
-//  Bearish entry candle mirrors this against the daily low.
+//  RULE (reset version): among those 4 fifteen-minute
+//  candles, ANY 3 CONSECUTIVE candles (candles 1-2-3 OR
+//  2-3-4) must each be:
+//    - a VALID candle per validateDailyCandle (body > wick),
+//      matching the daily bias direction, AND
+//    - both its open AND close beyond the SAME D1 level
+//      Stage 2 confirmed against (D1 high for bullish, D1
+//      low for bearish).
 //
-//  Invalid (skip, no signal):
-//    - 15M candle closes in the OPPOSITE direction of the
-//      daily bias — never counts toward either condition.
-//    - False break: wicks through the level intrabar but
-//      closes back on the wrong side — condition 1 already
-//      requires an actual CLOSE beyond the level (not just a
-//      wick), so a false break can only be a problem via
-//      condition 2, which is why condition 2 also requires a
-//      same-direction close.
-//
-//  Per spec: the bot does NOT enter on the signal candle's
-//  close — it enters at the OPEN of the NEXT 15M candle. So
-//  this function flags "pendingEntry" on the close, and the
-//  actual BUY/SELL signal fires one cycle later once a new
-//  15M candle has opened.
+//  Per spec: the bot does NOT enter immediately once the
+//  pattern is found — it enters at the OPEN of the NEXT 15M
+//  candle. So this function flags "pendingEntry" once the
+//  pattern is confirmed, and the actual BUY/SELL signal
+//  fires one cycle later once a new 15M candle has opened.
 // ═══════════════════════════════════════════════════════
 
 function check15mEntry(dailyBias, dfM15, dfD1, state) {
@@ -572,88 +584,70 @@ function check15mEntry(dailyBias, dfM15, dfD1, state) {
   if (!dfD1 || dfD1.length < 2) {
     return { signal: SIG_HOLD, reason: "Insufficient daily data for daily high/low" };
   }
+  if (!state.entryModeH1Epoch) {
+    return { signal: SIG_HOLD, reason: "No confirmed H1 bar recorded for entry mode" };
+  }
 
   const len        = dfM15.length;
-  const lastClosed  = dfM15[len - 2]; // most recent fully closed candle
-  const prevClosed   = dfM15[len - 3];
-
-  // "Yesterday" = the most recent CLOSED daily candle — same
-  // dfD1[len-2] convention Stage 1 and Stage 2 already use.
-  const yesterday = dfD1[dfD1.length - 2];
-  const yesterdayHigh = yesterday.high;
-  const yesterdayLow  = yesterday.low;
+  const lastClosed = dfM15[len - 2]; // most recent fully closed 15M candle
 
   // ── If we have a pending entry from a PRIOR cycle, check if
-  //    a NEW 15M candle has opened since the signal candle closed.
+  //    a NEW 15M candle has opened since the pattern confirmed.
   //    If so, fire the trade now (entering at this new candle's open).
   if (state.pendingEntry) {
     const signalEpoch = state.pendingEntry.signalEpoch;
-    // A new candle has "opened" once we observe a closed candle
-    // AFTER the signal candle, i.e. lastClosed.epoch > signalEpoch
     if (lastClosed.epoch > signalEpoch) {
       const direction = state.pendingEntry.direction;
       state.pendingEntry = null; // consume it — one-shot entry
       return {
         signal: direction === "buy" ? SIG_BUY : SIG_SELL,
-        reason: `Entering at open of next 15M candle after ${direction} signal candle closed`,
+        reason: `Entering at open of next 15M candle after 3-consecutive-valid pattern confirmed`,
       };
     }
-    // Still the same candle (no new candle has closed/opened yet) — keep waiting
-    return { signal: SIG_HOLD, reason: "Signal candle closed — waiting for next 15M candle to open for entry" };
+    return { signal: SIG_HOLD, reason: "Pattern confirmed — waiting for next 15M candle to open for entry" };
   }
 
-  // ── No pending entry yet — look for a fresh signal candle ──
-  if (dailyBias === "bullish") {
-    // Invalid: candle closed opposite direction (bearish) — skip regardless of level
-    if (lastClosed.close <= lastClosed.open) {
-      return { signal: SIG_HOLD, reason: "Invalid — 15M candle closed bearish (opposite direction), skipping" };
-    }
-
-    const closedAboveHigh = lastClosed.close > yesterdayHigh;
-
-    // "at Daily High" = the level falls within this candle's range
-    // (price actually tested it), plus a bullish rejection/engulfing shape.
-    const touchesHigh   = lastClosed.low <= yesterdayHigh && lastClosed.high >= yesterdayHigh;
-    const rejectionShape = isBullishRejection(lastClosed, prevClosed);
-    const pinBarAtHigh   = touchesHigh && rejectionShape;
-
-    if (!closedAboveHigh && !pinBarAtHigh) {
-      return { signal: SIG_HOLD, reason: `No 15M close above daily high (${yesterdayHigh.toFixed(5)}) and no bullish pin bar/engulfing at that level yet` };
-    }
-
-    const reason = closedAboveHigh
-      ? `15M closed above daily high (${yesterdayHigh.toFixed(5)})`
-      : `15M bullish pin bar/engulfing at daily high (${yesterdayHigh.toFixed(5)})`;
-
-    state.pendingEntry = { direction: "buy", signalEpoch: lastClosed.epoch };
-    return { signal: SIG_HOLD, reason: `${reason} — entry queued for next 15M candle open` };
+  if (dailyBias !== "bullish" && dailyBias !== "bearish") {
+    return { signal: SIG_HOLD, reason: "No daily bias" };
   }
 
-  if (dailyBias === "bearish") {
-    // Invalid: candle closed opposite direction (bullish) — skip regardless of level
-    if (lastClosed.close >= lastClosed.open) {
-      return { signal: SIG_HOLD, reason: "Invalid — 15M candle closed bullish (opposite direction), skipping" };
-    }
+  // ── Gather the 4 fifteen-minute candles that formed the ──
+  // ── confirming H1 bar (epoch window [h1Epoch, h1Epoch+3600)) ──
+  const h1Epoch = state.entryModeH1Epoch;
+  const barCandles = dfM15
+    .filter(c => c.epoch >= h1Epoch && c.epoch < h1Epoch + 3600)
+    .sort((a, b) => a.epoch - b.epoch);
 
-    const closedBelowLow = lastClosed.close < yesterdayLow;
+  if (barCandles.length < 4) {
+    return { signal: SIG_HOLD, reason: `Waiting for all 4 fifteen-minute candles of the confirming H1 bar (have ${barCandles.length}/4)` };
+  }
+  const bar = barCandles.slice(0, 4);
 
-    const touchesLow     = lastClosed.low <= yesterdayLow && lastClosed.high >= yesterdayLow;
-    const rejectionShape = isBearishRejection(lastClosed, prevClosed);
-    const pinBarAtLow    = touchesLow && rejectionShape;
+  // Same D1 level Stage 2 confirmed against.
+  const yesterday = dfD1[dfD1.length - 2];
+  const level = dailyBias === "bullish" ? yesterday.high : yesterday.low;
+  const wantDirection = dailyBias; // "bullish" | "bearish"
 
-    if (!closedBelowLow && !pinBarAtLow) {
-      return { signal: SIG_HOLD, reason: `No 15M close below daily low (${yesterdayLow.toFixed(5)}) and no bearish pin bar/engulfing at that level yet` };
-    }
-
-    const reason = closedBelowLow
-      ? `15M closed below daily low (${yesterdayLow.toFixed(5)})`
-      : `15M bearish pin bar/engulfing at daily low (${yesterdayLow.toFixed(5)})`;
-
-    state.pendingEntry = { direction: "sell", signalEpoch: lastClosed.epoch };
-    return { signal: SIG_HOLD, reason: `${reason} — entry queued for next 15M candle open` };
+  function qualifies(c) {
+    const shape = validateDailyCandle(c);
+    if (!shape.valid || shape.direction !== wantDirection) return false;
+    return wantDirection === "bullish"
+      ? (c.open > level && c.close > level)
+      : (c.open < level && c.close < level);
   }
 
-  return { signal: SIG_HOLD, reason: "No daily bias" };
+  const flags = bar.map(qualifies);
+  const window123 = flags[0] && flags[1] && flags[2];
+  const window234 = flags[1] && flags[2] && flags[3];
+
+  if (!window123 && !window234) {
+    return { signal: SIG_HOLD, reason: `No 3 consecutive valid ${wantDirection} 15M candles (open+close beyond ${level.toFixed(5)}) inside the confirming H1 bar` };
+  }
+
+  const which = window123 && window234 ? "candles 1-2-3 and 2-3-4" : (window123 ? "candles 1-2-3" : "candles 2-3-4");
+  const direction = dailyBias === "bullish" ? "buy" : "sell";
+  state.pendingEntry = { direction, signalEpoch: bar[3].epoch };
+  return { signal: SIG_HOLD, reason: `3 consecutive valid ${wantDirection} 15M candles found (${which}) inside H1 bar — entry queued for next 15M candle open` };
 }
 
 
@@ -677,6 +671,7 @@ export function collectSignals(tf) {
     // New trading day — reset entry mode / pending entry from yesterday
     state.entryMode      = false;
     state.entryModeReason = "";
+    state.entryModeH1Epoch = null;
     state.pendingEntry    = null;
   }
 
@@ -708,6 +703,7 @@ export function collectSignals(tf) {
 
     state.entryMode = true;
     state.entryModeReason = confirmation.reason;
+    state.entryModeH1Epoch = confirmation.h1Epoch;
   } else {
     breakdown.push({ step: "Stage2 1H Confirm", result: "ENTRY MODE (active)", reason: state.entryModeReason });
   }
