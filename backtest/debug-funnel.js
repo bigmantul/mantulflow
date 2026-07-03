@@ -82,6 +82,22 @@ function pushPlaceholder(arr) {
   return placeholder;
 }
 
+// ── Local copy of validateDailyCandle, for DIAGNOSTIC comparison
+//    only (signals.js doesn't export it). Keep in sync manually
+//    if the shape rule in signals.js ever changes.
+function candleRange(c) { return c.high - c.low; }
+function validateDailyCandleLocal(candle) {
+  const body = candle.close - candle.open;
+  const range = candleRange(candle);
+  if (range === 0 || body === 0) return { valid: false, direction: null };
+  if (body > 0) {
+    const upperWick = candle.high - candle.close;
+    return { valid: body > upperWick, direction: "bullish" };
+  }
+  const lowerWick = candle.close - candle.low;
+  return { valid: -body > lowerWick, direction: "bearish" };
+}
+
 resetSymbolState(symbol);
 
 const d1Counter = makeClosedCounter(d1);
@@ -101,6 +117,15 @@ let entryModeGrantedCount = 0; // how many times Stage2 flipped false->true (new
 let stage3EvaluatedCount = 0;  // how many bars actually reached Stage3 (i.e. entry mode was active)
 const sampleReasons = { stage2Wait: null, stage3Wait: null };
 let barsProcessed = 0;
+
+// ── Rule comparison counters (computed independently of collectSignals,
+//    by reading the same last-closed H1 candle + yesterday's D1 level,
+//    ONLY when Stage1 has a bias and we're in-session — i.e. only counting
+//    the same evaluations Stage2 actually got a chance to run on) ──
+let closeOnlyBeyond = 0;       // OLD rule: close beyond level, matching direction (ignores shape)
+let closeOnlyBeyondValidShape = 0; // OLD rule + shape check (closest to what pre-reset Stage2 required)
+let openAndCloseBeyond = 0;    // NEW rule: open AND close both beyond level (ignores shape)
+let openAndCloseBeyondValidShape = 0; // NEW rule + shape (exactly what current Stage2 requires)
 
 for (let i = minStartIndex; i < m15.length; i++) {
   const bar = m15[i];
@@ -127,6 +152,28 @@ for (let i = minStartIndex; i < m15.length; i++) {
       growingM15.pop();
     }
     barsProcessed++;
+
+    // ── Rule comparison (independent of entryMode gating) ──
+    const bias = result.dailyBias;
+    if ((bias === "bullish" || bias === "bearish") && growingH1.length >= 1 && growingD1.length >= 1) {
+      const lastH1 = growingH1[growingH1.length - 1];
+      const yestD1 = growingD1[growingD1.length - 1];
+      const level = bias === "bullish" ? yestD1.high : yestD1.low;
+      const shape = validateDailyCandleLocal(lastH1);
+      const shapeOk = shape.valid && shape.direction === bias;
+
+      const closeBeyond = bias === "bullish" ? lastH1.close > level : lastH1.close < level;
+      const openBeyond  = bias === "bullish" ? lastH1.open  > level : lastH1.open  < level;
+
+      if (closeBeyond) {
+        closeOnlyBeyond++;
+        if (shapeOk) closeOnlyBeyondValidShape++;
+      }
+      if (closeBeyond && openBeyond) {
+        openAndCloseBeyond++;
+        if (shapeOk) openAndCloseBeyondValidShape++;
+      }
+    }
 
     for (const step of result.breakdown) {
       if (step.step === "Stage1 DailyBias") {
@@ -173,4 +220,10 @@ console.log(`  STAGE 3 — 15M Entry (only evaluated while Entry Mode active):`)
 console.log(`    Bars where Stage3 ran at all: ${stage3EvaluatedCount}`);
 console.log(`    BUY: ${stage3.BUY}   SELL: ${stage3.SELL}   WAIT: ${stage3.WAIT}`);
 if (sampleReasons.stage3Wait) console.log(`    Sample WAIT reason: "${sampleReasons.stage3Wait}"`);
+console.log(`  ────────────────────────────────────────`);
+console.log(`  RULE COMPARISON (same bars, bias set + in-session):`);
+console.log(`    OLD rule — close beyond level:             ${closeOnlyBeyond}`);
+console.log(`    OLD rule — close beyond + valid shape:      ${closeOnlyBeyondValidShape}`);
+console.log(`    NEW rule — open+close beyond level:         ${openAndCloseBeyond}`);
+console.log(`    NEW rule — open+close beyond + valid shape: ${openAndCloseBeyondValidShape}  <- current Stage2 requirement`);
 console.log(`════════════════════════════════════════════════\n`);
