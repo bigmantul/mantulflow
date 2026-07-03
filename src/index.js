@@ -48,6 +48,15 @@ const MAX_IDLE_SECS    = 30;
 const TRADING_MODE     = "demo";
 const DAILY_SUMMARY_HR = 23;
 
+// Telegram notifications below are informational, not trade-critical
+// (trade open/close alerts are NOT throttled — those always send).
+// Sending a full cycle-scan message every POLL_SECS (15s), forever,
+// floods Telegram and triggers 429 flood-control. Only send these
+// at most once per interval.
+const CYCLE_SCAN_NOTIFY_SECS  = 300; // 5 min
+const MAX_TRADES_NOTIFY_SECS  = 300;
+const RISK_BLOCK_NOTIFY_SECS  = 300;
+
 
 // ═══════════════════════════════════════════════════════
 //  HELPERS
@@ -69,9 +78,9 @@ function sleep(secs) {
 async function main() {
   console.log("═══════════════════════════════════════════════");
   console.log("  Launching bot...");
-  console.log("  Strategy  : Multi-Strategy Signal Engine");
-  console.log("  Strategies: Trend | S&D | SMC | Breakout | MeanRev");
-  console.log("  Timeframes: 4H / 1H / 30M / 15M");
+  console.log("  Strategy  : Daily Bias Strategy (3-stage state machine)");
+  console.log("  Stages    : Daily Bias -> 1H Confirm -> 15M Entry");
+  console.log("  Timeframes: D1 / H1 / M15");
   console.log("═══════════════════════════════════════════════\n");
 
   initPortfolio(SYMBOLS);
@@ -79,7 +88,10 @@ async function main() {
   const rm   = new RiskManager();
   const sltp = new StopLossTakeProfit();
 
-  let lastSummaryDate = "";
+  let lastSummaryDate       = "";
+  let lastCycleScanNotifyMs = 0;
+  let lastMaxTradesNotifyMs = 0;
+  let lastRiskBlockNotifyMs = 0;
 
   // ── OUTER LOOP ───────────────────────────────────────
   while (true) {
@@ -147,7 +159,10 @@ async function main() {
         // Max open trades check
         if (currentOpen >= rm.maxOpen) {
           console.log(`🔒 Max open trades (${currentOpen}/${rm.maxOpen}) — waiting`);
-          await notifyMaxTrades(currentOpen, rm.maxOpen);
+          if (Date.now() - lastMaxTradesNotifyMs >= MAX_TRADES_NOTIFY_SECS * 1000) {
+            lastMaxTradesNotifyMs = Date.now();
+            await notifyMaxTrades(currentOpen, rm.maxOpen);
+          }
           continue;
         }
 
@@ -159,7 +174,10 @@ async function main() {
               ? `${status.consecutiveLosses} consecutive losses`
               : `Daily loss limit hit ($${Math.abs(status.dailyPnl).toFixed(2)})`;
           console.log("🚫 Risk block — skipping cycle");
-          await notifyRiskBlock(reason);
+          if (Date.now() - lastRiskBlockNotifyMs >= RISK_BLOCK_NOTIFY_SECS * 1000) {
+            lastRiskBlockNotifyMs = Date.now();
+            await notifyRiskBlock(reason);
+          }
           continue;
         }
 
@@ -280,7 +298,11 @@ async function main() {
 
         } // end symbol loop
 
-        if (cycleResults.length > 0) {
+        const hadSignalThisCycle = cycleResults.some(r => r.status === "BUY" || r.status === "SELL");
+        const dueForScanNotify   = Date.now() - lastCycleScanNotifyMs >= CYCLE_SCAN_NOTIFY_SECS * 1000;
+
+        if (cycleResults.length > 0 && (hadSignalThisCycle || dueForScanNotify)) {
+          lastCycleScanNotifyMs = Date.now();
           await notifyCycleScan({
             balance,
             openTrades:  currentOpen,

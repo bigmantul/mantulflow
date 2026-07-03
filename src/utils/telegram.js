@@ -8,6 +8,14 @@
 const TELEGRAM_BOT_TOKEN = process.env.TELEGRAM_BOT_TOKEN;
 const TELEGRAM_CHAT_ID   = process.env.TELEGRAM_CHAT_ID;
 
+// ── RATE-LIMIT GUARD ──────────────────────────────────
+// Telegram returns 429 + retry_after (seconds) when flooded.
+// Keyed per chat_id so one over-active chat doesn't block
+// notifications to a different chat. While blocked, sends are
+// skipped locally (not even attempted) so we never compound
+// the penalty by hammering the API again mid-block.
+const blockedUntil = new Map(); // chatId -> epoch ms
+
 async function sendMessage(text, botToken, chatId) {
   const token = botToken || TELEGRAM_BOT_TOKEN;
   const chat  = chatId   || TELEGRAM_CHAT_ID;
@@ -15,12 +23,27 @@ async function sendMessage(text, botToken, chatId) {
   if (!token || !chat) return;
   if (token === "your_telegram_bot_token_here") return;
 
+  const until = blockedUntil.get(chat) || 0;
+  if (Date.now() < until) {
+    console.warn(`Telegram rate-limited — skipping send, resumes at ${new Date(until).toISOString()}`);
+    return;
+  }
+
   try {
     const res = await fetch(`https://api.telegram.org/bot${token}/sendMessage`, {
       method:  "POST",
       headers: { "Content-Type": "application/json" },
       body:    JSON.stringify({ chat_id: chat, text, parse_mode: "HTML" }),
     });
+
+    if (res.status === 429) {
+      const body = await res.json().catch(() => ({}));
+      const retryAfterSecs = body?.parameters?.retry_after ?? 30;
+      blockedUntil.set(chat, Date.now() + retryAfterSecs * 1000);
+      console.error(`Telegram 429 — pausing sends to this chat for ${retryAfterSecs}s`);
+      return;
+    }
+
     if (!res.ok) console.error("Telegram failed:", await res.text());
   } catch (e) {
     console.error("Telegram error:", e.message);
