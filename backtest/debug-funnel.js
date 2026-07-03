@@ -66,10 +66,10 @@ function withFakeNow(simulatedMs, fn) {
   try { return fn(); } finally { globalThis.Date = RealDate; }
 }
 
-function makeClosedCounter(arr) {
+function makeClosedCounter(arr, durationSecs) {
   let i = 0;
   return function countClosed(targetEpoch) {
-    while (i < arr.length && arr[i].epoch <= targetEpoch) i++;
+    while (i < arr.length && arr[i].epoch + durationSecs <= targetEpoch) i++;
     return i;
   };
 }
@@ -100,8 +100,8 @@ function validateDailyCandleLocal(candle) {
 
 resetSymbolState(symbol);
 
-const d1Counter = makeClosedCounter(d1);
-const h1Counter = makeClosedCounter(h1);
+const d1Counter = makeClosedCounter(d1, 86400);
+const h1Counter = makeClosedCounter(h1, 3600);
 
 const growingD1 = [];
 const growingH1 = [];

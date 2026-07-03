@@ -85,11 +85,18 @@ function withFakeNow(simulatedMs, fn) {
 // ── Two-pointer "how many bars are closed as of time T" ──
 // Returns a function you call with increasing epochs (must
 // be called in non-decreasing epoch order) that returns the
-// count of bars in `arr` whose epoch <= targetEpoch.
-function makeClosedCounter(arr) {
+// count of bars in `arr` that are FULLY CLOSED as of targetEpoch.
+//
+// `epoch` on a candle is its OPEN time, not its close time — a
+// candle isn't closed just because it has started, it's closed
+// once its full duration has elapsed. Comparing openEpoch <=
+// targetEpoch (the old code) incorrectly counted the candle
+// containing "now" as already closed, leaking its full (future,
+// already-known) OHLC into the growing array — a lookahead bug.
+function makeClosedCounter(arr, durationSecs) {
   let i = 0;
   return function countClosed(targetEpoch) {
-    while (i < arr.length && arr[i].epoch <= targetEpoch) i++;
+    while (i < arr.length && arr[i].epoch + durationSecs <= targetEpoch) i++;
     return i;
   };
 }
@@ -270,8 +277,8 @@ export function runBacktest(opts) {
   rm.setStartingBalance(startEquity);
   const sltp = new StopLossTakeProfit({ slPct, tpPct });
 
-  const d1Counter = makeClosedCounter(d1);
-  const h1Counter = makeClosedCounter(h1);
+  const d1Counter = makeClosedCounter(d1, 86400);
+  const h1Counter = makeClosedCounter(h1, 3600);
 
   let equity = startEquity;
   const equityCurve = [{ epoch: m15[0].epoch, equity }];
