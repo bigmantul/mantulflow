@@ -412,7 +412,7 @@ export function runBacktest(opts) {
     const stake = stakeAmount !== undefined
       ? Math.max(1, stakeAmount)
       : Math.max(1, parseFloat((equity * riskPct).toFixed(2)));
-    const multiplier = FALLBACK_MULTIPLIERS[symbol] ?? 50;
+    const multiplier = FALLBACK_MULTIPLIERS[symbol] ?? 10;
     const limitOrder = sltp.getMultiplierLimitOrder(stake);
 
     openPosition = {

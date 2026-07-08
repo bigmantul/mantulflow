@@ -37,7 +37,7 @@ function pickMultiplier(symbol, direction) {
   const key    = cacheKey(symbol, direction);
   const cached = multiplierCache.get(key);
   if (cached) return { value: cached[0], source: "cached" };
-  return { value: FALLBACK_MULTIPLIERS[symbol] ?? 50, source: "fallback" };
+  return { value: FALLBACK_MULTIPLIERS[symbol] ?? 10, source: "fallback" };
 }
 
 function parseMultipliersFromError(errorText) {
