@@ -233,12 +233,25 @@ export async function placeTradeWithRetry(ws, symbol, direction, stake, limitOrd
     return await placeMultiplierTrade(ws, symbol, direction, stake, multiplier, limitOrder);
   } catch (e) {
     const isMultiplierError = /multiplier|Accepts|Allowed|acceptable range/i.test(e.message);
-    if (!isMultiplierError) throw e;
+    if (!isMultiplierError) {
+      // NOT a connection problem — Deriv rejected this specific trade
+      // (e.g. a stake-cap error like "Enter an amount equal to or
+      // lower than 8.73", usually because of exposure from other
+      // currently-open positions). Previously this was rethrown and
+      // escaped uncaught all the way to index.js's outer try/catch,
+      // which misidentified it as a lost connection, tore down and
+      // reconnected the WebSocket, and sent a scary Telegram alert —
+      // even though nothing was actually wrong with the connection.
+      // Handle it here instead: log clearly, skip this trade, and let
+      // the bot carry on scanning normally.
+      console.log(`${symbol} | Trade rejected (not a connection issue): ${e.message}`);
+      return null;
+    }
 
     const allowed = parseMultipliersFromError(e.message);
     if (!allowed.length) {
-      console.log(`${symbol} | Cannot parse multipliers from error`);
-      throw e;
+      console.log(`${symbol} | Cannot parse multipliers from error: ${e.message}`);
+      return null;
     }
 
     multiplierCache.set(key, allowed);

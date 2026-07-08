@@ -247,6 +247,15 @@ async function main() {
           const label     = signal === 1 ? "BUY"    : "SELL";
           const direction = signal === 1 ? "MULTUP" : "MULTDOWN";
 
+          // Re-fetch balance right before sizing THIS trade. `balance`
+          // above was captured once at the top of the cycle, but this
+          // symbol loop can place more than one trade per cycle — if an
+          // earlier symbol already opened a trade, the stale balance
+          // would still be used here, sizing this trade off funds that
+          // are no longer actually free. That's what caused errors like
+          // "Enter an amount equal to or lower than X" from Deriv.
+          balance          = await getBalance(ws);
+          lastApiCall      = Date.now();
           const baseStake  = rm.calculateStake(balance);
           const volScalar  = getVolatilityScalar(dfM15);
           const stake      = parseFloat(Math.max(baseStake * volScalar, rm.minStake).toFixed(2));
