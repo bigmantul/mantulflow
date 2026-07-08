@@ -387,6 +387,7 @@ async function monitorOpenTrades(ws, userId, label, portfolio, dfD1Cache, riskSe
 
           if (!liveDurationMins || liveDurationMins <= 0) {
             cancelForcedCloseTimer(trade.contractId); // 0 = OFF
+            portfolio.lockSymbol(trade.symbol, trade.contractId, 0); // clears the LOCKED countdown too
           } else {
             // Keep the total window measured from the ORIGINAL open
             // time, not from now — e.g. if 90 of a new 240min window
@@ -401,6 +402,10 @@ async function monitorOpenTrades(ws, userId, label, portfolio, dfD1Cache, riskSe
               durationMins: Math.max(remainingMins, 0.05), // ~3s floor
               onClosed: buildForcedCloseHandler({ userId, symbol: trade.symbol, direction, stake, label, botToken, chatId, portfolio, rm, ws, contractId: trade.contractId }),
             });
+            // Same remaining-time-from-original-open-time math, so the
+            // "🔒 LOCKED ⏱️ Xh Ym" display always matches what the real
+            // forced-close timer above will actually do.
+            portfolio.lockSymbol(trade.symbol, trade.contractId, Math.max(remainingMins, 0.05));
           }
         }
 
@@ -562,14 +567,22 @@ function createPortfolio(userId) {
     getActiveSymbols: () => activeSymbols,
     getOpenCount:     () => openCount,
 
-    lockSymbol(sym, contractId) {
+    lockSymbol(sym, contractId, durationMins) {
       activeSymbols.add(sym);
       openCount = activeSymbols.size;
       if (contractId) {
-        timers.set(sym, {
-          contractId: String(contractId),
-          expiresAt:  Date.now() + 2 * 60 * 60 * 1000,
-        });
+        // Mirrors whatever the forced-close timer is actually set to
+        // (trader.js's startForcedCloseTimer / user's CONTRACT CUTOFF
+        // setting) — this used to be a hardcoded 2 hours regardless of
+        // that setting, so the "🔒 LOCKED" countdown shown per symbol
+        // would drift out of sync with (and often expire well before)
+        // the real forced-close time, even though the actual lock/
+        // unlock behavior itself was still correct (driven by the real
+        // trade closing, not by this countdown). durationMins <= 0
+        // means the forced-close timer is OFF — no expiry to display.
+        const entry = { contractId: String(contractId) };
+        if (durationMins > 0) entry.expiresAt = Date.now() + durationMins * 60 * 1000;
+        timers.set(sym, entry);
       }
     },
 
@@ -608,6 +621,7 @@ function createPortfolio(userId) {
     getCountdown(sym) {
       const t = timers.get(sym);
       if (!t) return "";
+      if (!t.expiresAt) return ""; // forced-close is OFF for this trade — no countdown to show
       const remaining = t.expiresAt - Date.now();
       if (remaining <= 0) return " | ⏱️ Expiring soon";
       const hrs  = Math.floor(remaining / 3600000);
@@ -897,10 +911,6 @@ async function runUserBot(user, stopSignal) {
             const contractId = typeof tradeResult === "object" ? tradeResult.contractId : String(tradeResult);
             const buyPrice   = typeof tradeResult === "object" ? tradeResult.buyPrice : 0;
 
-            portfolio.lockSymbol(symbol, contractId);
-            rm.tradeOpened();
-            placed++;
-
             // Default to 120 mins (2hrs) if the user has never set this
             // (covers existing user documents created before this field
             // existed in the schema). Explicit 0 from the dashboard toggle
@@ -908,6 +918,10 @@ async function runUserBot(user, stopSignal) {
             const durationMins = (freshUser.risk.contractDurationMins === undefined || freshUser.risk.contractDurationMins === null)
               ? 120
               : freshUser.risk.contractDurationMins;
+
+            portfolio.lockSymbol(symbol, contractId, durationMins);
+            rm.tradeOpened();
+            placed++;
 
             startForcedCloseTimer({
               contractId,
