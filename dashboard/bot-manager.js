@@ -800,8 +800,17 @@ async function runUserBot(user, stopSignal) {
 
           // Fixed dollar stake — user sets amount directly (min $1)
           const stake      = parseFloat(Math.max(freshUser.risk.stakeAmount || 1.00, 1.00).toFixed(2));
+          // Deriv deducts commission from the stake up front on multiplier
+          // contracts, so the maximum loss you can ever actually realize
+          // is always slightly LESS than 100% of the stake — a stop_loss
+          // set to exactly (or above) the full stake is mathematically
+          // unreachable and Deriv rejects it outright. Clamp to a safe
+          // ceiling below 100% regardless of what's configured, so a
+          // 100%+ setting (accidental or intentional) can never break
+          // every single trade for this reason again.
+          const safeStopLossPct = Math.min(freshUser.risk.stopLossPct, 0.95);
           const limitOrder = {
-            stop_loss:   parseFloat((stake * freshUser.risk.stopLossPct).toFixed(2)),
+            stop_loss:   parseFloat((stake * safeStopLossPct).toFixed(2)),
             take_profit: parseFloat((stake * freshUser.risk.takeProfitPct).toFixed(2)),
           };
           const multiplier = 100;

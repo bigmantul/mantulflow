@@ -37,7 +37,11 @@ router.put("/risk", protect, async (req, res) => {
     if (maxOpenTrades        !== undefined) user.risk.maxOpenTrades        = Math.min(Math.max(maxOpenTrades, 1), 10);
     if (maxDailyLossPct      !== undefined) user.risk.maxDailyLossPct      = Math.min(Math.max(maxDailyLossPct, 0.05), 1.0);
     if (maxConsecutiveLosses !== undefined) user.risk.maxConsecutiveLosses = Math.min(Math.max(maxConsecutiveLosses, 1), 10);
-    if (stopLossPct          !== undefined) user.risk.stopLossPct          = Math.min(Math.max(stopLossPct, 0.10), 2.0);
+    // Capped below 1.0 (not 2.0) — Deriv deducts commission from the
+    // stake up front on multiplier contracts, so a stop_loss set to
+    // 100% (or more) of the stake is an unreachable loss threshold and
+    // gets rejected outright on every single trade.
+    if (stopLossPct          !== undefined) user.risk.stopLossPct          = Math.min(Math.max(stopLossPct, 0.10), 0.95);
     if (takeProfitPct        !== undefined) user.risk.takeProfitPct        = Math.min(Math.max(takeProfitPct, 0.10), 10.0);
 
     // trailingStopPct: % of TAKE PROFIT that must be reached before
