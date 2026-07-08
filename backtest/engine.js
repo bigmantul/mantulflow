@@ -26,16 +26,19 @@
 //       (default 120 = 2hrs), regardless of P&L
 //
 //  IMPORTANT GOTCHA THIS ENGINE WORKS AROUND:
-//  signals.js uses `new Date()` (real wall-clock time) to
-//  decide "is this a new trading day" and "are we in the
-//  London/NY session". That's correct for live trading,
-//  but it means if you just call collectSignals() in a
-//  loop over historical bars, Stage 1 (Daily Bias) would
-//  only ever be computed ONCE — on the first call — using
-//  TODAY's real date, then stay frozen for the rest of the
-//  backtest, because `state.dailyBiasDate` would never
-//  differ from `todayKey()` again. Same problem for the
-//  London/NY session gate.
+//  isInTradingSession() (the London/NY session gate for Stage
+//  3/4 on FX/Metals) uses `new Date()` (real wall-clock time)
+//  to decide what hour it currently is. That's correct for
+//  live trading, but it means if you just call collectSignals()
+//  in a loop over historical bars, the session gate would use
+//  TODAY's real hour for every single historical bar, which is
+//  wrong almost all of the time.
+//
+//  (Stage 1 Daily Bias no longer has this problem — it's keyed
+//  off the epoch of the most recently closed D1 candle in the
+//  data itself, not off any wall-clock date, so it naturally
+//  recomputes correctly bar-by-bar in a backtest with no
+//  workaround needed.)
 //
 //  Fix: withFakeNow() temporarily swaps the global Date
 //  constructor so `new Date()` (no args) returns the
