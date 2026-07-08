@@ -248,7 +248,33 @@ async function syncTradeStatuses(ws, userId, label, botToken, chatId, rm) {
 }
 
 // ── PORTFOLIO TRACKER ─────────────────────────────────
-async function monitorOpenTrades(ws, userId, label, portfolio, dfD1Cache, riskSettings, botToken, chatId, rm) {
+// Builds the callback run when a forced-close timer actually fires.
+// Shared by both the initial trade-open call to startForcedCloseTimer()
+// and the live-reschedule path in monitorOpenTrades() below, so both
+// places update the DB/portfolio/notifications identically instead of
+// duplicating this logic.
+function buildForcedCloseHandler({ userId, symbol, direction, stake, label, botToken, chatId, portfolio, rm, ws, contractId }) {
+  return async ({ soldFor, finalPnl, reason }) => {
+    // status:"open" filter makes this safe even if another path (sync,
+    // or one of the other monitored exits) already closed/updated this
+    // same trade first — matches zero documents in that case, no
+    // double-processing.
+    const updated = await Trade.findOneAndUpdate(
+      { contractId: String(contractId), status: "open" },
+      { status: finalPnl >= 0 ? "won" : "lost", pnl: finalPnl, closedAt: new Date() }
+    );
+    if (!updated) return; // already closed via another path
+    portfolio.unlockSymbol(symbol);
+    rm.tradeClosed(finalPnl);
+    await log(userId, `[${label}] ${symbol} | ⏰ EXIT: ${reason} — closed`, "trade");
+    await log(userId, `[${label}] ${symbol} | Closed $${soldFor.toFixed(2)} | PnL: $${finalPnl.toFixed(2)}`, "trade");
+    await notifyTradeClosed({ symbol, direction, soldFor, pnl: finalPnl, stake, reason, label, botToken, chatId });
+    emitTradeClosed(userId, { id: String(updated._id), symbol, direction, stake, status: finalPnl >= 0 ? "won" : "lost", pnl: finalPnl, closedAt: new Date() });
+    try { emitBalanceUpdate(userId, await getBalance(ws)); } catch {}
+  };
+}
+
+async function monitorOpenTrades(ws, userId, label, portfolio, dfD1Cache, riskSettings, botToken, chatId, rm, user) {
   try {
     const openTrades = await Trade.find({ userId, status: "open" });
     if (!openTrades.length) return [];
@@ -344,6 +370,40 @@ async function monitorOpenTrades(ws, userId, label, portfolio, dfD1Cache, riskSe
         }
 
         // 6: forced-close duration timer
+        // Live setting changes (from the dashboard) previously only
+        // ever applied to trades opened AFTER the change — an
+        // already-open trade's real setTimeout (in trader.js) and its
+        // stored `forcedCloseDurationMins` snapshot both stayed frozen
+        // at whatever was configured at open time. Detect a mismatch
+        // here, every cycle, and actually reschedule the timer so a
+        // setting change reaches trades that are already running.
+        const liveDurationMins = (riskSettings?.contractDurationMins === undefined || riskSettings?.contractDurationMins === null)
+          ? 120
+          : riskSettings.contractDurationMins;
+
+        if (liveDurationMins !== (trade.forcedCloseDurationMins ?? 120)) {
+          await Trade.findByIdAndUpdate(trade._id, { forcedCloseDurationMins: liveDurationMins });
+          trade.forcedCloseDurationMins = liveDurationMins;
+
+          if (!liveDurationMins || liveDurationMins <= 0) {
+            cancelForcedCloseTimer(trade.contractId); // 0 = OFF
+          } else {
+            // Keep the total window measured from the ORIGINAL open
+            // time, not from now — e.g. if 90 of a new 240min window
+            // have already elapsed, only 150min should remain. If the
+            // new duration is already in the past relative to open
+            // time, fire almost immediately (startForcedCloseTimer
+            // requires a positive duration) rather than waiting.
+            const remainingMins = (openedAtMs + liveDurationMins * 60000 - Date.now()) / 60000;
+            startForcedCloseTimer({
+              contractId: trade.contractId, symbol: trade.symbol, direction, stake,
+              token: user.derivPAT, appId: user.derivAppId, mode: user.derivMode, label,
+              durationMins: Math.max(remainingMins, 0.05), // ~3s floor
+              onClosed: buildForcedCloseHandler({ userId, symbol: trade.symbol, direction, stake, label, botToken, chatId, portfolio, rm, ws, contractId: trade.contractId }),
+            });
+          }
+        }
+
         const durationMins = trade.forcedCloseDurationMins ?? 120;
         let forcedCloseText;
         if (!durationMins || durationMins <= 0) {
@@ -662,7 +722,7 @@ async function runUserBot(user, stopSignal) {
         await syncTradeStatuses(ws, user._id, label, botToken, chatId, rm);
         lastApiCall = Date.now();
 
-        const liveStatuses = await monitorOpenTrades(ws, user._id, label, portfolio, dfD1Cache, freshUser.risk, botToken, chatId, rm);
+        const liveStatuses = await monitorOpenTrades(ws, user._id, label, portfolio, dfD1Cache, freshUser.risk, botToken, chatId, rm, freshUser);
         lastApiCall = Date.now();
 
         const currentOpen = await portfolio.sync(ws);
@@ -859,24 +919,7 @@ async function runUserBot(user, stopSignal) {
               mode:         user.derivMode,
               label,
               durationMins, // 0 = OFF (explicit user choice), no min/max otherwise
-              onClosed: async ({ soldFor, finalPnl, reason }) => {
-                // status:"open" filter makes this safe even if another
-                // path (sync, or one of the 3 monitored exits) already
-                // closed/updated this same trade first — matches zero
-                // documents in that case, no double-processing.
-                const updated = await Trade.findOneAndUpdate(
-                  { contractId: String(contractId), status: "open" },
-                  { status: finalPnl >= 0 ? "won" : "lost", pnl: finalPnl, closedAt: new Date() }
-                );
-                if (!updated) return; // already closed via another path
-                portfolio.unlockSymbol(symbol);
-                rm.tradeClosed(finalPnl);
-                await log(user._id, `[${label}] ${symbol} | ⏰ EXIT: ${reason} — closed`, "trade");
-                await log(user._id, `[${label}] ${symbol} | Closed $${soldFor.toFixed(2)} | PnL: $${finalPnl.toFixed(2)}`, "trade");
-                await notifyTradeClosed({ symbol, direction, soldFor, pnl: finalPnl, stake, reason, label, botToken, chatId });
-                emitTradeClosed(user._id, { id: String(updated._id), symbol, direction, stake, status: finalPnl >= 0 ? "won" : "lost", pnl: finalPnl, closedAt: new Date() });
-                try { emitBalanceUpdate(user._id, await getBalance(ws)); } catch {}
-              },
+              onClosed: buildForcedCloseHandler({ userId: user._id, symbol, direction, stake, label, botToken, chatId, portfolio, rm, ws, contractId }),
             });
 
             try {
