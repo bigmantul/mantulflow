@@ -25,7 +25,7 @@ import {
   SIG_BUY,
   SIG_SELL,
 } from "../src/strategy/signals.js";
-import { placeTradeWithRetry, startForcedCloseTimer, cancelForcedCloseTimer, closeTrade } from "../src/trading/trader.js";
+import { placeTradeWithRetry, startForcedCloseTimer, cancelForcedCloseTimer, closeTrade, resetMultiplierCache } from "../src/trading/trader.js";
 import { RiskManager, StopLossTakeProfit } from "../src/risk/risk-manager.js";
 import { Trade, User, BotLog }             from "./db.js";
 import {
@@ -939,6 +939,13 @@ export const botManager = {
     if (runningBots.has(userId)) {
       console.log(`[${user.name}] Already running`); return;
     }
+    // multiplierCache (trader.js) is a plain module-level Map shared
+    // across the whole server process — the process itself never
+    // restarts just because a user's bot loop stops and starts again,
+    // so without this the cache would otherwise persist stale/learned
+    // multiplier values indefinitely across any Stop → Start or
+    // Restart action taken from the dashboard.
+    resetMultiplierCache();
     const stats = getCacheStats();
     if (stats.total === 0) {
       startGlobalScanner(SYMBOLS, user.derivPAT, user.derivAppId, user.derivMode || "demo")

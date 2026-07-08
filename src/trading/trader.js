@@ -19,6 +19,16 @@ export { FALLBACK_MULTIPLIERS };
 
 const multiplierCache = new Map();
 
+// Clears all learned multiplier values, falling every symbol back to
+// FALLBACK_MULTIPLIERS until Deriv teaches the bot new ones again.
+// Exposed so a bot restart can actually reset this state — the cache
+// is a plain in-memory Map that lives for the entire life of the
+// Node process, so stopping/starting a per-user bot LOOP (without the
+// underlying process itself restarting) never clears it on its own.
+export function resetMultiplierCache() {
+  multiplierCache.clear();
+}
+
 function cacheKey(symbol, direction) {
   return `${symbol}|${direction}`;
 }
