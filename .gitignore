@@ -10,4 +10,3 @@ logs/
 
 
 # Personal risk settings — your real dashboard numbers, never commit
-backtest/my-risk-settings.js
