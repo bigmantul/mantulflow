@@ -83,4 +83,4 @@ node backtest/run.js frxEURUSD --cutoff=0
 - `run-all.js` — same, but across every symbol with a combined summary
 - `my-risk-settings.example.js` — template; copy to `my-risk-settings.js` (gitignored) with your real values
 - `data/` — fetched/generated candle JSON per symbol (gitignored — these get large)
-- `results/` — output trade-log CSVs
+- `results/` — output trade-log CSVs.

@@ -1,0 +1,2 @@
+symbol,direction,entry_time,entry_price,exit_time,exit_price,stake,multiplier,pnl,outcome,equity_after
+JD10,buy,2026-06-18T05:15:00.000Z,96108.12,2026-06-27T09:15:00.000Z,97548.6,20,50,14.99,EOD_MARK,1014.99

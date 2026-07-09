@@ -35,9 +35,9 @@
 //  --cutoff    : noProfitCutoffMins (default 20, matches db.js
 //                default). 0 disables this mechanism entirely.
 //  --cooldown  : cutoffCooldownHours (default 2, matches db.js
-//                default). 0 means no cooldown lock applied.
+//                default). 0 means no cooldown lock applied
 //  --real-only skips any symbol without a real data file
-//  instead of falling back to synthetic data for it.
+//  instead of falling back to synthetic data for it
 // ═══════════════════════════════════════════════════════
 
 import fs from "fs";

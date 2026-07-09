@@ -227,3 +227,4 @@ console.log(`    OLD rule — close beyond + valid shape:      ${closeOnlyBeyond
 console.log(`    NEW rule — open+close beyond level:         ${openAndCloseBeyond}`);
 console.log(`    NEW rule — open+close beyond + valid shape: ${openAndCloseBeyondValidShape}  <- current Stage2 requirement`);
 console.log(`════════════════════════════════════════════════\n`);
+ 
