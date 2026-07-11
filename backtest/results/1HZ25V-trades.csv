@@ -1,3 +1,0 @@
-symbol,direction,entry_time,entry_price,exit_time,exit_price,stake,multiplier,pnl,outcome,equity_after
-1HZ25V,buy,2026-06-21T01:45:00.000Z,850723.74,2026-06-22T19:30:00.000Z,837112.16016,20,50,-16.00,SL,984.00
-1HZ25V,buy,2026-06-22T20:45:00.000Z,837250.92,2026-06-27T10:00:00.000Z,840708.42,19.68,50,4.06,EOD_MARK,988.06
