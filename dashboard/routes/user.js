@@ -26,6 +26,7 @@ router.put("/risk", protect, async (req, res) => {
     const {
       stakeAmount, maxOpenTrades, maxDailyLossPct,
       maxConsecutiveLosses, stopLossPct, takeProfitPct,
+      slAtrMult, tpAtrMult,
       trailingStopPct, contractDurationMins,
       noProfitCutoffMins, cutoffCooldownHours,
     } = req.body;
@@ -37,15 +38,22 @@ router.put("/risk", protect, async (req, res) => {
     if (maxOpenTrades        !== undefined) user.risk.maxOpenTrades        = Math.min(Math.max(maxOpenTrades, 1), 10);
     if (maxDailyLossPct      !== undefined) user.risk.maxDailyLossPct      = Math.min(Math.max(maxDailyLossPct, 0.05), 1.0);
     if (maxConsecutiveLosses !== undefined) user.risk.maxConsecutiveLosses = Math.min(Math.max(maxConsecutiveLosses, 1), 10);
-    // Capped below 1.0 (not 2.0) — Deriv deducts commission from the
-    // stake up front on multiplier contracts, so a stop_loss set to
-    // 100% (or more) of the stake is an unreachable loss threshold and
-    // gets rejected outright on every single trade.
+    // stopLossPct/takeProfitPct: RETIRED — bot-manager.js no longer reads
+    // these when opening a trade (see slAtrMult/tpAtrMult below). Still
+    // accepted and saved here only so the current dashboard form doesn't
+    // break; they have no live effect anymore.
     if (stopLossPct          !== undefined) user.risk.stopLossPct          = Math.min(Math.max(stopLossPct, 0.10), 0.95);
     if (takeProfitPct        !== undefined) user.risk.takeProfitPct        = Math.min(Math.max(takeProfitPct, 0.10), 10.0);
 
+    // slAtrMult/tpAtrMult: SL/TP as a multiple of the symbol's own current
+    // ATR, instead of a flat % of stake — this is what bot-manager.js
+    // actually uses now. Default 0.75/1.5 (1:2 risk:reward), validated
+    // separately per instrument category, not just in aggregate.
+    if (slAtrMult            !== undefined) user.risk.slAtrMult            = Math.min(Math.max(parseFloat(slAtrMult), 0.1), 5.0);
+    if (tpAtrMult            !== undefined) user.risk.tpAtrMult            = Math.min(Math.max(parseFloat(tpAtrMult), 0.1), 10.0);
+
     // trailingStopPct: % of TAKE PROFIT that must be reached before
-    // trailing stop activates. Default 0.5 (50%). 0 = disabled.
+    // trailing stop activates. Default 0.20 (20%). 0 = disabled.
     // Bounded 0-1.0 (0%-100% of TP) — sane safety range.
     if (trailingStopPct      !== undefined) user.risk.trailingStopPct      = Math.min(Math.max(parseFloat(trailingStopPct), 0), 1.0);
 

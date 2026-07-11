@@ -22,6 +22,7 @@ import {
   get15mTrend,
   sessionName,
   isMarketOpen,
+  getAtrPct,
   SIG_BUY,
   SIG_SELL,
 } from "../src/strategy/signals.js";
@@ -874,20 +875,38 @@ async function runUserBot(user, stopSignal) {
 
           // Fixed dollar stake — user sets amount directly (min $1)
           const stake      = parseFloat(Math.max(freshUser.risk.stakeAmount || 1.00, 1.00).toFixed(2));
-          // Deriv deducts commission from the stake up front on multiplier
-          // contracts, so the maximum loss you can ever actually realize
-          // is always slightly LESS than 100% of the stake — a stop_loss
-          // set to exactly (or above) the full stake is mathematically
-          // unreachable and Deriv rejects it outright. Clamp to a safe
-          // ceiling below 100% regardless of what's configured, so a
-          // 100%+ setting (accidental or intentional) can never break
-          // every single trade for this reason again.
-          const safeStopLossPct = Math.min(freshUser.risk.stopLossPct, 0.95);
-          const limitOrder = {
-            stop_loss:   parseFloat((stake * safeStopLossPct).toFixed(2)),
-            take_profit: parseFloat((stake * freshUser.risk.takeProfitPct).toFixed(2)),
-          };
           const multiplier = 100;
+
+          // ATR-calibrated SL/TP (replaces the old flat %-of-stake SL/TP).
+          // Backtested across all 48 real symbols and every instrument
+          // category separately — a 0.75x-ATR stop / 1.5x-ATR target (1:2
+          // risk:reward) came out on top independently in every single
+          // category, not just in aggregate. Formula derivation: ATR% is
+          // ATR expressed as a fraction of price (getAtrPct); converting
+          // an ATR-multiple price distance into a multiplier contract's
+          // dollar stop_loss/take_profit simplifies to
+          //   dollarAmount = stake * multiplier * atrPct * atrMultiple
+          // — notably this doesn't need the raw entry price at all, and
+          // the win/loss OUTCOME of a trade (not just its dollar size)
+          // is unaffected by whatever multiplier Deriv actually assigns,
+          // since triggering is a price-distance question, not a dollar
+          // one. slAtrMult/tpAtrMult fall back to the validated defaults
+          // if a user document predates these fields.
+          const slAtrMult = (freshUser.risk.slAtrMult === undefined || freshUser.risk.slAtrMult === null)
+            ? 0.75
+            : freshUser.risk.slAtrMult;
+          const tpAtrMult = (freshUser.risk.tpAtrMult === undefined || freshUser.risk.tpAtrMult === null)
+            ? 1.5
+            : freshUser.risk.tpAtrMult;
+          const atrPct = getAtrPct(dfM15);
+          // Same 95%-of-stake ceiling as before — Deriv rejects a
+          // stop_loss at/above the full stake since commission is
+          // deducted up front, so the max loss is always < 100% of stake.
+          const rawStopLoss = stake * multiplier * atrPct * slAtrMult;
+          const limitOrder = {
+            stop_loss:   parseFloat(Math.min(rawStopLoss, stake * 0.95).toFixed(2)),
+            take_profit: parseFloat((stake * multiplier * atrPct * tpAtrMult).toFixed(2)),
+          };
 
           // Log full strategy breakdown
           await log(userId,

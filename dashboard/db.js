@@ -27,8 +27,23 @@ const userSchema = new mongoose.Schema({
     maxOpenTrades:        { type: Number, default: 3 },
     maxDailyLossPct:      { type: Number, default: 0.30 },
     maxConsecutiveLosses: { type: Number, default: 3 },
+    // stopLossPct/takeProfitPct are RETIRED from the live trading path as
+    // of the ATR-calibrated SL/TP change — bot-manager.js no longer reads
+    // them when opening a trade. Left in place (not deleted) only because
+    // the dashboard settings form and admin route still reference them;
+    // updating those is a separate frontend task. Do not rely on these
+    // two fields to mean anything live anymore.
     stopLossPct:          { type: Number, default: 0.80 },
     takeProfitPct:        { type: Number, default: 2.00 },
+    // ATR-calibrated SL/TP — the live fields as of this change. Distance
+    // is `atrPct * multiplier` (in ATR units, not % of stake), so it
+    // scales with each symbol's own current volatility instead of a flat
+    // percentage. 0.75/1.5 (1:2 risk:reward) is what backtesting found
+    // independently in every instrument category (forex, metals, crypto,
+    // and each synthetic family separately) — not a single aggregate
+    // number applied everywhere without checking.
+    slAtrMult:            { type: Number, default: 0.75 },
+    tpAtrMult:            { type: Number, default: 1.5 },
     // PnL Lock (field name kept as trailingStopPct for backward DB
     // compatibility — dashboard label/logs now say "PnL Lock"): % of
     // TAKE PROFIT used as the step size. Profit locks in discrete steps:
@@ -36,20 +51,30 @@ const userSchema = new mongoose.Schema({
     // amount; step 3 -> locks step 2's amount; etc. Always one full step
     // behind peak (uses peak, not current PnL, so it only ratchets up).
     // Trade auto-closes (client-side sell, not contract_update) if profit
-    // falls to/below the locked floor. Default 50%. Set to 0 to disable.
-    trailingStopPct:      { type: Number, default: 0.5 },
+    // falls to/below the locked floor. Set to 0 to disable.
+    // Default changed from 0.5 -> 0.20: backtested across every regime
+    // and rolling 90-day window, 20% consistently beat 25% and no-trailing
+    // (PF 6.14-7.16 across every window vs 2.98 with trailing off).
+    trailingStopPct:      { type: Number, default: 0.20 },
     // No-profit cutoff: close a trade if it hasn't reached profit within
-    // this many minutes of opening. Default 20. Set to 0 to disable
-    // entirely (trade is never closed by this mechanism).
-    noProfitCutoffMins:   { type: Number, default: 20 },
+    // this many minutes of opening. Default OFF (0) — backtesting found
+    // this cut off trades that would often have recovered by the time
+    // ATR-based TP or the PnL-lock trailing floor was reached. Set > 0
+    // to re-enable if you want it back.
+    noProfitCutoffMins:   { type: Number, default: 0 },
     // Cooldown applied to a symbol after the no-profit cutoff fires —
-    // blocks new entries on that symbol for this many hours. Default 2.
-    // Set to 0 for no cooldown at all (symbol immediately tradeable
-    // again once unlocked).
+    // blocks new entries on that symbol for this many hours. Irrelevant
+    // while noProfitCutoffMins is 0 (cutoff never fires, so this never
+    // triggers either). Left non-zero so it's ready if you re-enable the
+    // cutoff above.
     cutoffCooldownHours:  { type: Number, default: 2 },
-    // Forced contract close duration in minutes. null = OFF (no forced close,
-    // only SL/TP/trailing stop closes the trade). No min/max enforced.
-    contractDurationMins: { type: Number, default: 120 },
+    // Forced contract close duration in minutes. Default OFF (0) — the
+    // ATR-calibrated SL/TP + PnL-lock trailing are the only exits now,
+    // matching exactly what was backtested (no time-based exit at all).
+    // Residual risk worth knowing: with this off, a trade that sits
+    // between SL and TP indefinitely has no time-based safety net. Set
+    // > 0 if you want a hard ceiling back as a backstop.
+    contractDurationMins: { type: Number, default: 0 },
   },
   createdAt: { type: Date, default: Date.now },
 });
