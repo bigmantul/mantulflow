@@ -159,6 +159,9 @@ function getState(symbol) {
       pulledBack:       false, // has price closed back inside the zone since Entry Mode started?
       m15ScanEpoch:     null, // epoch of the last 15M candle already scanned
       lastM15Epoch:  null,
+      // NEW — 15M entry window + retracement gate:
+      m15EntryAttempts:    0,     // how many 15M candles have had a chance to trigger entry since this zone started (max 2)
+      awaitingRetracement: false, // true after a zone is abandoned (2 attempts used, no entry) — blocks Stage 2 from re-arming until an H1 candle closes back inside yesterday's D1 range
     });
   }
   return symbolState.get(symbol);
@@ -209,6 +212,29 @@ export function getVolatilityScalar(df) {
 
 function candleBody(c)  { return Math.abs(c.close - c.open); }
 function candleRange(c) { return c.high - c.low; }
+
+// Trend-STRENGTH classifier (trending vs. ranging), distinct from
+// getSimpleTrend() above which only answers direction (bullish/
+// bearish/neutral). Uses Kaufman's Efficiency Ratio: net
+// displacement across the window divided by the sum of every
+// candle-to-candle move. Used by src/strategy/confluence-votes.js
+// as the "trend strength" vote — not called anywhere else in this
+// file, and nothing in collectSignals() below is affected by it.
+export function classifyD1Regime(d1Window, { lookback = 30, excludeForming = true, trendThreshold = 0.15 } = {}) {
+  if (!d1Window || d1Window.length < 3) return { trending: false, agreeRatio: 0 };
+
+  let candles = excludeForming ? d1Window.slice(0, -1) : d1Window;
+  if (lookback && candles.length > lookback) candles = candles.slice(-lookback);
+  if (candles.length < 3) return { trending: false, agreeRatio: 0 };
+
+  const netMove = Math.abs(candles[candles.length - 1].close - candles[0].close);
+  let sumMoves = 0;
+  for (let i = 1; i < candles.length; i++) {
+    sumMoves += Math.abs(candles[i].close - candles[i - 1].close);
+  }
+  const agreeRatio = sumMoves > 0 ? netMove / sumMoves : 0;
+  return { trending: agreeRatio >= trendThreshold, agreeRatio: +agreeRatio.toFixed(4) };
+}
 
 function getSwings(df, lookback = 5) {
   const highs = [], lows = [];
@@ -517,6 +543,33 @@ function hasConsecutiveLowerHighs(df, lookback = 3, count = 2) {
 //  direction).
 // ═══════════════════════════════════════════════════════
 
+// ═══════════════════════════════════════════════════════
+//  RETRACEMENT GATE — used after a 15M entry window is
+//  abandoned (see check15mEntry's 2-attempt cap below).
+//
+//  Once abandoned, Stage 2 will NOT re-arm on just any later
+//  H1 breakout — it first requires a CLOSED H1 candle to close
+//  fully back inside yesterday's D1 high/low (the same daily
+//  level Stage 2's breakout check uses). Only after that's
+//  observed does the normal check1hConfirmation() get run
+//  again, watching for a fresh breakout.
+// ═══════════════════════════════════════════════════════
+function checkRetracementIntoDailyZone(dfH1, dfD1) {
+  if (!dfH1 || dfH1.length < 2) return { retraced: false, reason: "Insufficient 1H data" };
+  if (!dfD1 || dfD1.length < 2) return { retraced: false, reason: "Insufficient daily data" };
+
+  const last = dfH1[dfH1.length - 2]; // most recent CLOSED 1H candle
+  const yesterday = dfD1[dfD1.length - 2];
+  const yesterdayHigh = yesterday.high;
+  const yesterdayLow  = yesterday.low;
+
+  const closedInside = last.close <= yesterdayHigh && last.close >= yesterdayLow;
+  if (closedInside) {
+    return { retraced: true, reason: `1H candle closed at ${last.close.toFixed(5)} — back inside yesterday's range (${yesterdayLow.toFixed(5)} - ${yesterdayHigh.toFixed(5)})` };
+  }
+  return { retraced: false, reason: `Waiting for an 1H candle to close back inside yesterday's range (${yesterdayLow.toFixed(5)} - ${yesterdayHigh.toFixed(5)}) — most recent closed at ${last.close.toFixed(5)}` };
+}
+
 function check1hConfirmation(dailyBias, dfH1, dfD1) {
   if (!dfH1 || dfH1.length < 3) {
     return { confirmed: false, reason: "Insufficient 1H data" };
@@ -658,8 +711,8 @@ function check15mEntry(dailyBias, dfM15, dfD1, state) {
     .sort((a, b) => a.epoch - b.epoch);
 
   const waitingReason = () => state.pulledBack
-    ? `Pulled back inside the H1 confirmation zone (${zoneLow.toFixed(5)} - ${zoneHigh.toFixed(5)}) — waiting for a valid ${dailyBias} candle to close back beyond it`
-    : `Watching for a valid ${dailyBias} candle to close beyond the H1 confirmation zone (${zoneLow.toFixed(5)} - ${zoneHigh.toFixed(5)})`;
+    ? `Pulled back inside the H1 confirmation zone (${zoneLow.toFixed(5)} - ${zoneHigh.toFixed(5)}) — waiting for a valid ${dailyBias} candle to close back beyond it (attempt ${state.m15EntryAttempts}/2)`
+    : `Watching for a valid ${dailyBias} candle to close beyond the H1 confirmation zone (${zoneLow.toFixed(5)} - ${zoneHigh.toFixed(5)}) (attempt ${state.m15EntryAttempts}/2)`;
 
   if (toScan.length === 0) {
     return { signal: SIG_HOLD, reason: waitingReason() };
@@ -667,6 +720,7 @@ function check15mEntry(dailyBias, dfM15, dfD1, state) {
 
   for (const c of toScan) {
     state.m15ScanEpoch = c.epoch; // mark processed regardless of outcome
+    state.m15EntryAttempts++;      // this candle is attempt #1 or #2 (or later, if already abandoned once this call — but abandonment returns immediately below, so a fresh call never sees >2)
 
     const shape            = validateDailyCandle(c);
     const shapeOk           = shape.valid && shape.direction === dailyBias;
@@ -676,7 +730,7 @@ function check15mEntry(dailyBias, dfM15, dfD1, state) {
       const direction = dailyBias === "bullish" ? "buy" : "sell";
       return {
         signal: direction === "buy" ? SIG_BUY : SIG_SELL,
-        reason: `Valid ${dailyBias} candle closed ${dailyBias === "bullish" ? "above" : "below"} the H1 confirmation zone (${zoneLow.toFixed(5)} - ${zoneHigh.toFixed(5)}) — entering now`,
+        reason: `Valid ${dailyBias} candle closed ${dailyBias === "bullish" ? "above" : "below"} the H1 confirmation zone (${zoneLow.toFixed(5)} - ${zoneHigh.toFixed(5)}) on attempt ${state.m15EntryAttempts}/2 — entering now`,
       };
     }
 
@@ -685,6 +739,21 @@ function check15mEntry(dailyBias, dfM15, dfD1, state) {
     const closesInsideZone = c.close >= zoneLow && c.close <= zoneHigh;
     if (closesInsideZone) {
       state.pulledBack = true;
+    }
+
+    // NEW — 2-attempt cap: only the 1st and 2nd 15M candles after the
+    // H1 breakout get a chance to trigger entry. If this was attempt
+    // #2 and it didn't fire, abandon this zone entirely rather than
+    // keep watching indefinitely. collectSignals() reacts to
+    // `abandoned: true` by resetting entry mode and requiring price
+    // to retrace back inside yesterday's D1 range before Stage 2 is
+    // allowed to re-arm (see checkRetracementIntoDailyZone above).
+    if (state.m15EntryAttempts >= 2) {
+      return {
+        signal: SIG_HOLD,
+        abandoned: true,
+        reason: `Neither the 1st nor 2nd 15M candle after the H1 breakout closed beyond the zone (${zoneLow.toFixed(5)} - ${zoneHigh.toFixed(5)}) — abandoning this setup. Waiting for price to retrace back inside yesterday's daily range before watching for a fresh breakout.`,
+      };
     }
   }
 
@@ -727,6 +796,8 @@ export function collectSignals(tf) {
     state.entryModeH1Low   = null;
     state.pulledBack        = false;
     state.m15ScanEpoch      = null;
+    state.m15EntryAttempts    = 0;
+    state.awaitingRetracement = false;
   } else if (latestClosedD1Epoch === null && state.dailyBiasEpoch === null) {
     // No usable D1 data yet at all — fall through to the
     // "insufficient data" branch of computeDailyBias below.
@@ -754,6 +825,25 @@ export function collectSignals(tf) {
 
   // ── STAGE 2: 1H CONFIRMATION → ENTRY MODE ──
   if (!state.entryMode) {
+    // NEW — if the previous zone was abandoned (2 attempts used, no
+    // entry), Stage 2 will NOT re-arm on just any later breakout. It
+    // first requires a closed 1H candle to retrace fully back inside
+    // yesterday's D1 range. Only once that's observed does the
+    // normal breakout check below run again.
+    if (state.awaitingRetracement) {
+      const retracement = checkRetracementIntoDailyZone(h1, d1);
+      breakdown.push({ step: "Stage2 Retracement Gate", result: retracement.retraced ? "RETRACED" : "WAITING", reason: retracement.reason });
+      if (!retracement.retraced) {
+        return { signal: SIG_HOLD, breakdown, reason: `WAITING — ${retracement.reason}`, dailyBias: state.dailyBias };
+      }
+      // Retracement confirmed — clear the gate and fall through to
+      // the normal breakout check in this same cycle. Safe to do in
+      // one pass: a candle closing inside the zone (retracement) and
+      // closing beyond it (breakout) are mutually exclusive for the
+      // same candle, so this can't accidentally double-count one bar.
+      state.awaitingRetracement = false;
+    }
+
     const confirmation = check1hConfirmation(state.dailyBias, h1, d1);
     breakdown.push({ step: "Stage2 1H Confirm", result: confirmation.confirmed ? "ENTRY MODE" : "WAITING", reason: confirmation.reason });
 
@@ -768,6 +858,7 @@ export function collectSignals(tf) {
     state.entryModeH1Low   = confirmation.h1Low;
     state.pulledBack        = false; // Stage 3 restarts scanning fresh
     state.m15ScanEpoch      = null;
+    state.m15EntryAttempts  = 0; // NEW — fresh zone, fresh 2-attempt window
   } else {
     breakdown.push({ step: "Stage2 1H Confirm", result: "ENTRY MODE (active)", reason: state.entryModeReason });
   }
@@ -776,9 +867,25 @@ export function collectSignals(tf) {
   const entry = check15mEntry(state.dailyBias, m15, d1, state);
   breakdown.push({
     step: "Stage3 15M Entry",
-    result: entry.signal === SIG_HOLD ? "WAIT" : (entry.signal === SIG_BUY ? "BUY" : "SELL"),
+    result: entry.signal === SIG_HOLD ? (entry.abandoned ? "ABANDONED" : "WAIT") : (entry.signal === SIG_BUY ? "BUY" : "SELL"),
     reason: entry.reason,
   });
+
+  // NEW — 2-attempt window used up with no entry: reset entry mode
+  // entirely and require a retracement into yesterday's D1 range
+  // before Stage 2 will look for a fresh breakout (see above).
+  if (entry.abandoned) {
+    state.entryMode         = false;
+    state.entryModeReason   = "";
+    state.entryModeH1Epoch  = null;
+    state.entryModeH1High   = null;
+    state.entryModeH1Low    = null;
+    state.pulledBack        = false;
+    state.m15ScanEpoch      = null;
+    state.m15EntryAttempts  = 0;
+    state.awaitingRetracement = true;
+    return { signal: SIG_HOLD, breakdown, reason: entry.reason, dailyBias: state.dailyBias };
+  }
 
   // If a trade actually fires, exit Entry Mode (symbol gets locked
   // by the trade-lock system anyway, and tomorrow starts fresh)
