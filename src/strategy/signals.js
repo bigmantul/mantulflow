@@ -207,50 +207,6 @@ export function getVolatilityScalar(df) {
   return parseFloat(Math.max(0.25, Math.min(1.0, 0.003 / pct)).toFixed(4));
 }
 
-// Trend-STRENGTH classifier (trending vs. ranging), distinct from
-// getSimpleTrend() below which only answers direction (bullish/
-// bearish/neutral). Uses Kaufman's Efficiency Ratio: net
-// displacement across the window divided by the sum of every
-// candle-to-candle move. A window where price grinds steadily one
-// way scores close to 1 (little movement canceled itself out); a
-// window that chops back and forth scores close to 0 (lots of
-// movement, not much net progress).
-//
-// NOTE: as of this writing nothing in the live path (src/index.js,
-// dashboard/bot-manager.js) calls this yet — it was added so
-// backtest/walk-forward.js (which imports it) can actually run and
-// bucket real results by regime. Wiring an actual entry-side
-// regime gate is a separate, deliberate follow-up, not implied by
-// this function existing.
-//
-// { lookback, excludeForming } matches how walk-forward.js calls
-// this: pass excludeForming:true when d1Window's last candle is
-// still forming (live use); pass excludeForming:false when the
-// window is already fully historical (backtest use, since there's
-// no "still forming" candle to drop).
-// trendThreshold default of 0.15 is calibrated empirically, not a
-// textbook constant: across the real 1yr/48-symbol dataset in
-// backtest/data (see backtest/results/walk-forward.csv), 90-day-
-// window agreeRatio has median 0.09, p75 0.15, p90 0.22 — so 0.15
-// roughly marks the top quartile as "trending". Re-check this any
-// time the historical window fetched changes materially (more
-// years, different symbols) — it will drift.
-export function classifyD1Regime(d1Window, { lookback = 30, excludeForming = true, trendThreshold = 0.15 } = {}) {
-  if (!d1Window || d1Window.length < 3) return { trending: false, agreeRatio: 0 };
-
-  let candles = excludeForming ? d1Window.slice(0, -1) : d1Window;
-  if (lookback && candles.length > lookback) candles = candles.slice(-lookback);
-  if (candles.length < 3) return { trending: false, agreeRatio: 0 };
-
-  const netMove = Math.abs(candles[candles.length - 1].close - candles[0].close);
-  let sumMoves = 0;
-  for (let i = 1; i < candles.length; i++) {
-    sumMoves += Math.abs(candles[i].close - candles[i - 1].close);
-  }
-  const agreeRatio = sumMoves > 0 ? netMove / sumMoves : 0;
-  return { trending: agreeRatio >= trendThreshold, agreeRatio: +agreeRatio.toFixed(4) };
-}
-
 function candleBody(c)  { return Math.abs(c.close - c.open); }
 function candleRange(c) { return c.high - c.low; }
 
