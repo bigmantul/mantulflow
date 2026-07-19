@@ -1,50 +1,17 @@
 // ═══════════════════════════════════════════════════════
-//  src/strategy/signals.js
+//  src/strategy/signals-voting-candidate.js — CANDIDATE, NOT LIVE
 //
-//  DAILY BIAS STRATEGY — 3-STAGE STATE MACHINE + 5-VOTER
-//  CONFIRMATION LAYER + 2-ATTEMPT ENTRY WINDOW
+//  User-authored alternative to signals.js: same Stage 1/2 as
+//  before, but Stage 3 embeds a 5-voter confirmation layer directly
+//  on the candle that already passes the mandatory gates (valid
+//  shape + closes beyond zone), instead of scanning indefinitely
+//  once those gates pass.
 //
-//  Stage 1: Daily Bias — computed once per trading day, after the
-//           previous daily candle closes (Rule A: fresh 3-candle
-//           reversal, overrides Rule B; Rule B: 30-candle HTF
-//           majority trend, gated by yesterday's candle confirming
-//           the same direction).
-//  Stage 2: 1H Confirmation — the most recent CLOSED 1H candle must
-//           have BOTH its open AND close beyond yesterday's D1 high
-//           (bullish) or D1 low (bearish), AND pass the valid-candle
-//           body>wick test. Confirmed -> Entry Mode, with a fresh
-//           2-attempt window and the confirming H1 candle's own
-//           high/low remembered as "the zone".
-//  Stage 3: 15M Entry — only the 1st or 2nd 15M candle after Entry
-//           Mode starts gets a chance to trigger. Each candidate
-//           candle must pass BOTH mandatory gates (valid shape +
-//           closes beyond the zone) AND clear the voting layer: 5
-//           independent voters (RSI reversal out of oversold/
-//           overbought, EMA20 slope/alignment, 3+ candle close
-//           streak, strong close within its own range, minimum
-//           clearance beyond the zone in ATR terms) — at least 3 of
-//           5 must agree with the bias direction. If neither of the
-//           2 attempts clears both bars, the setup is ABANDONED —
-//           Stage 2 will not re-arm on just any later H1 breakout;
-//           it first requires a closed H1 candle to close fully
-//           back inside yesterday's D1 range, then watches for a
-//           fresh breakout with a brand-new zone and attempt window.
-//
-//  Backtested against 1yr of real data across all 48 symbols before
-//  going live: this combination (voting + attempt cap) came out
-//  ahead of either piece alone — PF 4.51 vs. 3.98 (attempt-cap
-//  only) vs. 3.98 (voting only, no cap) vs. 4.61 (neither, but at
-//  732 trades vs. this version's 540 — more trades, no filtering).
-//
-//  SESSION RULE: Daily bias (Stage 1) is computed any time of day.
-//  Stage 2 + Stage 3 only run for FX/Metals during London, New
-//  York, or the overlap. Synthetics/Crypto run 24/7, unaffected.
-//
-//  STATE PERSISTENCE: Entry Mode, the attempt counter, and the
-//  retracement gate all persist across scan cycles per symbol. See
-//  SymbolStateStore below.
-//
-//  Timeframes used: D1 → H1 → M15
+//  NOTE this version does NOT include the 2-attempt-cap +
+//  retracement-gate feature added to signals.js last turn — it
+//  scans candles indefinitely once Entry Mode starts, same as the
+//  very first version of this file. Being tested as its own
+//  candidate before deciding whether to combine with that feature.
 // ═══════════════════════════════════════════════════════
 
 // ── SIGNAL CONSTANTS ──────────────────────────────────
@@ -112,8 +79,6 @@ function getState(symbol) {
       m15ScanEpoch:     null,
       lastM15Epoch:  null,
       lastVoteReason: null,
-      m15EntryAttempts:    0,
-      awaitingRetracement: false,
     });
   }
   return symbolState.get(symbol);
@@ -159,23 +124,6 @@ export function getVolatilityScalar(df) {
 
 function candleBody(c)  { return Math.abs(c.close - c.open); }
 function candleRange(c) { return c.high - c.low; }
-
-// Trend-STRENGTH classifier (trending vs. ranging), distinct from
-// getSimpleTrend() below which only answers direction. Uses
-// Kaufman's Efficiency Ratio. Used by backtest/walk-forward.js for
-// regime-bucketed analysis — NOT called anywhere in collectSignals()
-// or the live entry path below.
-export function classifyD1Regime(d1Window, { lookback = 30, excludeForming = true, trendThreshold = 0.15 } = {}) {
-  if (!d1Window || d1Window.length < 3) return { trending: false, agreeRatio: 0 };
-  let candles = excludeForming ? d1Window.slice(0, -1) : d1Window;
-  if (lookback && candles.length > lookback) candles = candles.slice(-lookback);
-  if (candles.length < 3) return { trending: false, agreeRatio: 0 };
-  const netMove = Math.abs(candles[candles.length - 1].close - candles[0].close);
-  let sumMoves = 0;
-  for (let i = 1; i < candles.length; i++) sumMoves += Math.abs(candles[i].close - candles[i - 1].close);
-  const agreeRatio = sumMoves > 0 ? netMove / sumMoves : 0;
-  return { trending: agreeRatio >= trendThreshold, agreeRatio: +agreeRatio.toFixed(4) };
-}
 
 function getSwings(df, lookback = 5) {
   const highs = [], lows = [];
@@ -382,20 +330,6 @@ function runVotes(c, idx, dfM15, dailyBias, zoneHigh, zoneLow, ctx) {
   return { votesPassed, total: details.length, details };
 }
 
-function checkRetracementIntoDailyZone(dfH1, dfD1) {
-  if (!dfH1 || dfH1.length < 2) return { retraced: false, reason: "Insufficient 1H data" };
-  if (!dfD1 || dfD1.length < 2) return { retraced: false, reason: "Insufficient daily data" };
-  const last = dfH1[dfH1.length - 2];
-  const yesterday = dfD1[dfD1.length - 2];
-  const yesterdayHigh = yesterday.high;
-  const yesterdayLow  = yesterday.low;
-  const closedInside = last.close <= yesterdayHigh && last.close >= yesterdayLow;
-  if (closedInside) {
-    return { retraced: true, reason: `1H candle closed at ${last.close.toFixed(5)} — back inside yesterday's range (${yesterdayLow.toFixed(5)} - ${yesterdayHigh.toFixed(5)})` };
-  }
-  return { retraced: false, reason: `Waiting for an 1H candle to close back inside yesterday's range (${yesterdayLow.toFixed(5)} - ${yesterdayHigh.toFixed(5)})` };
-}
-
 function check1hConfirmation(dailyBias, dfH1, dfD1) {
   if (!dfH1 || dfH1.length < 3) return { confirmed: false, reason: "Insufficient 1H data" };
   if (!dfD1 || dfD1.length < 2) return { confirmed: false, reason: "Insufficient daily data for yesterday's high/low" };
@@ -476,7 +410,6 @@ function check15mEntry(dailyBias, dfM15, dfD1, state) {
 
   for (const c of toScan) {
     state.m15ScanEpoch = c.epoch;
-    state.m15EntryAttempts++;
     const shape            = validateDailyCandle(c);
     const shapeOk           = shape.valid && shape.direction === dailyBias;
     const closesBeyondZone  = dailyBias === "bullish" ? c.close > zoneHigh : c.close < zoneLow;
@@ -490,23 +423,16 @@ function check15mEntry(dailyBias, dfM15, dfD1, state) {
         const votesList  = details.filter(v => v.pass).map(v => v.name).join(", ");
         return {
           signal: direction === "buy" ? SIG_BUY : SIG_SELL,
-          reason: `Valid ${dailyBias} candle closed beyond zone AND passed ${votesPassed}/${total} votes (${votesList}) on attempt ${state.m15EntryAttempts}/2 — entering now`,
+          reason: `Valid ${dailyBias} candle closed beyond zone AND passed ${votesPassed}/${total} votes (${votesList}) — entering now`,
         };
       }
       const failedList = details.filter(v => !v.pass).map(v => v.name).join(", ");
       state.lastVoteReason = `Closed beyond zone but only ${votesPassed}/${total} votes passed (need ${VOTE_THRESHOLD}) — missing: ${failedList}`;
-    } else {
-      const closesInsideZone = c.close >= zoneLow && c.close <= zoneHigh;
-      if (closesInsideZone) state.pulledBack = true;
+      continue;
     }
 
-    if (state.m15EntryAttempts >= 2) {
-      return {
-        signal: SIG_HOLD,
-        abandoned: true,
-        reason: `Neither the 1st nor 2nd 15M candle after the H1 breakout cleared both the zone-break AND the vote threshold — abandoning this setup. Waiting for a retracement into yesterday's daily range before watching for a fresh breakout.`,
-      };
-    }
+    const closesInsideZone = c.close >= zoneLow && c.close <= zoneHigh;
+    if (closesInsideZone) state.pulledBack = true;
   }
 
   if (state.lastVoteReason) return { signal: SIG_HOLD, reason: state.lastVoteReason };
@@ -533,8 +459,6 @@ export function collectSignals(tf) {
     state.pulledBack        = false;
     state.m15ScanEpoch      = null;
     state.lastVoteReason    = null;
-    state.m15EntryAttempts    = 0;
-    state.awaitingRetracement = false;
   } else if (latestClosedD1Epoch === null && state.dailyBiasEpoch === null) {
     const result = computeDailyBias(d1);
     state.dailyBias     = result.bias;
@@ -553,15 +477,6 @@ export function collectSignals(tf) {
   }
 
   if (!state.entryMode) {
-    if (state.awaitingRetracement) {
-      const retracement = checkRetracementIntoDailyZone(h1, d1);
-      breakdown.push({ step: "Stage2 Retracement Gate", result: retracement.retraced ? "RETRACED" : "WAITING", reason: retracement.reason });
-      if (!retracement.retraced) {
-        return { signal: SIG_HOLD, breakdown, reason: `WAITING — ${retracement.reason}`, dailyBias: state.dailyBias };
-      }
-      state.awaitingRetracement = false;
-    }
-
     const confirmation = check1hConfirmation(state.dailyBias, h1, d1);
     breakdown.push({ step: "Stage2 1H Confirm", result: confirmation.confirmed ? "ENTRY MODE" : "WAITING", reason: confirmation.reason });
     if (!confirmation.confirmed) {
@@ -575,7 +490,6 @@ export function collectSignals(tf) {
     state.pulledBack        = false;
     state.m15ScanEpoch      = null;
     state.lastVoteReason    = null;
-    state.m15EntryAttempts  = 0;
   } else {
     breakdown.push({ step: "Stage2 1H Confirm", result: "ENTRY MODE (active)", reason: state.entryModeReason });
   }
@@ -583,23 +497,9 @@ export function collectSignals(tf) {
   const entry = check15mEntry(state.dailyBias, m15, d1, state);
   breakdown.push({
     step: "Stage3 15M Entry",
-    result: entry.signal === SIG_HOLD ? (entry.abandoned ? "ABANDONED" : "WAIT") : (entry.signal === SIG_BUY ? "BUY" : "SELL"),
+    result: entry.signal === SIG_HOLD ? "WAIT" : (entry.signal === SIG_BUY ? "BUY" : "SELL"),
     reason: entry.reason,
   });
-
-  if (entry.abandoned) {
-    state.entryMode         = false;
-    state.entryModeReason   = "";
-    state.entryModeH1Epoch  = null;
-    state.entryModeH1High   = null;
-    state.entryModeH1Low    = null;
-    state.pulledBack        = false;
-    state.m15ScanEpoch      = null;
-    state.lastVoteReason    = null;
-    state.m15EntryAttempts  = 0;
-    state.awaitingRetracement = true;
-    return { signal: SIG_HOLD, breakdown, reason: entry.reason, dailyBias: state.dailyBias };
-  }
 
   if (entry.signal !== SIG_HOLD) {
     state.entryMode = false;
